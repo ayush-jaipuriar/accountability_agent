@@ -1,0 +1,169 @@
+---
+description: Progress tracking rule - sync implementation progress to main plan file
+alwaysApply: true
+---
+
+# Implementation Progress Tracking
+
+**Critical Rule:** Whenever you complete implementation tasks from `IMPLEMENTATION_PLAN.md` or any phase-specific implementation documents, you MUST update the corresponding TODOs in `.cursor/plans/constitution_ai_agent_implementation_d572a39f.plan.md`.
+
+## Rule Purpose
+
+This ensures we maintain a single source of truth for overall project progress across all phases. The main plan file tracks high-level completion while implementation documents guide detailed work.
+
+## When to Update the Plan
+
+Update `.cursor/plans/constitution_ai_agent_implementation_d572a39f.plan.md` when:
+
+1. ✅ **Completing a TODO item** - Change status from `pending` → `in_progress` → `completed`
+2. ✅ **Starting a new phase step** - Mark as `in_progress` when you begin work
+3. ✅ **Finishing a phase milestone** - Mark as `completed` when all acceptance criteria met
+4. ✅ **Encountering blockers** - Add notes in plan if implementation is blocked
+
+## TODO Status Values
+
+```yaml
+status: pending      # Not started yet
+status: in_progress  # Currently working on this
+status: completed    # Finished and tested
+status: cancelled    # Decided not to implement
+```
+
+## Mapping: Implementation → Plan TODOs
+
+### Phase 1 - MVP Check-In System
+
+| Implementation Step | Plan TODO ID | Update When |
+|-------------------|--------------|-------------|
+| Create project structure, install deps | `phase1_local_env` | All files created, deps installed |
+| Implement Firestore service | `phase1_firestore_schema` | Service layer working, tested with Firestore |
+| Build check-in conversation flow | `phase1_checkin_flow` | Conversation handler complete, tested locally |
+| Implement compliance & streak logic | `phase1_compliance_streak` | Functions written, unit tests passing |
+| Create FastAPI app | `phase1_fastapi_app` | Webhook endpoint working, health check responding |
+| Deploy to Cloud Run | `phase1_cloud_run_deploy` | Deployed, webhook configured, end-to-end tested |
+| Complete testing | `phase1_testing` | All manual tests passed, unit tests green |
+
+### Phase 2 - LangGraph + Pattern Detection
+
+| Implementation Step | Plan TODO ID | Update When |
+|-------------------|--------------|-------------|
+| Set up LangGraph | `phase2_langgraph_setup` | State schema defined, base agent class created |
+| Build Supervisor agent | `phase2_supervisor_agent` | Intent classification working, routing functional |
+| Add LLM feedback to CheckIn | `phase2_checkin_llm` | Gemini integrated, personalized feedback generated |
+| Implement PatternDetection agent | `phase2_pattern_detection` | All 4 pattern rules working, tested |
+| Build Intervention agent | `phase2_intervention_agent` | Interventions sent to Telegram, logged in Firestore |
+| Set up scheduled scanning | `phase2_scheduled_scanning` | Cloud Scheduler job created, endpoint working |
+| Cost optimization | `phase2_cost_optimization` | Token counting active, alerts configured |
+| Integration testing | `phase2_integration_testing` | All flows tested end-to-end, cost verified |
+
+### Phase 3 & 4 TODOs
+
+(Similar mapping when those phases begin)
+
+## How to Update the Plan
+
+### Step 1: Identify Completed Work
+
+When you finish implementing something, identify which TODO it corresponds to using the mapping above.
+
+### Step 2: Update TODO Status
+
+Use the `StrReplace` tool to update the status in the plan file:
+
+```yaml
+# Before
+- id: phase1_local_env
+  content: "Set up local Python 3.11 environment..."
+  status: pending
+
+# After
+- id: phase1_local_env
+  content: "Set up local Python 3.11 environment..."
+  status: completed
+```
+
+### Step 3: Add Progress Notes (Optional)
+
+If significant progress made but not fully complete, add notes in the plan:
+
+```markdown
+**🎯 Phase 1 Progress Update (Jan 30, 2026):**
+- ⏳ Local environment: Python 3.11 venv created, requirements.txt installed
+- ✅ Firestore service: Fully implemented and tested
+- ⬜ Check-in flow: Next up
+```
+
+## Example Update Flow
+
+**Scenario:** You just finished implementing the Firestore service layer.
+
+```python
+# 1. Files created:
+#    - src/services/firestore_service.py ✅
+#    - src/models/schemas.py ✅
+#    - Tested connection to Firestore ✅
+
+# 2. Update the plan file:
+StrReplace(
+    path=".cursor/plans/constitution_ai_agent_implementation_d572a39f.plan.md",
+    old_string="""  - id: phase1_firestore_schema
+    content: "Implement Firestore schema..."
+    status: pending""",
+    new_string="""  - id: phase1_firestore_schema
+    content: "Implement Firestore schema..."
+    status: completed"""
+)
+
+# 3. Update progress section:
+StrReplace(
+    path=".cursor/plans/constitution_ai_agent_implementation_d572a39f.plan.md",
+    old_string="- ✅ Bot token stored...",
+    new_string="""- ✅ Bot token stored...
+- ✅ Firestore service layer: Complete with CRUD operations"""
+)
+```
+
+## Acceptance Criteria for "Completed"
+
+A TODO can be marked `completed` only when:
+
+✅ **Code is written** - All required files created  
+✅ **Code is tested** - Unit tests pass (if applicable)  
+✅ **Code works end-to-end** - Integration tested  
+✅ **Documentation updated** - README or comments added if needed  
+✅ **No blocking bugs** - May have minor issues but core functionality works  
+
+## Warning Signs
+
+🚨 **DO NOT mark completed if:**
+- Code compiles but isn't tested
+- Major bugs remain
+- Integration doesn't work end-to-end
+- Deployment failed
+
+Instead, mark as `in_progress` and note the blocker.
+
+## Progress Reporting
+
+When marking TODOs complete, update the progress tracker section in the plan:
+
+```markdown
+**Phase 1 Setup:** ████████░░░░ 67% (4/6 complete)
+**Phase 1 MVP:** ███░░░░░░░░░ 25% (2/8 complete)
+```
+
+## File Locations
+
+- **Main Plan:** `.cursor/plans/constitution_ai_agent_implementation_d572a39f.plan.md`
+- **Phase 1 Implementation:** `IMPLEMENTATION_PLAN.md`
+- **Phase 2+ Implementation:** Create `PHASE2_IMPLEMENTATION.md` when Phase 2 begins
+
+## Summary
+
+✅ **Always update the main plan when completing implementation work**  
+✅ **Use the mapping table to identify which TODO corresponds to your work**  
+✅ **Mark status as: pending → in_progress → completed**  
+✅ **Update progress notes to keep stakeholder informed**  
+✅ **Only mark "completed" when acceptance criteria are met**  
+
+This rule ensures we never lose track of progress and always know our status across all phases! 🎯
