@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     
     # ===== GCP Configuration =====
     gcp_project_id: str = "accountability-agent"
-    google_application_credentials: str = ".credentials/accountability-agent-9256adc55379.json"
+    google_application_credentials: Optional[str] = None  # Optional: Cloud Run uses default service account
     gcp_region: str = "asia-south1"
     
     # ===== Telegram Configuration =====
