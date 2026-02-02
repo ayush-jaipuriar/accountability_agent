@@ -44,6 +44,8 @@ from src.models.schemas import (
 )
 from src.utils.compliance import calculate_compliance_score, format_compliance_message
 from src.utils.streak import update_streak_data, format_streak_message
+from src.agents.checkin_agent import get_checkin_agent
+from src.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -460,65 +462,70 @@ async def finish_checkin(
         
         firestore_service.update_user_streak(user_id, streak_updates)
         
-        # Generate feedback message
+        # Generate AI-powered feedback message
         is_new_record = (
             streak_updates['current_streak'] > streak_updates['longest_streak'] - 1
             and streak_updates['current_streak'] > 1
         )
         
-        feedback_parts = []
-        
-        # Header
-        feedback_parts.append("🎉 **Check-In Complete!**\n")
-        
-        # Compliance score
-        compliance_msg = format_compliance_message(
-            compliance_score,
-            streak_updates['current_streak']
-        )
-        feedback_parts.append(compliance_msg)
-        
-        # Streak info
-        if is_new_record:
-            streak_msg = format_streak_message(
-                streak_updates['current_streak'],
-                streak_updates['longest_streak'],
-                is_new_record=True
+        try:
+            # Get CheckIn Agent
+            checkin_agent = get_checkin_agent(settings.gcp_project_id)
+            
+            # Generate personalized feedback with AI
+            ai_feedback = await checkin_agent.generate_feedback(
+                user_id=user_id,
+                compliance_score=compliance_score,
+                tier1=tier1,
+                current_streak=streak_updates['current_streak'],
+                longest_streak=streak_updates['longest_streak'],
+                self_rating=context.user_data['rating'],
+                rating_reason=context.user_data['rating_reason'],
+                tomorrow_priority=context.user_data['tomorrow_priority'],
+                tomorrow_obstacle=context.user_data['tomorrow_obstacle']
             )
-            feedback_parts.append(f"\n{streak_msg}")
-        
-        # Total check-ins
-        feedback_parts.append(
-            f"\n📊 Total check-ins: {streak_updates['total_checkins']}"
-        )
-        
-        # Encouragement based on compliance
-        if compliance_score == 100:
-            feedback_parts.append(
-                "\n\n💯 Perfect day! All Tier 1 non-negotiables completed. "
-                "This is what constitution mastery looks like."
-            )
-        elif compliance_score >= 80:
-            feedback_parts.append(
-                "\n\n✅ Strong day! You're maintaining solid consistency. "
-                "Keep this momentum going."
-            )
-        elif compliance_score >= 60:
-            feedback_parts.append(
-                "\n\n⚠️ Room for improvement. Which Tier 1 items can you prioritize tomorrow?"
-            )
-        else:
-            feedback_parts.append(
-                "\n\n🚨 Below standards today. Let's refocus. "
-                "Your constitution is your foundation - protect it."
-            )
-        
-        # Next steps
-        feedback_parts.append(
-            f"\n\n🎯 See you tomorrow at 9 PM for your next check-in!"
-        )
-        
-        final_message = "\n".join(feedback_parts)
+            
+            # Build final message with header and AI feedback
+            feedback_parts = []
+            feedback_parts.append("🎉 **Check-In Complete!**\n")
+            feedback_parts.append(f"📊 Compliance: {compliance_score}%")
+            feedback_parts.append(f"🔥 Streak: {streak_updates['current_streak']} days")
+            
+            if is_new_record:
+                feedback_parts.append("🏆 **NEW PERSONAL RECORD!**")
+            
+            feedback_parts.append(f"📈 Total check-ins: {streak_updates['total_checkins']}")
+            feedback_parts.append(f"\n---\n\n{ai_feedback}")
+            feedback_parts.append(f"\n---\n\n🎯 See you tomorrow at 9 PM!")
+            
+            final_message = "\n".join(feedback_parts)
+            
+        except Exception as e:
+            logger.error(f"AI feedback generation failed, using fallback: {e}")
+            
+            # Fallback to Phase 1 hardcoded feedback
+            feedback_parts = []
+            feedback_parts.append("🎉 **Check-In Complete!**\n")
+            feedback_parts.append(f"📊 Compliance: {compliance_score}%")
+            feedback_parts.append(f"🔥 Streak: {streak_updates['current_streak']} days")
+            
+            if compliance_score == 100:
+                feedback_parts.append(
+                    "\n💯 Perfect day! All Tier 1 non-negotiables completed."
+                )
+            elif compliance_score >= 80:
+                feedback_parts.append(
+                    "\n✅ Strong day! Keep this momentum going."
+                )
+            else:
+                feedback_parts.append(
+                    "\n⚠️ Room for improvement. Focus on Tier 1 priorities tomorrow."
+                )
+            
+            feedback_parts.append(f"\n📈 Total: {streak_updates['total_checkins']} check-ins")
+            feedback_parts.append(f"\n🎯 See you tomorrow!")
+            
+            final_message = "\n".join(feedback_parts)
         
         await update.message.reply_text(final_message)
         

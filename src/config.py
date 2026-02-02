@@ -48,7 +48,8 @@ class Settings(BaseSettings):
     
     # ===== Vertex AI Configuration =====
     vertex_ai_location: str = "asia-south1"
-    gemini_model: str = "gemini-2.5-flash-lite"
+    gemini_model: str = "gemini-1.5-flash-002"  # Use Gemini 1.5 Flash (stable, available)
+    gemini_api_key: Optional[str] = None  # For direct Gemini API (alternative to Vertex AI)
     
     # ===== Application Settings =====
     log_level: str = "INFO"
@@ -76,6 +77,19 @@ class Settings(BaseSettings):
 # Create singleton instance
 # This is imported throughout the app: `from src.config import settings`
 settings = Settings()
+
+
+def get_settings() -> Settings:
+    """
+    Get the settings singleton instance
+    
+    This is a helper function for consistency with other get_* functions.
+    You can also import `settings` directly: `from src.config import settings`
+    
+    Returns:
+        Settings singleton instance
+    """
+    return settings
 
 
 # Validate critical paths on import

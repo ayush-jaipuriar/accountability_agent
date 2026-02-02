@@ -386,6 +386,17 @@ class FirestoreService:
     
     # ===== User Management =====
     
+    def get_all_users(self) -> List[User]:
+        """
+        Get list of ALL users in the system.
+        
+        Alias for get_active_users for Phase 2 compatibility.
+        
+        Returns:
+            List of User objects
+        """
+        return self.get_active_users()
+    
     def get_active_users(self) -> List[User]:
         """
         Get list of all active users.
@@ -412,6 +423,115 @@ class FirestoreService:
         except Exception as e:
             logger.error(f"❌ Failed to fetch active users: {e}")
             raise
+    
+    # ===== Intervention Logging (Phase 2) =====
+    
+    def log_intervention(
+        self,
+        user_id: str,
+        pattern_type: str,
+        severity: str,
+        data: dict,
+        message: str
+    ) -> None:
+        """
+        Log intervention sent to user (Phase 2).
+        
+        Interventions are stored for:
+        - Analytics (how often patterns occur)
+        - Effectiveness tracking (did user improve after intervention?)
+        - Historical context (show user past patterns)
+        
+        Firestore Structure:
+        --------------------
+        interventions/{user_id}/interventions/{auto_id}:
+        {
+            "pattern_type": "sleep_degradation",
+            "severity": "high",
+            "detected_at": "2026-02-02T10:30:00Z",
+            "data": {"avg_sleep": 5.3, "consecutive_days": 3},
+            "message": "🚨 PATTERN ALERT: Sleep Degradation...",
+            "sent_at": "2026-02-02T10:30:15Z",
+            "user_response": null,  # For Phase 3: track acknowledgment
+            "resolved": false  # For Phase 3: track if pattern was fixed
+        }
+        
+        Args:
+            user_id: User ID
+            pattern_type: Type of pattern (sleep_degradation, etc.)
+            severity: Severity level (critical, high, medium, low)
+            data: Pattern-specific data
+            message: Intervention message sent
+        """
+        try:
+            intervention_data = {
+                "user_id": user_id,
+                "pattern_type": pattern_type,
+                "severity": severity,
+                "detected_at": datetime.utcnow(),
+                "data": data,
+                "message": message,
+                "sent_at": datetime.utcnow(),
+                "user_response": None,
+                "resolved": False
+            }
+            
+            # Store in interventions collection
+            self.db.collection('interventions').document(user_id).collection('interventions').add(
+                intervention_data
+            )
+            
+            logger.info(f"✅ Logged intervention for {user_id}: {pattern_type} ({severity})")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to log intervention: {e}")
+            # Don't raise - logging failure shouldn't block intervention sending
+    
+    def get_recent_interventions(
+        self,
+        user_id: str,
+        days: int = 30
+    ) -> List[dict]:
+        """
+        Get recent interventions for user (Phase 2).
+        
+        Used for:
+        - Checking if intervention already sent for current pattern
+        - Historical pattern analysis
+        - Effectiveness tracking
+        
+        Args:
+            user_id: User ID
+            days: Number of days to look back
+            
+        Returns:
+            List of intervention dictionaries
+        """
+        try:
+            cutoff_date = datetime.utcnow() - timedelta(days=days)
+            
+            interventions_ref = (
+                self.db.collection('interventions')
+                .document(user_id)
+                .collection('interventions')
+                .where(filter=FieldFilter('sent_at', '>=', cutoff_date))
+                .order_by('sent_at', direction=firestore.Query.DESCENDING)
+            )
+            
+            docs = interventions_ref.stream()
+            
+            interventions = []
+            for doc in docs:
+                intervention_data = doc.to_dict()
+                intervention_data['id'] = doc.id
+                interventions.append(intervention_data)
+            
+            logger.info(f"✅ Fetched {len(interventions)} interventions for {user_id} (last {days} days)")
+            return interventions
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to fetch recent interventions: {e}")
+            return []
     
     # ===== Health Check =====
     

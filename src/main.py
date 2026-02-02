@@ -21,6 +21,7 @@ from fastapi import FastAPI, Request, HTTPException
 from telegram import Update
 import logging
 import sys
+from datetime import datetime
 
 from src.config import settings
 from src.bot.telegram_bot import bot_manager
@@ -242,26 +243,132 @@ async def root():
 @app.post("/trigger/pattern-scan")
 async def pattern_scan_trigger(request: Request):
     """
-    Trigger pattern detection scan (Phase 2).
+    Trigger pattern detection scan across all active users (Phase 2).
     
-    Called by Cloud Scheduler every 6 hours to scan for constitution violations.
+    Called by Cloud Scheduler every 6 hours to proactively detect constitution violations.
+    
+    Flow:
+    -----
+    1. Verify request is from Cloud Scheduler (security)
+    2. Get all active users (checked in within last 7 days)
+    3. For each user:
+       a. Get recent check-ins (last 7-14 days)
+       b. Run pattern detection
+       c. If patterns detected → generate intervention
+       d. Send intervention via Telegram
+       e. Log intervention in Firestore
+    4. Return scan summary
     
     Security: Verify request is from Cloud Scheduler (check header).
     
     Returns:
-        dict: Scan results
+        dict: Scan results (users scanned, patterns detected, interventions sent)
     """
-    # Verify request is from Cloud Scheduler
+    from src.agents.pattern_detection import get_pattern_detection_agent
+    from src.agents.intervention import get_intervention_agent
+    
+    # Verify request is from Cloud Scheduler (optional but recommended)
     scheduler_header = request.headers.get("X-CloudScheduler-JobName")
+    logger.info(f"📡 Pattern scan triggered by: {scheduler_header or 'manual/unknown'}")
     
-    # For now, just log and return success (Phase 2 will implement full scan)
-    logger.info(f"Pattern scan triggered by: {scheduler_header or 'unknown'}")
+    # Security: In production, enforce Cloud Scheduler authentication
+    # if settings.environment == "production" and scheduler_header != "pattern-scan-job":
+    #     raise HTTPException(403, "Unauthorized: Not from Cloud Scheduler")
     
-    return {
-        "status": "scan_complete",
-        "phase": "Phase 2 not yet implemented",
-        "patterns_detected": 0
-    }
+    try:
+        # Get pattern detection and intervention agents
+        pattern_agent = get_pattern_detection_agent()
+        intervention_agent = get_intervention_agent(settings.gcp_project_id)
+        
+        # Get all active users (checked in within last 7 days)
+        # For now, we'll scan all users (Phase 1 doesn't have "active users" method)
+        # In production, add get_active_users(days=7) to firestore_service
+        all_users = firestore_service.get_all_users()
+        
+        logger.info(f"🔍 Scanning {len(all_users)} users for patterns...")
+        
+        users_scanned = 0
+        patterns_detected = 0
+        interventions_sent = 0
+        errors = 0
+        
+        for user in all_users:
+            try:
+                users_scanned += 1
+                
+                # Get recent check-ins (last 14 days for comprehensive detection)
+                checkins = firestore_service.get_recent_checkins(user.user_id, days=14)
+                
+                if not checkins:
+                    logger.debug(f"User {user.user_id}: No recent check-ins, skipping")
+                    continue
+                
+                # Run pattern detection
+                patterns = pattern_agent.detect_patterns(checkins)
+                
+                if patterns:
+                    logger.warning(f"⚠️  User {user.user_id}: {len(patterns)} pattern(s) detected")
+                    patterns_detected += len(patterns)
+                    
+                    # Generate and send intervention for each pattern
+                    for pattern in patterns:
+                        try:
+                            # Generate intervention message
+                            intervention_msg = await intervention_agent.generate_intervention(
+                                user_id=user.user_id,
+                                pattern=pattern
+                            )
+                            
+                            # Send intervention via Telegram
+                            await bot_manager.send_message(
+                                chat_id=user.user_id,
+                                text=intervention_msg
+                            )
+                            
+                            interventions_sent += 1
+                            
+                            # Log intervention in Firestore
+                            firestore_service.log_intervention(
+                                user_id=user.user_id,
+                                pattern_type=pattern.type,
+                                severity=pattern.severity,
+                                data=pattern.data,
+                                message=intervention_msg
+                            )
+                            
+                            logger.info(f"✅ Sent {pattern.severity} intervention to {user.user_id}: {pattern.type}")
+                            
+                        except Exception as e:
+                            logger.error(f"❌ Failed to send intervention to {user.user_id}: {e}")
+                            errors += 1
+                else:
+                    logger.debug(f"User {user.user_id}: No patterns detected (compliant)")
+            
+            except Exception as e:
+                logger.error(f"❌ Error scanning user {user.user_id}: {e}")
+                errors += 1
+                continue
+        
+        # Return scan summary
+        result = {
+            "status": "scan_complete",
+            "timestamp": datetime.utcnow().isoformat(),
+            "users_scanned": users_scanned,
+            "patterns_detected": patterns_detected,
+            "interventions_sent": interventions_sent,
+            "errors": errors
+        }
+        
+        logger.info(
+            f"✅ Pattern scan complete: {users_scanned} users scanned, "
+            f"{patterns_detected} patterns detected, {interventions_sent} interventions sent"
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Pattern scan failed: {e}", exc_info=True)
+        raise HTTPException(500, f"Pattern scan failed: {str(e)}")
 
 
 # ===== Error Handlers =====
