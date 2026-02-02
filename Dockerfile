@@ -15,14 +15,14 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # ===== Python Dependencies =====
-# Copy requirements-phase1.txt first (for Docker layer caching)
-# Phase 1 dependencies only (no LangChain conflicts)
-# If requirements-phase1.txt doesn't change, Docker reuses this layer (faster builds)
-COPY requirements-phase1.txt .
+# Copy requirements.txt first (for Docker layer caching)
+# Phase 2 dependencies (includes Vertex AI for Gemini)
+# If requirements.txt doesn't change, Docker reuses this layer (faster builds)
+COPY requirements.txt .
 
 # Install Python dependencies
 # --no-cache-dir: Don't cache pip packages (smaller image)
-RUN pip install --no-cache-dir -r requirements-phase1.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # ===== Application Code =====
 # Copy entire application
