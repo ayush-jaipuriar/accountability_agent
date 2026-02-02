@@ -29,19 +29,19 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # ===== Environment Variables =====
-# These can be overridden by Cloud Run
+# These will be set by Cloud Run
 ENV PYTHONUNBUFFERED=1
-ENV PORT=8000
 ENV ENVIRONMENT=production
 
 # ===== Expose Port =====
-# Document which port the app listens on
-EXPOSE 8000
+# Cloud Run will set PORT environment variable (typically 8080)
+# EXPOSE is just documentation, actual port comes from $PORT
+EXPOSE 8080
 
 # ===== Health Check =====
-# Docker can periodically check if container is healthy
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+# Cloud Run has its own health checks, so disable Docker healthcheck
+# (it was checking wrong port anyway)
+# HEALTHCHECK NONE
 
 # ===== Run Application =====
 # Use exec form (not shell form) for better signal handling
