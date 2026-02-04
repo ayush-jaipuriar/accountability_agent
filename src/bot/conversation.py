@@ -39,9 +39,9 @@ from src.services.firestore_service import firestore_service
 from src.models.schemas import (
     DailyCheckIn,
     Tier1NonNegotiables,
-    CheckInResponses,
-    get_current_date_ist
+    CheckInResponses
 )
+from src.utils.timezone_utils import get_current_date_ist, get_checkin_date
 from src.utils.compliance import calculate_compliance_score, format_compliance_message
 from src.utils.streak import update_streak_data, format_streak_message
 from src.agents.checkin_agent import get_checkin_agent
@@ -82,11 +82,11 @@ async def start_checkin(
         )
         return ConversationHandler.END
     
-    # Check if already checked in today
-    today = get_current_date_ist()
-    if firestore_service.checkin_exists(user_id, today):
+    # Check if already checked in today (Phase 3A: Use 3 AM cutoff logic)
+    checkin_date = get_checkin_date()  # Before 3 AM = previous day, after = current day
+    if firestore_service.checkin_exists(user_id, checkin_date):
         await update.message.reply_text(
-            f"✅ You've already completed today's check-in!\n\n"
+            f"✅ You've already completed your check-in for {checkin_date}!\n\n"
             f"🔥 Current streak: {user.streaks.current_streak} days\n"
             f"🏆 Personal best: {user.streaks.longest_streak} days\n\n"
             f"See you tomorrow at 9 PM for your next check-in! 💪"
@@ -97,7 +97,7 @@ async def start_checkin(
     context.user_data.clear()  # Clear any previous data
     context.user_data['user_id'] = user_id
     context.user_data['checkin_start_time'] = datetime.utcnow()
-    context.user_data['date'] = today
+    context.user_data['date'] = checkin_date  # Phase 3A: Use 3 AM cutoff
     context.user_data['mode'] = user.constitution_mode
     
     # Start Question 1: Tier 1 non-negotiables

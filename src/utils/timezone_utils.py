@@ -59,6 +59,63 @@ def get_current_date_ist() -> str:
     return now_ist.strftime("%Y-%m-%d")
 
 
+def get_checkin_date(current_time: Optional[datetime] = None) -> str:
+    """
+    Determine which date a check-in should count for (Phase 3A Late Check-In Support).
+    
+    **3 AM Cutoff Rule:**
+    - Check-in before 3 AM → Counts for PREVIOUS day (late check-in)
+    - Check-in after 3 AM → Counts for CURRENT day (normal check-in)
+    
+    **Why 3 AM?**
+    From constitution:
+    - Some users work late or have irregular sleep schedules
+    - 3 AM gives 3-hour grace period after midnight
+    - Still maintains "daily" discipline without being too lenient
+    
+    **Examples:**
+    - 11:30 PM Feb 3 → Counts for Feb 3 (normal)
+    - 12:30 AM Feb 4 → Counts for Feb 3 (late check-in)
+    - 2:45 AM Feb 4 → Counts for Feb 3 (late check-in)
+    - 3:05 AM Feb 4 → Counts for Feb 4 (new day)
+    
+    Args:
+        current_time: Datetime to check (defaults to now). If naive, assumes IST.
+        
+    Returns:
+        str: Date in YYYY-MM-DD format that check-in should count for
+        
+    Phase 3A Integration:
+    ---------------------
+    Use this instead of get_current_date_ist() when storing check-ins
+    to support late check-ins properly.
+    """
+    from datetime import timedelta
+    
+    # Get current time in IST
+    if current_time is None:
+        ist_time = get_current_time_ist()
+    else:
+        # Convert to IST if not already
+        if current_time.tzinfo is None:
+            # Assume IST if naive
+            ist_time = IST.localize(current_time)
+        elif current_time.tzinfo != IST:
+            ist_time = utc_to_ist(current_time)
+        else:
+            ist_time = current_time
+    
+    # Check if before 3 AM
+    if ist_time.hour < 3:
+        # Before 3 AM = count for previous day
+        checkin_date = (ist_time - timedelta(days=1)).date()
+    else:
+        # After 3 AM = count for current day
+        checkin_date = ist_time.date()
+    
+    return checkin_date.strftime("%Y-%m-%d")
+
+
 def utc_to_ist(utc_datetime: datetime) -> datetime:
     """
     Convert UTC datetime to IST.

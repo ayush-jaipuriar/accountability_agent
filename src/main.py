@@ -371,6 +371,254 @@ async def pattern_scan_trigger(request: Request):
         raise HTTPException(500, f"Pattern scan failed: {str(e)}")
 
 
+# ===== Phase 3A: Triple Reminder System =====
+
+@app.post("/cron/reminder_first")
+async def reminder_first(request: Request):
+    """
+    First daily reminder at 9:00 PM IST (Phase 3A Killer Feature).
+    
+    Tone: Friendly and inviting
+    
+    Triggered by Cloud Scheduler daily at 9:00 PM IST.
+    Finds all users who haven't checked in today and sends friendly reminder.
+    
+    Returns:
+        dict: Reminder results (users reminded)
+    """
+    from src.utils.timezone_utils import get_current_date_ist
+    
+    scheduler_header = request.headers.get("X-CloudScheduler-JobName")
+    logger.info(f"🔔 First reminder triggered by: {scheduler_header or 'manual'}")
+    
+    try:
+        today = get_current_date_ist()
+        users_without_checkin = firestore_service.get_users_without_checkin_today(today)
+        
+        logger.info(f"📤 Sending first reminder to {len(users_without_checkin)} users")
+        
+        reminders_sent = 0
+        errors = 0
+        
+        for user in users_without_checkin:
+            try:
+                # Check if reminder already sent today
+                reminder_status = firestore_service.get_reminder_status(user.user_id, today)
+                if reminder_status and reminder_status.get("first_sent"):
+                    logger.debug(f"User {user.user_id}: First reminder already sent today, skipping")
+                    continue
+                
+                # Send friendly first reminder
+                message = (
+                    f"🔔 **Daily Check-In Time!**\n\n"
+                    f"Hey {user.name}! It's 9 PM - time for your daily check-in.\n\n"
+                    f"🔥 Current streak: {user.streaks.current_streak} days\n"
+                    f"🎯 Mode: {user.constitution_mode.title()}\n\n"
+                    f"Ready to keep the momentum going?\n\n"
+                    f"Use /checkin to start! 💪"
+                )
+                
+                await bot_manager.bot.send_message(
+                    chat_id=user.telegram_id,
+                    text=message
+                )
+                
+                # Mark reminder as sent
+                firestore_service.set_reminder_sent(user.user_id, today, "first")
+                reminders_sent += 1
+                
+                logger.info(f"✅ Sent first reminder to {user.user_id} ({user.name})")
+                
+            except Exception as e:
+                logger.error(f"❌ Failed to send first reminder to {user.user_id}: {e}")
+                errors += 1
+        
+        result = {
+            "status": "reminders_sent",
+            "reminder_type": "first",
+            "time": "21:00 IST",
+            "timestamp": datetime.utcnow().isoformat(),
+            "users_without_checkin": len(users_without_checkin),
+            "reminders_sent": reminders_sent,
+            "errors": errors
+        }
+        
+        logger.info(f"✅ First reminder complete: {reminders_sent} sent, {errors} errors")
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ First reminder failed: {e}", exc_info=True)
+        raise HTTPException(500, f"First reminder failed: {str(e)}")
+
+
+@app.post("/cron/reminder_second")
+async def reminder_second(request: Request):
+    """
+    Second daily reminder at 9:30 PM IST (Phase 3A).
+    
+    Tone: Nudge - slightly more urgent
+    
+    Triggered by Cloud Scheduler daily at 9:30 PM IST.
+    Finds users who still haven't checked in after first reminder.
+    
+    Returns:
+        dict: Reminder results (users reminded)
+    """
+    from src.utils.timezone_utils import get_current_date_ist
+    
+    scheduler_header = request.headers.get("X-CloudScheduler-JobName")
+    logger.info(f"🔔 Second reminder triggered by: {scheduler_header or 'manual'}")
+    
+    try:
+        today = get_current_date_ist()
+        users_without_checkin = firestore_service.get_users_without_checkin_today(today)
+        
+        logger.info(f"📤 Sending second reminder to {len(users_without_checkin)} users")
+        
+        reminders_sent = 0
+        errors = 0
+        
+        for user in users_without_checkin:
+            try:
+                # Check if second reminder already sent
+                reminder_status = firestore_service.get_reminder_status(user.user_id, today)
+                if reminder_status and reminder_status.get("second_sent"):
+                    logger.debug(f"User {user.user_id}: Second reminder already sent today, skipping")
+                    continue
+                
+                # Send nudge reminder
+                message = (
+                    f"👋 **Still There?**\n\n"
+                    f"Hey {user.name}, your daily check-in is waiting!\n\n"
+                    f"🔥 Don't break your {user.streaks.current_streak}-day streak\n"
+                    f"⏰ Check-in closes at midnight\n\n"
+                    f"Just takes 2 minutes: /checkin"
+                )
+                
+                await bot_manager.bot.send_message(
+                    chat_id=user.telegram_id,
+                    text=message
+                )
+                
+                # Mark reminder as sent
+                firestore_service.set_reminder_sent(user.user_id, today, "second")
+                reminders_sent += 1
+                
+                logger.info(f"✅ Sent second reminder to {user.user_id} ({user.name})")
+                
+            except Exception as e:
+                logger.error(f"❌ Failed to send second reminder to {user.user_id}: {e}")
+                errors += 1
+        
+        result = {
+            "status": "reminders_sent",
+            "reminder_type": "second",
+            "time": "21:30 IST",
+            "timestamp": datetime.utcnow().isoformat(),
+            "users_without_checkin": len(users_without_checkin),
+            "reminders_sent": reminders_sent,
+            "errors": errors
+        }
+        
+        logger.info(f"✅ Second reminder complete: {reminders_sent} sent, {errors} errors")
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Second reminder failed: {e}", exc_info=True)
+        raise HTTPException(500, f"Second reminder failed: {str(e)}")
+
+
+@app.post("/cron/reminder_third")
+async def reminder_third(request: Request):
+    """
+    Third daily reminder at 10:00 PM IST (Phase 3A).
+    
+    Tone: Urgent - last chance to maintain streak
+    
+    Triggered by Cloud Scheduler daily at 10:00 PM IST.
+    Final reminder before midnight cutoff. Emphasizes streak protection.
+    
+    Returns:
+        dict: Reminder results (users reminded)
+    """
+    from src.utils.timezone_utils import get_current_date_ist
+    
+    scheduler_header = request.headers.get("X-CloudScheduler-JobName")
+    logger.info(f"🔔 Third reminder triggered by: {scheduler_header or 'manual'}")
+    
+    try:
+        today = get_current_date_ist()
+        users_without_checkin = firestore_service.get_users_without_checkin_today(today)
+        
+        logger.info(f"📤 Sending third (urgent) reminder to {len(users_without_checkin)} users")
+        
+        reminders_sent = 0
+        errors = 0
+        
+        for user in users_without_checkin:
+            try:
+                # Check if third reminder already sent
+                reminder_status = firestore_service.get_reminder_status(user.user_id, today)
+                if reminder_status and reminder_status.get("third_sent"):
+                    logger.debug(f"User {user.user_id}: Third reminder already sent today, skipping")
+                    continue
+                
+                # Send urgent reminder with streak shield info
+                message = (
+                    f"⚠️ **URGENT: Check-In Closing Soon!**\n\n"
+                    f"⏰ Only 2 hours left until midnight!\n"
+                    f"🔥 Your {user.streaks.current_streak}-day streak is at risk\n\n"
+                )
+                
+                # Add streak shield information
+                if user.streak_shields.available > 0:
+                    message += (
+                        f"🛡️ You have {user.streak_shields.available} streak shield(s) available\n"
+                        f"   (Use if you absolutely can't check in tonight)\n\n"
+                    )
+                else:
+                    message += (
+                        f"🛡️ No streak shields remaining - this is critical!\n\n"
+                    )
+                
+                message += (
+                    f"**Don't let one missed day undo {user.streaks.current_streak} days of work.**\n\n"
+                    f"Check in NOW: /checkin"
+                )
+                
+                await bot_manager.bot.send_message(
+                    chat_id=user.telegram_id,
+                    text=message
+                )
+                
+                # Mark reminder as sent
+                firestore_service.set_reminder_sent(user.user_id, today, "third")
+                reminders_sent += 1
+                
+                logger.info(f"✅ Sent third (urgent) reminder to {user.user_id} ({user.name})")
+                
+            except Exception as e:
+                logger.error(f"❌ Failed to send third reminder to {user.user_id}: {e}")
+                errors += 1
+        
+        result = {
+            "status": "reminders_sent",
+            "reminder_type": "third",
+            "time": "22:00 IST",
+            "timestamp": datetime.utcnow().isoformat(),
+            "users_without_checkin": len(users_without_checkin),
+            "reminders_sent": reminders_sent,
+            "errors": errors
+        }
+        
+        logger.info(f"✅ Third reminder complete: {reminders_sent} sent, {errors} errors")
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Third reminder failed: {e}", exc_info=True)
+        raise HTTPException(500, f"Third reminder failed: {str(e)}")
+
+
 # ===== Error Handlers =====
 
 @app.exception_handler(Exception)

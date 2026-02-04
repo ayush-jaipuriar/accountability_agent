@@ -32,7 +32,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List
 import logging
 
-from src.models.schemas import User, DailyCheckIn, UserStreaks
+from src.models.schemas import User, DailyCheckIn, UserStreaks, ReminderStatus, Achievement
 from src.utils.timezone_utils import get_current_date_ist, utc_to_ist
 
 
@@ -532,6 +532,314 @@ class FirestoreService:
         except Exception as e:
             logger.error(f"❌ Failed to fetch recent interventions: {e}")
             return []
+    
+    # ===== Phase 3A: Reminder System =====
+    
+    def get_users_without_checkin_today(self, today_date: str) -> List[User]:
+        """
+        Get all users who haven't completed check-in today.
+        
+        Used by reminder system to send reminders at 9 PM, 9:30 PM, 10 PM.
+        
+        Args:
+            today_date: Date in YYYY-MM-DD format
+            
+        Returns:
+            List of users without check-in for today
+        
+        Phase 3A Implementation Note:
+        -----------------------------
+        This queries ALL users and checks each one. For 10-50 users, this is fine.
+        For 1000+ users, we'd need to add a "last_checkin_date" field to users
+        collection and query directly (but that adds complexity).
+        """
+        try:
+            all_users = self.get_active_users()
+            users_without_checkin = []
+            
+            for user in all_users:
+                checkin = self.get_checkin(user.user_id, today_date)
+                if not checkin:
+                    users_without_checkin.append(user)
+            
+            logger.info(
+                f"✅ Found {len(users_without_checkin)}/{len(all_users)} users "
+                f"without check-in for {today_date}"
+            )
+            return users_without_checkin
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to get users without check-in: {e}")
+            return []
+    
+    def get_reminder_status(self, user_id: str, date: str) -> Optional[dict]:
+        """
+        Get reminder status for user on specific date.
+        
+        Args:
+            user_id: User ID
+            date: Date in YYYY-MM-DD format
+            
+        Returns:
+            Dictionary with reminder status or None if not found
+        """
+        try:
+            reminder_ref = (
+                self.db.collection('reminder_status')
+                .document(user_id)
+                .collection('dates')
+                .document(date)
+            )
+            doc = reminder_ref.get()
+            
+            if doc.exists:
+                return doc.to_dict()
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to get reminder status: {e}")
+            return None
+    
+    def set_reminder_sent(
+        self,
+        user_id: str,
+        date: str,
+        reminder_type: str  # 'first', 'second', or 'third'
+    ) -> None:
+        """
+        Mark reminder as sent for user.
+        
+        Prevents duplicate reminders: If user checks in after reminder_first,
+        don't send reminder_second.
+        
+        Args:
+            user_id: User ID
+            date: Date in YYYY-MM-DD format
+            reminder_type: 'first', 'second', or 'third'
+        """
+        try:
+            reminder_ref = (
+                self.db.collection('reminder_status')
+                .document(user_id)
+                .collection('dates')
+                .document(date)
+            )
+            
+            # Get existing status
+            doc = reminder_ref.get()
+            if doc.exists:
+                status = doc.to_dict()
+            else:
+                status = {
+                    "user_id": user_id,
+                    "date": date,
+                    "first_sent": False,
+                    "second_sent": False,
+                    "third_sent": False
+                }
+            
+            # Update specific reminder
+            status[f"{reminder_type}_sent"] = True
+            status[f"{reminder_type}_sent_at"] = datetime.utcnow()
+            
+            reminder_ref.set(status)
+            logger.info(f"✅ Marked {reminder_type} reminder sent for {user_id} on {date}")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to set reminder status: {e}")
+    
+    # ===== Phase 3A: Streak Shields =====
+    
+    def use_streak_shield(self, user_id: str) -> bool:
+        """
+        Use one streak shield to protect streak from breaking.
+        
+        Returns True if shield was available and used, False if no shields left.
+        
+        Args:
+            user_id: User ID
+            
+        Returns:
+            bool: True if shield used successfully
+        """
+        try:
+            user = self.get_user(user_id)
+            if not user:
+                return False
+            
+            # Check if shields available
+            if user.streak_shields.available <= 0:
+                logger.warning(f"⚠️ User {user_id} has no shields available")
+                return False
+            
+            # Use shield
+            user.streak_shields.used += 1
+            user.streak_shields.available = user.streak_shields.total - user.streak_shields.used
+            
+            # Update Firestore
+            user_ref = self.db.collection('users').document(user_id)
+            user_ref.update({
+                "streak_shields": user.streak_shields.model_dump(),
+                "updated_at": datetime.utcnow()
+            })
+            
+            logger.info(
+                f"✅ Used streak shield for {user_id}. "
+                f"Remaining: {user.streak_shields.available}/{user.streak_shields.total}"
+            )
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to use streak shield: {e}")
+            return False
+    
+    def reset_streak_shields(self, user_id: str) -> None:
+        """
+        Reset streak shields to full (3/3).
+        
+        Called monthly (every 30 days from last reset).
+        
+        Args:
+            user_id: User ID
+        """
+        try:
+            user = self.get_user(user_id)
+            if not user:
+                return
+            
+            # Reset shields
+            user.streak_shields.used = 0
+            user.streak_shields.available = user.streak_shields.total
+            user.streak_shields.last_reset = get_current_date_ist()
+            
+            # Update Firestore
+            user_ref = self.db.collection('users').document(user_id)
+            user_ref.update({
+                "streak_shields": user.streak_shields.model_dump(),
+                "updated_at": datetime.utcnow()
+            })
+            
+            logger.info(f"✅ Reset streak shields for {user_id} to {user.streak_shields.total}/{user.streak_shields.total}")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to reset streak shields: {e}")
+    
+    # ===== Phase 3A: Quick Check-In Counter =====
+    
+    def increment_quick_checkin_count(self, user_id: str) -> int:
+        """
+        Increment weekly quick check-in counter.
+        
+        Returns new count.
+        
+        Args:
+            user_id: User ID
+            
+        Returns:
+            int: New quick check-in count
+        """
+        try:
+            user_ref = self.db.collection('users').document(user_id)
+            user = self.get_user(user_id)
+            
+            if not user:
+                return 0
+            
+            new_count = user.quick_checkin_count + 1
+            
+            user_ref.update({
+                "quick_checkin_count": new_count,
+                "updated_at": datetime.utcnow()
+            })
+            
+            logger.info(f"✅ Incremented quick check-in count for {user_id}: {new_count}/2")
+            return new_count
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to increment quick check-in count: {e}")
+            return 0
+    
+    def reset_quick_checkin_counts(self) -> None:
+        """
+        Reset quick check-in counter for all users.
+        
+        Called every Monday at midnight by cron job.
+        """
+        try:
+            users = self.get_active_users()
+            
+            for user in users:
+                user_ref = self.db.collection('users').document(user.user_id)
+                user_ref.update({
+                    "quick_checkin_count": 0,
+                    "updated_at": datetime.utcnow()
+                })
+            
+            logger.info(f"✅ Reset quick check-in counts for {len(users)} users")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to reset quick check-in counts: {e}")
+    
+    # ===== Phase 3C: Achievements =====
+    
+    def unlock_achievement(self, user_id: str, achievement_id: str) -> None:
+        """
+        Unlock achievement for user.
+        
+        Args:
+            user_id: User ID
+            achievement_id: Achievement ID (e.g., "week_warrior")
+        """
+        try:
+            user = self.get_user(user_id)
+            if not user:
+                return
+            
+            # Check if already unlocked
+            if achievement_id in user.achievements:
+                logger.warning(f"⚠️ Achievement {achievement_id} already unlocked for {user_id}")
+                return
+            
+            # Add to achievements list
+            user_ref = self.db.collection('users').document(user_id)
+            user_ref.update({
+                "achievements": firestore.ArrayUnion([achievement_id]),
+                "updated_at": datetime.utcnow()
+            })
+            
+            logger.info(f"✅ Unlocked achievement '{achievement_id}' for {user_id}")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to unlock achievement: {e}")
+    
+    # ===== Phase 3B: Accountability Partners =====
+    
+    def set_accountability_partner(
+        self,
+        user_id: str,
+        partner_id: str,
+        partner_name: str
+    ) -> None:
+        """
+        Link two users as accountability partners.
+        
+        Args:
+            user_id: Primary user ID
+            partner_id: Partner user ID
+            partner_name: Partner's display name
+        """
+        try:
+            user_ref = self.db.collection('users').document(user_id)
+            user_ref.update({
+                "accountability_partner_id": partner_id,
+                "accountability_partner_name": partner_name,
+                "updated_at": datetime.utcnow()
+            })
+            
+            logger.info(f"✅ Set accountability partner for {user_id}: {partner_name} ({partner_id})")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to set accountability partner: {e}")
     
     # ===== Health Check =====
     

@@ -297,3 +297,57 @@ def is_streak_at_risk(last_checkin_date: str) -> bool:
     
     # If 1 or more days have passed since last check-in, streak is at risk
     return days_diff >= 1
+
+
+# ===== Phase 3A: Streak Shields =====
+
+def should_reset_streak_shields(last_reset_date: Optional[str]) -> bool:
+    """
+    Check if 30 days have passed since last shield reset (Phase 3A).
+    
+    Streak shields reset every 30 days to 3/3.
+    
+    Args:
+        last_reset_date: Last reset date (YYYY-MM-DD) or None if never reset
+        
+    Returns:
+        bool: True if shields should be reset
+    """
+    if last_reset_date is None:
+        # First time - reset needed
+        return True
+    
+    from src.models.schemas import get_current_date_ist
+    
+    current_date = get_current_date_ist()
+    last_reset = datetime.strptime(last_reset_date, "%Y-%m-%d")
+    curr_date_dt = datetime.strptime(current_date, "%Y-%m-%d")
+    
+    days_diff = (curr_date_dt - last_reset).days
+    
+    # Reset every 30 days
+    return days_diff >= 30
+
+
+def calculate_days_without_checkin(last_checkin_date: Optional[str]) -> int:
+    """
+    Calculate how many days since last check-in (Phase 3A).
+    
+    Used for ghosting detection and streak shield decisions.
+    
+    Args:
+        last_checkin_date: Last check-in date (YYYY-MM-DD) or None
+        
+    Returns:
+        int: Days since last check-in (0 if checked in today, -1 if never)
+    """
+    if last_checkin_date is None:
+        return -1  # Never checked in
+    
+    from src.models.schemas import get_current_date_ist
+    
+    current_date = get_current_date_ist()
+    last_date = datetime.strptime(last_checkin_date, "%Y-%m-%d")
+    curr_date_dt = datetime.strptime(current_date, "%Y-%m-%d")
+    
+    return (curr_date_dt - last_date).days

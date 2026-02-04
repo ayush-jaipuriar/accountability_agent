@@ -19,10 +19,44 @@ Key Concepts:
 
 from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, Dict
 
 
 # ===== User Models =====
+
+class ReminderTimes(BaseModel):
+    """
+    Configurable reminder times for daily check-ins.
+    
+    Phase 3A: Triple reminder system
+    - First: Friendly reminder (9:00 PM)
+    - Second: Nudge (9:30 PM)
+    - Third: Urgent reminder (10:00 PM)
+    
+    Future: Per-user customizable times
+    """
+    first: str = "21:00"   # HH:MM format (9:00 PM)
+    second: str = "21:30"  # HH:MM format (9:30 PM)
+    third: str = "22:00"   # HH:MM format (10:00 PM)
+
+
+class StreakShields(BaseModel):
+    """
+    Streak protection system (gamification feature).
+    
+    Concept:
+    - Users get 3 shields per 30 days
+    - Shields can be used to prevent streak break
+    - Monthly reset encourages consistent check-ins
+    
+    Example: User on 47-day streak misses a day → can use shield to protect streak
+    """
+    total: int = 3                    # Max shields allowed
+    used: int = 0                     # Shields used this period
+    available: int = 3                # Remaining shields (total - used)
+    earned_at: List[str] = Field(default_factory=list)  # Dates when shields were earned
+    last_reset: Optional[str] = None  # Last monthly reset date (YYYY-MM-DD)
+
 
 class UserStreaks(BaseModel):
     """
@@ -43,14 +77,19 @@ class User(BaseModel):
     """
     User profile stored in Firestore users/ collection.
     
+    Phase 1-2 Fields: Basic profile + streaks
+    Phase 3 Fields: Multi-user support, reminders, gamification, accountability
+    
     Example:
         user = User(
             user_id="123456789",
             telegram_id=123456789,
             name="Ayush",
-            timezone="Asia/Kolkata"
+            timezone="Asia/Kolkata",
+            career_mode="skill_building"
         )
     """
+    # ===== Core Profile (Phase 1-2) =====
     user_id: str                                  # Primary key (Telegram user ID as string)
     telegram_id: int                              # Telegram user ID (integer)
     telegram_username: Optional[str] = None       # @username (may be None)
@@ -61,14 +100,34 @@ class User(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     
+    # ===== Phase 3A: Multi-User & Reminders =====
+    reminder_times: ReminderTimes = Field(default_factory=ReminderTimes)  # Reminder configuration
+    quick_checkin_count: int = Field(default=0, ge=0)  # Quick check-ins used this week (max 2)
+    streak_shields: StreakShields = Field(default_factory=StreakShields)  # Streak protection
+    
+    # ===== Phase 3B: Emotional Support & Accountability =====
+    accountability_partner_id: Optional[str] = None       # Linked user ID for accountability
+    accountability_partner_name: Optional[str] = None     # Partner's display name
+    
+    # ===== Phase 3C: Gamification =====
+    achievements: List[str] = Field(default_factory=list)  # Unlocked achievement IDs
+    level: int = Field(default=1, ge=1)                    # User level (future: XP-based)
+    xp: int = Field(default=0, ge=0)                       # Experience points (future)
+    
+    # ===== Phase 3D: Career Tracking =====
+    career_mode: str = "skill_building"  # skill_building | job_searching | employed
+    
     def to_firestore(self) -> dict:
         """
         Convert to Firestore-compatible dictionary.
         
         Firestore doesn't understand Pydantic models directly, so we convert
-        to a plain Python dict.
+        to a plain Python dict. All nested Pydantic models are converted using model_dump().
+        
+        Phase 3 Note: Includes all new Phase 3 fields with backward compatibility
         """
         return {
+            # Core profile
             "user_id": self.user_id,
             "telegram_id": self.telegram_id,
             "telegram_username": self.telegram_username,
@@ -77,7 +136,24 @@ class User(BaseModel):
             "streaks": self.streaks.model_dump(),  # Convert nested model to dict
             "constitution_mode": self.constitution_mode,
             "created_at": self.created_at,
-            "updated_at": self.updated_at
+            "updated_at": self.updated_at,
+            
+            # Phase 3A: Multi-user & Reminders
+            "reminder_times": self.reminder_times.model_dump(),
+            "quick_checkin_count": self.quick_checkin_count,
+            "streak_shields": self.streak_shields.model_dump(),
+            
+            # Phase 3B: Accountability
+            "accountability_partner_id": self.accountability_partner_id,
+            "accountability_partner_name": self.accountability_partner_name,
+            
+            # Phase 3C: Gamification
+            "achievements": self.achievements,
+            "level": self.level,
+            "xp": self.xp,
+            
+            # Phase 3D: Career
+            "career_mode": self.career_mode
         }
     
     @classmethod
@@ -85,17 +161,65 @@ class User(BaseModel):
         """
         Create User object from Firestore document.
         
+        Backward Compatibility: All Phase 3 fields have defaults, so existing
+        Phase 1-2 users will work without migration.
+        
         Args:
             data: Dictionary from Firestore document.data()
             
         Returns:
             User object with validated data
         """
-        # Convert nested dict back to UserStreaks
+        # Convert nested dicts back to Pydantic models
         if "streaks" in data and isinstance(data["streaks"], dict):
             data["streaks"] = UserStreaks(**data["streaks"])
         
+        # Phase 3A: Reminder times
+        if "reminder_times" in data and isinstance(data["reminder_times"], dict):
+            data["reminder_times"] = ReminderTimes(**data["reminder_times"])
+        
+        # Phase 3A: Streak shields
+        if "streak_shields" in data and isinstance(data["streak_shields"], dict):
+            data["streak_shields"] = StreakShields(**data["streak_shields"])
+        
         return cls(**data)
+
+
+# ===== Reminder Tracking Models (Phase 3A) =====
+
+class ReminderStatus(BaseModel):
+    """
+    Tracks which reminders have been sent today.
+    
+    Used to prevent spam: Don't send reminder_second if user already checked in
+    after reminder_first.
+    
+    Stored in Firestore: reminder_status/{user_id}/{date}
+    """
+    user_id: str
+    date: str  # YYYY-MM-DD
+    first_sent: bool = False
+    second_sent: bool = False
+    third_sent: bool = False
+    first_sent_at: Optional[datetime] = None
+    second_sent_at: Optional[datetime] = None
+    third_sent_at: Optional[datetime] = None
+
+
+class Achievement(BaseModel):
+    """
+    Achievement definition (global, not per-user).
+    
+    Stored in Firestore: achievements/{achievement_id}
+    
+    User unlocks are stored as list of IDs in User.achievements
+    """
+    achievement_id: str                 # Unique ID (e.g., "week_warrior")
+    name: str                           # Display name (e.g., "Week Warrior")
+    description: str                    # What it's for (e.g., "7-day streak")
+    icon: str                           # Emoji (e.g., "🏅")
+    criteria: Dict[str, int]            # Unlock criteria (e.g., {"streak": 7})
+    rarity: str = "common"              # common | rare | epic | legendary
 
 
 # ===== Check-In Models =====
