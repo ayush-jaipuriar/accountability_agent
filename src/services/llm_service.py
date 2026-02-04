@@ -92,7 +92,7 @@ class LLMService:
     async def generate_text(
         self,
         prompt: str,
-        max_output_tokens: int = 2048,  # Increased from 200 (gemini-2.5 needs higher limit)
+        max_output_tokens: int = 3072,  # Increased 1.5x from 2048 (gemini-2.5 with thinking disabled)
         temperature: float = 0.7,
         top_p: float = 0.95,
         top_k: int = 40
@@ -141,7 +141,11 @@ class LLMService:
                 max_output_tokens=max_output_tokens,
                 temperature=temperature,
                 top_p=top_p,
-                top_k=top_k
+                top_k=top_k,
+                # Disable thinking/reasoning mode for gemini-2.5-flash
+                # This prevents the model from spending tokens on internal reasoning
+                # Reference: https://cloud.google.com/vertex-ai/generative-ai/docs/thinking
+                thinking_budget=0
             )
             
             # Generate response

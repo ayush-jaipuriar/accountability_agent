@@ -169,7 +169,7 @@ class CheckInAgent:
             
             feedback = await self.llm.generate_text(
                 prompt=prompt,
-                max_output_tokens=2048,  # Allow up to 300 words
+                max_output_tokens=3072,  # Increased 1.5x from 2048 (gemini-2.5 with thinking disabled)
                 temperature=0.7  # Moderate creativity (not too robotic, not too random)
             )
             

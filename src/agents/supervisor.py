@@ -150,7 +150,7 @@ class SupervisorAgent:
         try:
             intent_response = await self.llm.generate_text(
                 prompt=prompt,
-                max_output_tokens=2048,  # Use higher limit for gemini-2.5
+                max_output_tokens=3072,  # Increased 1.5x from 2048 (gemini-2.5 with thinking disabled)
                 temperature=0.1  # Low temperature = deterministic
             )
             

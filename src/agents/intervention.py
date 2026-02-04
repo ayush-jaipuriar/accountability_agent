@@ -159,7 +159,7 @@ class InterventionAgent:
             
             intervention = await self.llm.generate_text(
                 prompt=prompt,
-                max_output_tokens=2048,  # Allow longer intervention
+                max_output_tokens=3072,  # Increased 1.5x from 2048 (gemini-2.5 with thinking disabled)
                 temperature=0.6  # Slightly lower than feedback (more serious tone)
             )
             
