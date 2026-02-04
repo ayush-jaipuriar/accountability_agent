@@ -262,9 +262,22 @@ USER CONTEXT:
 - Current streak: {streak} days
 - Last check-in: {last_checkin_str}
 
-INTENT OPTIONS:
+INTENT OPTIONS (in order of priority):
 
-1. **checkin** - User wants to start/continue their daily check-in
+1. **emotional** - User is expressing feelings, emotions, struggles, or seeking emotional support
+   CRITICAL: If the message contains ANY emotional keywords, classify as emotional
+   Emotional keywords: feeling, lonely, sad, anxious, stressed, urge, struggling, difficult, hard, help, support, worried, scared, frustrated
+   Examples:
+   - "I'm feeling lonely" or "feeling lonely tonight"
+   - "Having urges to watch porn" or "having urges right now"  
+   - "Feeling anxious" or "I feel anxious"
+   - "I'm struggling" or "struggling today"
+   - "Need help" or "need support"
+   - "Stressed about work"
+   - "Going through a breakup"
+   - "Feel like giving up"
+
+2. **checkin** - User wants to start/continue their daily check-in
    Examples:
    - "I'm ready to check in"
    - "Let's do this"
@@ -272,31 +285,28 @@ INTENT OPTIONS:
    - "Let's go"
    - "Ready"
 
-2. **emotional** - User is expressing difficult emotions or seeking support
-   Examples:
-   - "I'm feeling lonely today"
-   - "Having urges to watch porn"
-   - "Feeling anxious"
-   - "I'm struggling"
-   - "Need help"
-
-3. **query** - User is asking questions about their stats, constitution, or how the bot works
+3. **query** - User is asking factual questions about their stats, constitution, or how the bot works
    Examples:
    - "What's my streak?"
    - "Show my stats"
    - "What are the constitution rules?"
    - "How does this work?"
-   - "/status"
 
-4. **command** - User is issuing a bot command
+4. **command** - User is issuing a bot command (starts with /)
    Examples:
    - "/start"
    - "/help"
    - "/mode"
-   - "/export"
+   - "/status"
+
+CLASSIFICATION RULES:
+1. If message contains emotional words like "feeling", "lonely", "sad", "stressed", "urge" → classify as EMOTIONAL
+2. Emotional intent takes priority over query intent
+3. "I'm feeling X" or "feeling X" is ALWAYS emotional, never query
+4. If unsure between emotional and query, choose emotional
 
 INSTRUCTIONS:
-Respond with EXACTLY ONE WORD: checkin, emotional, query, or command
+Respond with EXACTLY ONE WORD: emotional, checkin, query, or command
 
 No explanation, no punctuation, just the intent word in lowercase.
 
