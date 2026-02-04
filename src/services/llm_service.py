@@ -152,16 +152,14 @@ class LLMService:
             input_tokens = self._count_tokens(prompt)
             logger.info(f"LLM request - Input tokens: {input_tokens}, Prompt preview: '{prompt[:100]}...'")
             
-            # Configure generation with thinking disabled
+            # Configure generation
+            # Note: thinking_config not yet supported in current google-genai SDK version
+            # TODO: Re-enable thinking_budget=0 when SDK supports it
             config = types.GenerateContentConfig(
                 temperature=temperature,
                 top_p=top_p,
                 top_k=top_k,
-                max_output_tokens=max_output_tokens,
-                # CRITICAL: Disable thinking mode to save tokens and cost
-                thinking_config=types.ThinkingConfig(
-                    thinking_budget=0  # 0 = no thinking tokens spent
-                )
+                max_output_tokens=max_output_tokens
             )
             
             # Generate response
