@@ -814,19 +814,52 @@ class FirestoreService:
     
     # ===== Phase 3B: Accountability Partners =====
     
+    def get_user_by_telegram_username(self, telegram_username: str) -> Optional[User]:
+        """
+        Find user by their Telegram username (Phase 3B).
+        
+        When user wants to link accountability partner with /set_partner @username,
+        this method searches Firestore for that username.
+        
+        Args:
+            telegram_username: Telegram username (without @ symbol)
+            
+        Returns:
+            User object if found, None otherwise
+        """
+        try:
+            users_ref = self.db.collection('users')
+            query = users_ref.where('telegram_username', '==', telegram_username).limit(1)
+            docs = query.stream()
+            
+            for doc in docs:
+                user_data = doc.to_dict()
+                logger.info(f"Found user by username: @{telegram_username} → {user_data.get('name')}")
+                return User.from_firestore(user_data)
+            
+            logger.info(f"No user found with username: @{telegram_username}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error finding user by username @{telegram_username}: {e}")
+            return None
+    
     def set_accountability_partner(
         self,
         user_id: str,
-        partner_id: str,
-        partner_name: str
+        partner_id: Optional[str],
+        partner_name: Optional[str]
     ) -> None:
         """
-        Link two users as accountability partners.
+        Link or unlink accountability partners (Phase 3B).
+        
+        To link: Pass partner_id and partner_name
+        To unlink: Pass None for both
         
         Args:
             user_id: Primary user ID
-            partner_id: Partner user ID
-            partner_name: Partner's display name
+            partner_id: Partner user ID (None to unlink)
+            partner_name: Partner's display name (None to unlink)
         """
         try:
             user_ref = self.db.collection('users').document(user_id)
@@ -836,10 +869,63 @@ class FirestoreService:
                 "updated_at": datetime.utcnow()
             })
             
-            logger.info(f"✅ Set accountability partner for {user_id}: {partner_name} ({partner_id})")
+            if partner_id:
+                logger.info(f"✅ Set accountability partner: {user_id} ↔️ {partner_name} ({partner_id})")
+            else:
+                logger.info(f"✅ Removed accountability partner for: {user_id}")
             
         except Exception as e:
             logger.error(f"❌ Failed to set accountability partner: {e}")
+    
+    def store_emotional_interaction(
+        self,
+        user_id: str,
+        emotion_type: str,
+        user_message: str,
+        bot_response: str,
+        timestamp: datetime
+    ) -> None:
+        """
+        Store emotional support interaction for tracking (Phase 3B).
+        
+        **What is This?**
+        Logs every time the emotional agent responds to a user. Useful for:
+        - Analytics: Which emotions are most common?
+        - Quality review: Are responses helpful?
+        - Pattern detection: User in emotional crisis frequently?
+        
+        **Database Structure:**
+        Collection: emotional_interactions
+        Document ID: Auto-generated
+        Fields:
+        - user_id: User ID
+        - emotion_type: Classified emotion
+        - user_message: Original user message
+        - bot_response: Bot's response
+        - timestamp: When interaction occurred
+        - created_at: Server timestamp
+        
+        Args:
+            user_id: User ID
+            emotion_type: Classified emotion (loneliness, porn_urge, etc.)
+            user_message: User's original message
+            bot_response: Bot's generated response
+            timestamp: Interaction timestamp
+        """
+        try:
+            self.db.collection('emotional_interactions').add({
+                'user_id': user_id,
+                'emotion_type': emotion_type,
+                'user_message': user_message,
+                'bot_response': bot_response,
+                'timestamp': timestamp,
+                'created_at': firestore.SERVER_TIMESTAMP
+            })
+            
+            logger.info(f"✅ Logged emotional interaction: {user_id} - {emotion_type}")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to log emotional interaction: {e}")
     
     # ===== Health Check =====
     

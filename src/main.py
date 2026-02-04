@@ -303,8 +303,15 @@ async def pattern_scan_trigger(request: Request):
                     logger.debug(f"User {user.user_id}: No recent check-ins, skipping")
                     continue
                 
-                # Run pattern detection
+                # Run pattern detection (check-in based patterns)
                 patterns = pattern_agent.detect_patterns(checkins)
+                
+                # Phase 3B: Check for ghosting (user-based pattern)
+                # Ghosting detection doesn't need check-ins - it looks at last_checkin_date
+                ghosting_pattern = pattern_agent.detect_ghosting(user.user_id)
+                if ghosting_pattern:
+                    patterns.append(ghosting_pattern)
+                    logger.warning(f"👻 User {user.user_id}: GHOSTING detected - {ghosting_pattern.data['days_missing']} days missing")
                 
                 if patterns:
                     logger.warning(f"⚠️  User {user.user_id}: {len(patterns)} pattern(s) detected")
@@ -337,6 +344,40 @@ async def pattern_scan_trigger(request: Request):
                             )
                             
                             logger.info(f"✅ Sent {pattern.severity} intervention to {user.user_id}: {pattern.type}")
+                            
+                            # Phase 3B: Day 5 ghosting → Notify accountability partner
+                            if pattern.type == "ghosting" and pattern.data.get("days_missing", 0) >= 5:
+                                if user.accountability_partner_id:
+                                    try:
+                                        partner = firestore_service.get_user(user.accountability_partner_id)
+                                        if partner:
+                                            days_missing = pattern.data["days_missing"]
+                                            last_checkin = pattern.data.get("last_checkin_date", "unknown")
+                                            
+                                            partner_msg = (
+                                                f"🚨 **Accountability Partner Alert**\n\n"
+                                                f"Your partner **{user.name}** hasn't checked in for **{days_missing} days**.\n\n"
+                                                f"Last check-in: {last_checkin}\n\n"
+                                                f"This is serious. Consider reaching out to check on them:\n"
+                                                f"• Text them directly\n"
+                                                f"• Call if you have their number\n"
+                                                f"• Make sure they're okay\n\n"
+                                                f"Sometimes people need a friend more than a bot."
+                                            )
+                                            
+                                            await bot_manager.send_message(
+                                                chat_id=partner.telegram_id,
+                                                text=partner_msg
+                                            )
+                                            
+                                            logger.info(
+                                                f"✅ Partner notification sent: {user.user_id} ghosted ({days_missing} days), "
+                                                f"notified partner {partner.user_id}"
+                                            )
+                                    except Exception as e:
+                                        logger.error(f"❌ Failed to notify partner for {user.user_id}: {e}")
+                                else:
+                                    logger.info(f"ℹ️ User {user.user_id} has no partner to notify (Day 5 ghosting)")
                             
                         except Exception as e:
                             logger.error(f"❌ Failed to send intervention to {user.user_id}: {e}")

@@ -21,7 +21,9 @@ from telegram.ext import (
     CommandHandler,
     CallbackContext,
     ContextTypes,
-    CallbackQueryHandler
+    CallbackQueryHandler,
+    MessageHandler,
+    filters
 )
 import logging
 
@@ -84,9 +86,23 @@ class TelegramBotManager:
         # Phase 3A: Streak shield command
         self.application.add_handler(CommandHandler("use_shield", self.use_shield_command))
         
+        # Phase 3B: Accountability partner commands
+        self.application.add_handler(CommandHandler("set_partner", self.set_partner_command))
+        self.application.add_handler(CommandHandler("unlink_partner", self.unlink_partner_command))
+        
         # Phase 3A: Callback query handlers for inline keyboard buttons
         self.application.add_handler(CallbackQueryHandler(self.mode_selection_callback, pattern="^mode_"))
         self.application.add_handler(CallbackQueryHandler(self.timezone_confirmation_callback, pattern="^tz_"))
+        
+        # Phase 3B: Partner request callbacks
+        self.application.add_handler(CallbackQueryHandler(self.accept_partner_callback, pattern="^accept_partner:"))
+        self.application.add_handler(CallbackQueryHandler(self.decline_partner_callback, pattern="^decline_partner:"))
+        
+        # Phase 3B: General message handler for emotional support and queries
+        # This catches all non-command text messages
+        self.application.add_handler(
+            MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_general_message)
+        )
         
         logger.info("✅ Command handlers registered")
     
@@ -408,7 +424,16 @@ class TelegramBotManager:
             "/checkin - Start daily check-in (4 questions)\n"
             "/status - View streak, compliance, and recent stats\n"
             "/mode - Change constitution mode (optimization/maintenance/survival)\n"
+            "/use_shield - Use a streak shield to protect your streak\n"
             "/help - Show this help message\n\n"
+            "**👥 Accountability Partners (Phase 3B):**\n"
+            "/set_partner @username - Link an accountability partner\n"
+            "/unlink_partner - Remove your accountability partner\n\n"
+            "**💭 Emotional Support (Phase 3B):**\n"
+            "Send a message describing how you're feeling:\n"
+            "• 'I'm feeling lonely tonight'\n"
+            "• 'Having urges right now'\n"
+            "• 'Feeling stressed about work'\n\n"
             "**🎯 How Check-Ins Work:**\n"
             "1. You'll be asked 4 questions\n"
             "2. Answer about your Tier 1 non-negotiables\n"
@@ -634,6 +659,339 @@ class TelegramBotManager:
                 f"Something went wrong. Please try again or contact support."
             )
             logger.error(f"❌ Failed to use streak shield for {user_id}")
+    
+    # ===== Phase 3B: Accountability Partner Commands =====
+    
+    async def set_partner_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle /set_partner @username command (Phase 3B).
+        
+        Allows user to request accountability partnership with another user.
+        
+        Flow:
+        1. User A sends /set_partner @UserB
+        2. Bot searches for User B by telegram username
+        3. Bot sends invite to User B with Accept/Decline buttons
+        4. User B clicks button
+        5. If accepted: Both users linked bidirectionally
+        
+        Why Bidirectional?
+        - Partner relationships are mutual
+        - Both users should consent
+        - Both users get notified if either ghosts
+        """
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+        
+        if not user:
+            await update.message.reply_text(
+                "❌ User not found. Please use /start first."
+            )
+            return
+        
+        # Parse @username from message
+        if not context.args or not context.args[0].startswith('@'):
+            await update.message.reply_text(
+                "❌ **Invalid usage**\n\n"
+                "Format: /set_partner @username\n\n"
+                "Example: /set_partner @john_doe"
+            )
+            return
+        
+        partner_username = context.args[0][1:]  # Remove @ symbol
+        
+        # Search for partner by telegram username
+        partner = firestore_service.get_user_by_telegram_username(partner_username)
+        
+        if not partner:
+            await update.message.reply_text(
+                f"❌ **User not found**\n\n"
+                f"User @{partner_username} hasn't started using the bot yet.\n\n"
+                "They need to send /start first!"
+            )
+            return
+        
+        # Check if trying to partner with self
+        if partner.user_id == user_id:
+            await update.message.reply_text(
+                "❌ You can't be your own accountability partner!"
+            )
+            return
+        
+        # Send invite to partner with inline buttons
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ Accept", callback_data=f"accept_partner:{user_id}"),
+                InlineKeyboardButton("❌ Decline", callback_data=f"decline_partner:{user_id}")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await context.bot.send_message(
+            chat_id=partner.telegram_id,
+            text=(
+                f"👥 **Accountability Partner Request**\n\n"
+                f"{user.name} wants to be your accountability partner.\n\n"
+                f"**What this means:**\n"
+                f"• You'll be notified if they ghost for 5+ days\n"
+                f"• They'll be notified if you ghost for 5+ days\n"
+                f"• Mutual support and motivation\n\n"
+                f"Accept this request?"
+            ),
+            reply_markup=reply_markup
+        )
+        
+        await update.message.reply_text(
+            f"✅ **Partner request sent to @{partner_username}!**\n\n"
+            f"Waiting for them to accept..."
+        )
+        
+        logger.info(f"✅ Partner request sent: {user_id} → {partner.user_id}")
+    
+    async def accept_partner_callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle partner request acceptance (Phase 3B).
+        
+        Callback data format: "accept_partner:<requester_user_id>"
+        """
+        query = update.callback_query
+        await query.answer()
+        
+        # Parse requester user_id from callback data
+        requester_user_id = query.data.split(':')[1]
+        accepter_user_id = str(query.from_user.id)
+        
+        # Get both users
+        requester = firestore_service.get_user(requester_user_id)
+        accepter = firestore_service.get_user(accepter_user_id)
+        
+        if not requester or not accepter:
+            await query.edit_message_text(
+                "❌ **Error:** One or both users not found."
+            )
+            return
+        
+        # Link partners bidirectionally
+        firestore_service.set_accountability_partner(
+            user_id=requester_user_id,
+            partner_id=accepter_user_id,
+            partner_name=accepter.name
+        )
+        
+        firestore_service.set_accountability_partner(
+            user_id=accepter_user_id,
+            partner_id=requester_user_id,
+            partner_name=requester.name
+        )
+        
+        # Notify both users
+        await query.edit_message_text(
+            f"✅ **Partnership Confirmed!**\n\n"
+            f"You and {requester.name} are now accountability partners.\n\n"
+            f"You'll be notified if they ghost for 5+ days, and vice versa."
+        )
+        
+        await context.bot.send_message(
+            chat_id=requester.telegram_id,
+            text=(
+                f"✅ **Partnership Confirmed!**\n\n"
+                f"{accepter.name} accepted your request!\n\n"
+                f"You're now accountability partners. 🤝"
+            )
+        )
+        
+        logger.info(f"✅ Partnership confirmed: {requester_user_id} ↔️ {accepter_user_id}")
+    
+    async def decline_partner_callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle partner request decline (Phase 3B).
+        
+        Callback data format: "decline_partner:<requester_user_id>"
+        """
+        query = update.callback_query
+        await query.answer()
+        
+        requester_user_id = query.data.split(':')[1]
+        decliner = firestore_service.get_user(str(query.from_user.id))
+        requester = firestore_service.get_user(requester_user_id)
+        
+        if not requester or not decliner:
+            await query.edit_message_text(
+                "❌ **Error:** User not found."
+            )
+            return
+        
+        await query.edit_message_text(
+            "❌ **Partnership declined.**"
+        )
+        
+        await context.bot.send_message(
+            chat_id=requester.telegram_id,
+            text=f"❌ {decliner.name} declined your partnership request."
+        )
+        
+        logger.info(f"❌ Partnership declined: {requester_user_id} ← {decliner.user_id}")
+    
+    async def unlink_partner_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle /unlink_partner command (Phase 3B).
+        
+        Allows user to remove their accountability partner.
+        Unlinks both users bidirectionally.
+        """
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+        
+        if not user:
+            await update.message.reply_text(
+                "❌ User not found. Please use /start first."
+            )
+            return
+        
+        if not user.accountability_partner_id:
+            await update.message.reply_text(
+                "❌ You don't have an accountability partner."
+            )
+            return
+        
+        partner = firestore_service.get_user(user.accountability_partner_id)
+        
+        if not partner:
+            # Partner user doesn't exist anymore (deleted account?)
+            # Just unlink on this side
+            firestore_service.set_accountability_partner(user_id, None, None)
+            await update.message.reply_text(
+                "✅ **Partnership removed.**"
+            )
+            return
+        
+        # Unlink bidirectionally
+        firestore_service.set_accountability_partner(user_id, None, None)
+        firestore_service.set_accountability_partner(partner.user_id, None, None)
+        
+        await update.message.reply_text(
+            f"✅ **Partnership with {partner.name} removed.**"
+        )
+        
+        await context.bot.send_message(
+            chat_id=partner.telegram_id,
+            text=f"👥 {user.name} has removed you as their accountability partner."
+        )
+        
+        logger.info(f"✅ Partnership unlinked: {user_id} ↔️ {partner.user_id}")
+    
+    # ===== Phase 3B: General Message Handler =====
+    
+    async def handle_general_message(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle general text messages (non-commands) - Phase 3B.
+        
+        **Flow:**
+        1. Use supervisor to classify intent (emotional, query, checkin)
+        2. Route to appropriate agent:
+           - emotional → Emotional Support Agent
+           - query → Query handler (future)
+           - checkin → Suggest /checkin command
+        
+        **Why This Handler?**
+        Users don't always use commands. They might say:
+        - "I'm feeling lonely" (emotional)
+        - "What's my streak?" (query)
+        - "Ready to check in" (checkin intent)
+        
+        This handler intelligently routes these messages.
+        """
+        user_id = str(update.effective_user.id)
+        message_text = update.message.text
+        
+        logger.info(f"📩 General message from {user_id}: '{message_text[:50]}...'")
+        
+        try:
+            # Import agents (avoid circular imports)
+            from src.agents.supervisor import SupervisorAgent
+            from src.agents.emotional_agent import get_emotional_agent
+            from src.agents.state import create_initial_state
+            
+            # Create supervisor
+            supervisor = SupervisorAgent(project_id=settings.gcp_project_id)
+            
+            # Create initial state
+            state = create_initial_state(
+                user_id=user_id,
+                message=message_text,
+                message_id=update.message.message_id,
+                username=update.effective_user.username
+            )
+            
+            # Classify intent
+            state = await supervisor.classify_intent(state)
+            intent = state.get("intent", "query")
+            
+            logger.info(f"🎯 Classified intent: {intent}")
+            
+            # Route based on intent
+            if intent == "emotional":
+                # Emotional support
+                emotional_agent = get_emotional_agent()
+                state = await emotional_agent.process(state)
+                
+                response = state.get("response", "I'm here to help. Could you tell me more?")
+                await update.message.reply_text(response)
+                
+                logger.info(f"✅ Emotional support provided to {user_id}")
+                
+            elif intent == "checkin":
+                # User wants to check in but didn't use command
+                await update.message.reply_text(
+                    "Ready to check in? Use the /checkin command to start!\n\n"
+                    "Or just say /checkin and we'll begin your daily accountability check."
+                )
+                
+            elif intent == "query":
+                # User asking a question
+                await update.message.reply_text(
+                    "I can help with that! Here are some useful commands:\n\n"
+                    "📊 /status - See your streak and stats\n"
+                    "✅ /checkin - Do your daily check-in\n"
+                    "❓ /help - See all available commands\n\n"
+                    "What would you like to do?"
+                )
+                
+            else:
+                # Unknown intent (shouldn't happen, but handle gracefully)
+                await update.message.reply_text(
+                    "I'm not sure how to help with that. Try:\n\n"
+                    "/help - See available commands\n"
+                    "/checkin - Start your daily check-in"
+                )
+        
+        except Exception as e:
+            logger.error(f"❌ Error handling general message: {e}", exc_info=True)
+            await update.message.reply_text(
+                "Sorry, I encountered an error. Please try again or use /help for available commands."
+            )
 
 
 # ===== Singleton Instance =====

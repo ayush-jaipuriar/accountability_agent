@@ -115,6 +115,9 @@ class InterventionAgent:
         """
         Generate intervention message for detected pattern
         
+        Phase 3B Update: Ghosting patterns use template-based messages (no LLM).
+        Other patterns use AI generation for personalization.
+        
         Args:
             user_id: User ID
             pattern: Detected pattern object
@@ -132,6 +135,14 @@ class InterventionAgent:
                 current_streak = 0
                 mode = "maintenance"
             
+            # Phase 3B: Ghosting patterns use template-based messages
+            if pattern.type == "ghosting":
+                logger.info(f"Generating ghosting intervention for user {user_id}: Day {pattern.data.get('days_missing', 0)}")
+                intervention = self._build_ghosting_intervention(pattern, user)
+                logger.info(f"✅ Generated ghosting intervention: {len(intervention)} chars")
+                return intervention
+            
+            # Other patterns: Use AI generation
             # Get relevant constitution section
             constitution_text = self._get_relevant_principle(pattern.type)
             
@@ -340,6 +351,107 @@ Reply with your plan to break this pattern.
 (Note: AI intervention temporarily unavailable - using basic template)"""
         
         return message
+    
+    def _build_ghosting_intervention(self, pattern: Pattern, user) -> str:
+        """
+        Build escalating ghosting intervention message (Phase 3B).
+        
+        **What is This?**
+        When a user disappears (ghosts) after missing check-ins, we send
+        escalating intervention messages based on how long they've been gone.
+        
+        **Why Escalating Messages?**
+        - Day 2: Gentle nudge (empathy first)
+        - Day 3: Firm warning (accountability)
+        - Day 4: Critical with historical reference (evidence-based urgency)
+        - Day 5+: Emergency with partner escalation (social support)
+        
+        **Message Structure:**
+        Each message includes:
+        1. Severity indicator (emoji)
+        2. Days missing count
+        3. Appropriate tone for severity level
+        4. Action prompt (/checkin command)
+        5. Context (streak at risk, shields available, etc.)
+        
+        **Theory - Progressive Escalation:**
+        Based on crisis intervention research:
+        - Start gentle (avoid defensiveness)
+        - Build urgency gradually
+        - Reference personal history (Feb 2025 spiral)
+        - Activate social support at Day 5 (partner notification)
+        
+        Args:
+            pattern: Ghosting pattern with days_missing, previous_streak, etc.
+            user: User object for personalization (streak, shields, partner)
+            
+        Returns:
+            Intervention message string (ready to send via Telegram)
+            
+        Example Output (Day 2):
+            "👋 **Missed you yesterday!**
+            
+            You had a 47-day streak going. Everything okay?
+            
+            Quick check-in: /checkin"
+        """
+        days = pattern.data["days_missing"]
+        streak = pattern.data.get("previous_streak", 0)
+        
+        # Day 2: Gentle Nudge
+        if days == 2:
+            return (
+                "👋 **Missed you yesterday!**\n\n"
+                f"You had a {streak}-day streak going. Everything okay?\n\n"
+                "Quick check-in: /checkin"
+            )
+        
+        # Day 3: Firm Warning
+        elif days == 3:
+            return (
+                "⚠️ **3 Days Missing**\n\n"
+                f"Your {streak}-day streak is at risk. This is a constitution violation.\n\n"
+                "Check in NOW to save your progress: /checkin"
+            )
+        
+        # Day 4: Critical with Historical Reference
+        elif days == 4:
+            return (
+                "🚨 **4-Day Absence - CRITICAL**\n\n"
+                f"You had a {streak}-day streak. Last time this happened (Feb 2025): "
+                "6-month spiral.\n\n"
+                "**Don't let history repeat.** Check in immediately: /checkin"
+            )
+        
+        # Day 5+: Emergency with Partner/Shield Info
+        else:  # 5+
+            # Add streak shield info if available
+            shield_text = ""
+            if hasattr(user, 'streak_shields') and user.streak_shields.available > 0:
+                shield_text = (
+                    f"\n\n🛡️ You have {user.streak_shields.available} streak shield(s) available. "
+                    "Use one: /use_shield"
+                )
+            
+            # Add partner notification info if partner exists
+            partner_text = ""
+            if hasattr(user, 'accountability_partner_name') and user.accountability_partner_name:
+                partner_text = (
+                    f"\n\n👥 I'm notifying your accountability partner "
+                    f"({user.accountability_partner_name})."
+                )
+            
+            return (
+                "🔴 **EMERGENCY - 5+ Days Missing**\n\n"
+                f"Your {streak}-day streak is gone. This is exactly how the Feb 2025 "
+                "regression started.\n\n"
+                "**You need help. Do this NOW:**\n"
+                "1. Check in: /checkin\n"
+                "2. Text a friend\n"
+                "3. Review your constitution"
+                f"{shield_text}"
+                f"{partner_text}"
+            )
 
 
 # Global instance

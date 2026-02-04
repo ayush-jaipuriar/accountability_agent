@@ -82,7 +82,8 @@ Why These Thresholds?
 
 from typing import List, Optional
 from datetime import datetime
-from src.models.schemas import DailyCheckIn
+from src.models.schemas import DailyCheckIn, User
+from src.services.firestore_service import firestore_service
 import logging
 
 logger = logging.getLogger(__name__)
@@ -389,6 +390,186 @@ class PatternDetectionAgent:
             )
         
         return None
+    
+    def detect_ghosting(self, user_id: str) -> Optional[Pattern]:
+        """
+        Detect missing check-ins with escalating severity (Phase 3B).
+        
+        **What is Ghosting?**
+        User ignores triple reminders → doesn't check in → disappears for multiple days.
+        
+        **Algorithm:**
+        1. Get user's last check-in date from Firestore
+        2. Calculate days since last check-in (today - last_checkin_date)
+        3. If days >= 2, create ghosting pattern
+        4. Map days to severity level
+        
+        **Severity Escalation:**
+        - Day 1: Grace period (triple reminders handle this) → No pattern
+        - Day 2: "nudge" severity → Gentle reminder
+        - Day 3: "warning" severity → Firm constitution reference
+        - Day 4: "critical" severity → Historical pattern reference
+        - Day 5+: "emergency" severity → Partner escalation
+        
+        **Why Day 2 threshold?**
+        - Day 1 is covered by Phase 3A triple reminders (9 PM, 9:30 PM, 10 PM)
+        - Day 2 means user ignored ALL 3 reminders → intervention needed
+        - Earlier detection = better chance of recovery
+        
+        **Data Collected:**
+        - days_missing: Number of days since last check-in
+        - last_checkin_date: When user last checked in
+        - previous_streak: What streak they had (for motivation)
+        - current_mode: Their constitution mode
+        
+        Args:
+            user_id: User ID to check for ghosting
+            
+        Returns:
+            Pattern object with ghosting data if detected, None otherwise
+            
+        Example:
+            User last checked in on Feb 2, today is Feb 4:
+            → days_since = 2
+            → severity = "nudge"
+            → Pattern created with message: "Missed you yesterday!"
+        """
+        # Get user data from Firestore
+        user = firestore_service.get_user(user_id)
+        
+        if not user or not user.streaks.last_checkin_date:
+            # User doesn't exist or has never checked in
+            logger.info(f"No ghosting check: User {user_id} has no last_checkin_date")
+            return None
+        
+        # Calculate days since last check-in
+        days_since = self._calculate_days_since_checkin(
+            user.streaks.last_checkin_date
+        )
+        
+        logger.info(f"Ghosting check: User {user_id} - {days_since} days since last check-in")
+        
+        # Day 1 = grace period (triple reminders handle it)
+        if days_since < 2:
+            return None
+        
+        # Day 2+ = ghosting detected
+        severity = self._get_ghosting_severity(days_since)
+        
+        pattern = Pattern(
+            type="ghosting",
+            severity=severity,
+            detected_at=datetime.utcnow(),
+            data={
+                "days_missing": days_since,
+                "last_checkin_date": user.streaks.last_checkin_date,
+                "previous_streak": user.streaks.current_streak,
+                "current_mode": user.constitution.current_mode if user.constitution else None
+            }
+        )
+        
+        logger.warning(
+            f"GHOSTING DETECTED: User {user_id} - {days_since} days missing - "
+            f"Severity: {severity}"
+        )
+        
+        return pattern
+    
+    def _calculate_days_since_checkin(self, last_checkin_date: str) -> int:
+        """
+        Calculate days between last check-in and today.
+        
+        **Why This Calculation?**
+        We need to know how many days user has been missing to:
+        1. Determine if ghosting is happening (>= 2 days)
+        2. Choose the right severity level
+        3. Generate specific intervention message
+        
+        **Date Math:**
+        - last_checkin_date: "2026-02-02" (string from Firestore)
+        - today: "2026-02-04" (current IST date)
+        - difference: 2 days
+        
+        **Why IST instead of UTC?**
+        - User is in India (IST timezone)
+        - "Today" for user is IST date, not UTC
+        - Prevents off-by-one errors near midnight
+        
+        Args:
+            last_checkin_date: Date string in format "YYYY-MM-DD" (IST)
+            
+        Returns:
+            Number of days since last check-in (integer)
+            
+        Example:
+            Last check-in: "2026-02-02"
+            Today (IST): "2026-02-04"
+            → Returns: 2 days
+        """
+        from datetime import datetime
+        from src.utils.timezone_utils import get_current_date_ist
+        
+        # Parse last check-in date
+        last_date = datetime.strptime(last_checkin_date, "%Y-%m-%d").date()
+        
+        # Get today's date in IST (user's timezone)
+        today_str = get_current_date_ist()
+        today = datetime.strptime(today_str, "%Y-%m-%d").date()
+        
+        # Calculate difference
+        days_since = (today - last_date).days
+        
+        return days_since
+    
+    def _get_ghosting_severity(self, days: int) -> str:
+        """
+        Map days missing to severity level.
+        
+        **Severity Levels Explained:**
+        
+        1. **Day 2 → "nudge"**
+           - User just missed one day
+           - Could be accident, busy day, forgot
+           - Message tone: Gentle, checking in
+           - Example: "👋 Missed you yesterday! Everything okay?"
+        
+        2. **Day 3 → "warning"**
+           - Pattern is emerging
+           - Missed 2 days in a row → not random
+           - Message tone: Firm, constitution reference
+           - Example: "⚠️ 3 days missing. Constitution violation."
+        
+        3. **Day 4 → "critical"**
+           - Serious situation
+           - Historical pattern reference (Feb 2025 spiral)
+           - Message tone: Urgent, evidence-based
+           - Example: "🚨 4-day absence. Last time: 6-month spiral."
+        
+        4. **Day 5+ → "emergency"**
+           - Emergency intervention
+           - Partner notification triggered
+           - Message tone: Alarm, social support activation
+           - Example: "🔴 EMERGENCY. Contact accountability partner NOW."
+        
+        **Why These Thresholds?**
+        - Research shows intervention effectiveness drops after Day 7
+        - Day 5 is inflection point where behavior becomes habit
+        - Partner escalation at Day 5 adds social accountability
+        
+        Args:
+            days: Number of days since last check-in
+            
+        Returns:
+            Severity string: "nudge" | "warning" | "critical" | "emergency"
+        """
+        if days == 2:
+            return "nudge"
+        elif days == 3:
+            return "warning"
+        elif days == 4:
+            return "critical"
+        else:  # 5+
+            return "emergency"
 
 
 # Global instance
