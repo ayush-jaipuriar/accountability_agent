@@ -155,11 +155,11 @@ class EmotionalSupportAgent:
             >>> print(updated_state.response)
             "I hear you. Loneliness is real..."
         """
-        logger.info(f"Processing emotional support for user {state.user_id}")
+        logger.info(f"Processing emotional support for user {state['user_id']}")
         
         try:
             # 1. Classify emotion type
-            emotion_type = await self._classify_emotion(state.message)
+            emotion_type = await self._classify_emotion(state["message"])
             logger.info(f"Classified emotion: {emotion_type}")
             
             # 2. Load protocol from constitution
@@ -170,21 +170,21 @@ class EmotionalSupportAgent:
                 protocol = self._get_emotional_protocol("general")
             
             # 3. Get user context for personalization
-            user = firestore_service.get_user(state.user_id)
+            user = firestore_service.get_user(state["user_id"])
             
             # 4. Generate personalized response
             response = await self._generate_emotional_response(
                 emotion_type=emotion_type,
-                user_message=state.message,
+                user_message=state["message"],
                 protocol=protocol,
                 user=user
             )
             
             # 5. Log emotional interaction
             firestore_service.store_emotional_interaction(
-                user_id=state.user_id,
+                user_id=state["user_id"],
                 emotion_type=emotion_type,
-                user_message=state.message,
+                user_message=state["message"],
                 bot_response=response,
                 timestamp=datetime.utcnow()
             )
