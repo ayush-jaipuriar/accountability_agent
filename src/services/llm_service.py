@@ -1,28 +1,35 @@
 """
-LLM Service - Vertex AI Wrapper for Gemini 2.0 Flash
+LLM Service - Google GenAI SDK Wrapper for Gemini 2.5 Flash
 
 This service handles all interactions with Google's Gemini LLM through Vertex AI.
 It provides a simple interface for text generation while tracking token usage and costs.
 
 Key Concepts:
 --------------
-1. **Vertex AI**: Google Cloud's unified AI platform
-   - Equivalent to OpenAI API but for Google models
-   - Handles authentication, billing, model serving
+1. **Google GenAI SDK**: Modern unified SDK for Gemini
+   - Supports both Gemini Developer API and Vertex AI
+   - Supports thinking_budget parameter (critical for cost optimization)
+   - Cleaner API than older vertexai SDK
    
-2. **Gemini 2.0 Flash**: The model we're using
+2. **Gemini 2.5 Flash**: The model we're using
    - Fast: <2 second response times
    - Cheap: $0.25/M input tokens, $0.50/M output tokens
    - Smart enough for our use cases (intent classification, feedback generation)
+   - Thinking mode can be disabled to save tokens!
    
 3. **Token Counting**: 
    - Tokens are the "units" of text the model processes
    - Roughly: 1 token ≈ 4 characters (or ~0.75 words)
    - We track every API call to stay under budget
    
-4. **Singleton Pattern**:
+4. **Thinking Budget Optimization**:
+   - Gemini 2.5 Flash has thinking/reasoning mode enabled by default
+   - This uses invisible tokens for internal reasoning
+   - We disable it with thinking_budget=0 to save ~40% on tokens!
+   
+5. **Singleton Pattern**:
    - Only one LLMService instance exists across the app
-   - Avoids re-initializing Vertex AI client multiple times
+   - Avoids re-initializing client multiple times
    - Accessed via get_llm_service() function
 
 Usage Example:
@@ -40,69 +47,72 @@ print(response)  # "checkin"
 ```
 """
 
-from google.cloud import aiplatform
-from vertexai.generative_models import GenerativeModel, GenerationConfig
-import vertexai
+from google import genai
+from google.genai import types
 import logging
 from typing import Optional
+import os
 
 logger = logging.getLogger(__name__)
 
 
 class LLMService:
     """
-    Wrapper for Vertex AI Gemini API calls
+    Wrapper for Google GenAI SDK Gemini API calls
     
     Handles:
-    - Vertex AI initialization
-    - Text generation with Gemini 2.0 Flash
+    - Google GenAI client initialization
+    - Text generation with Gemini 2.5 Flash
     - Token counting and cost tracking
+    - Thinking mode disabled for cost optimization
     - Error handling and retries
     """
     
     def __init__(self, project_id: str, location: str = "asia-south1", model_name: str = "gemini-2.5-flash"):
         """
-        Initialize Vertex AI client
+        Initialize Google GenAI client for Vertex AI
         
         Args:
             project_id: GCP project ID (e.g., "accountability-agent")
             location: GCP region (e.g., "asia-south1" for Mumbai)
-            model_name: Gemini model to use (e.g., "gemini-2.5-flash", "gemini-2.5-flash-lite")
+            model_name: Gemini model to use (e.g., "gemini-2.5-flash")
             
         Theory:
         -------
-        Vertex AI needs to know:
-        1. Which GCP project to bill (project_id)
-        2. Which region to route requests to (location)
-        3. Which model to use (model_name)
+        Google GenAI SDK needs environment variables for Vertex AI:
+        1. GOOGLE_CLOUD_PROJECT: Which GCP project to bill
+        2. GOOGLE_CLOUD_LOCATION: Which region to route requests to
+        3. GOOGLE_GENAI_USE_VERTEXAI: Set to "True" to use Vertex AI backend
         
         We use asia-south1 (Mumbai) for lowest latency from India.
         """
-        logger.info(f"Initializing Vertex AI - Project: {project_id}, Location: {location}, Model: {model_name}")
+        logger.info(f"Initializing Google GenAI SDK - Project: {project_id}, Location: {location}, Model: {model_name}")
         
-        # Initialize Vertex AI SDK
-        vertexai.init(project=project_id, location=location)
+        # Set environment variables for Vertex AI
+        os.environ["GOOGLE_CLOUD_PROJECT"] = project_id
+        os.environ["GOOGLE_CLOUD_LOCATION"] = location
+        os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
         
-        # Create Gemini model instance
-        self.model = GenerativeModel(model_name)
+        # Create GenAI client (will use Vertex AI backend due to env vars)
+        self.client = genai.Client()
         self.model_name = model_name
         
-        logger.info("Vertex AI initialized successfully")
+        logger.info("Google GenAI SDK initialized successfully with Vertex AI backend")
     
     async def generate_text(
         self,
         prompt: str,
-        max_output_tokens: int = 3072,  # Increased 1.5x from 2048 (gemini-2.5 with thinking disabled)
+        max_output_tokens: int = 3072,  # Increased 1.5x from 2048
         temperature: float = 0.7,
         top_p: float = 0.95,
         top_k: int = 40
     ) -> str:
         """
-        Generate text using Gemini 2.0 Flash
+        Generate text using Gemini 2.5 Flash with thinking disabled
         
         Args:
             prompt: The prompt to send to the model
-            max_output_tokens: Maximum response length (default: 200)
+            max_output_tokens: Maximum response length (default: 3072)
             temperature: Creativity level (0.0 = deterministic, 1.0 = creative, default: 0.7)
             top_p: Nucleus sampling threshold (default: 0.95)
             top_k: Top-k sampling (default: 40)
@@ -125,10 +135,16 @@ class LLMService:
            - 40 means "only sample from the 40 most likely next words"
            - Prevents nonsense by ignoring very rare words
         
+        4. **Thinking Budget = 0**: Disables internal reasoning
+           - Gemini 2.5 Flash normally uses tokens for "thinking"
+           - These thinking tokens are invisible but cost money
+           - Setting to 0 disables thinking = saves ~40% on tokens!
+        
         Cost Tracking:
         --------------
         - Input tokens: $0.25 per 1 million
         - Output tokens: $0.50 per 1 million
+        - Thinking tokens: $0 (disabled with thinking_budget=0)
         - We log every call with token counts and costs
         """
         try:
@@ -136,61 +152,53 @@ class LLMService:
             input_tokens = self._count_tokens(prompt)
             logger.info(f"LLM request - Input tokens: {input_tokens}, Prompt preview: '{prompt[:100]}...'")
             
-            # Configure generation parameters
-            # NOTE: thinking_budget parameter not supported in vertexai SDK v1.42.0
-            # Would need to upgrade to google-genai SDK to disable thinking mode
-            # For now, keeping increased token limits (1.5x) for better response quality
-            generation_config = GenerationConfig(
-                max_output_tokens=max_output_tokens,
+            # Configure generation with thinking disabled
+            config = types.GenerateContentConfig(
                 temperature=temperature,
                 top_p=top_p,
-                top_k=top_k
+                top_k=top_k,
+                max_output_tokens=max_output_tokens,
+                # CRITICAL: Disable thinking mode to save tokens and cost
+                thinking_config=types.ThinkingConfig(
+                    thinking_budget=0  # 0 = no thinking tokens spent
+                )
             )
             
             # Generate response
-            # Note: generate_content is synchronous in Vertex AI SDK
-            # We're in an async function, but this is a blocking call
-            # For production, consider using asyncio.to_thread() to avoid blocking
-            response = self.model.generate_content(
-                prompt,
-                generation_config=generation_config
+            # Note: This is synchronous but we're in async function
+            # The google-genai SDK doesn't have async methods yet
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config=config
             )
             
             # Extract text from response
-            # Handle cases where response might be blocked or empty
-            try:
-                output_text = response.text
-            except ValueError as e:
-                # Response was blocked (safety filters) or empty
-                logger.warning(f"Response has no text content: {e}")
-                # Check if response was blocked
-                if response.candidates and response.candidates[0].finish_reason:
-                    reason = response.candidates[0].finish_reason
-                    logger.warning(f"Response finish reason: {reason}")
-                    if reason == 1:  # STOP (normal completion)
-                        output_text = "(empty response)"
-                    elif reason == 2:  # MAX_TOKENS (hit token limit)
-                        logger.error(f"Response hit max_output_tokens limit ({max_output_tokens}). Consider increasing.")
-                        raise ValueError(f"Response hit token limit. Try increasing max_output_tokens.")
-                    elif reason == 3:  # SAFETY (blocked by safety filters)
-                        raise ValueError("Response blocked by safety filters. Try rephrasing the prompt.")
-                    elif reason == 4:  # RECITATION
-                        raise ValueError("Response blocked due to recitation of copyrighted content.")
-                    else:
-                        raise ValueError(f"Response generation failed: {reason}")
-                else:
-                    raise ValueError("Response has no content")
+            output_text = response.text
             
-            output_tokens = self._count_tokens(output_text)
+            # Get actual token usage from response metadata
+            if response.usage_metadata:
+                actual_input_tokens = response.usage_metadata.prompt_token_count or input_tokens
+                actual_output_tokens = response.usage_metadata.candidates_token_count or self._count_tokens(output_text)
+                thinking_tokens = response.usage_metadata.thoughts_token_count or 0
+                
+                if thinking_tokens > 0:
+                    logger.warning(f"⚠️ Thinking tokens used despite thinking_budget=0: {thinking_tokens} tokens")
+            else:
+                # Fallback to estimates
+                actual_input_tokens = input_tokens
+                actual_output_tokens = self._count_tokens(output_text)
+                thinking_tokens = 0
             
-            # Calculate cost (Gemini 2.0 Flash pricing)
-            input_cost = (input_tokens / 1_000_000) * 0.25
-            output_cost = (output_tokens / 1_000_000) * 0.50
-            total_cost = input_cost + output_cost
+            # Calculate cost (Gemini 2.5 Flash pricing)
+            input_cost = (actual_input_tokens / 1_000_000) * 0.25
+            output_cost = (actual_output_tokens / 1_000_000) * 0.50
+            thinking_cost = (thinking_tokens / 1_000_000) * 0.50  # Thinking tokens billed as output
+            total_cost = input_cost + output_cost + thinking_cost
             
             logger.info(
-                f"LLM response - Output tokens: {output_tokens}, "
-                f"Cost: ${total_cost:.6f}, "
+                f"LLM response - Input: {actual_input_tokens}, Output: {actual_output_tokens}, "
+                f"Thinking: {thinking_tokens}, Cost: ${total_cost:.6f}, "
                 f"Response preview: '{output_text[:100]}...'"
             )
             

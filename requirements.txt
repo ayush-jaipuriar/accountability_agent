@@ -7,11 +7,11 @@ python-telegram-bot==21.0     # Official Telegram Bot API wrapper
 
 # Google Cloud
 google-cloud-firestore==2.14.0     # Firestore database client
-google-cloud-aiplatform==1.42.0    # Vertex AI for Gemini (Phase 2)
 google-cloud-secret-manager==2.17.0  # Fetch secrets from GCP
 
-# Vertex AI SDK for Gemini (Phase 2)
-google-generativeai>=0.3.0        # Gemini API client
+# Google Gen AI SDK (unified SDK for Gemini, supports thinking_budget)
+google-genai>=1.0.0               # Modern unified SDK for Gemini 2.5 Flash
+google-cloud-aiplatform==1.42.0    # Keep for compatibility (Firestore uses it)
 
 # Phase 2: We build the multi-agent system directly (no LangChain needed)
 # This avoids dependency conflicts and gives us more control
