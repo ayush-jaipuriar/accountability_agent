@@ -175,28 +175,22 @@ class LLMService:
             output_text = response.text
             
             # Get actual token usage from response metadata
-            if response.usage_metadata:
-                actual_input_tokens = response.usage_metadata.prompt_token_count or input_tokens
-                actual_output_tokens = response.usage_metadata.candidates_token_count or self._count_tokens(output_text)
-                thinking_tokens = response.usage_metadata.thoughts_token_count or 0
-                
-                if thinking_tokens > 0:
-                    logger.warning(f"⚠️ Thinking tokens used despite thinking_budget=0: {thinking_tokens} tokens")
+            if hasattr(response, 'usage_metadata') and response.usage_metadata:
+                actual_input_tokens = getattr(response.usage_metadata, 'prompt_token_count', input_tokens)
+                actual_output_tokens = getattr(response.usage_metadata, 'candidates_token_count', self._count_tokens(output_text))
             else:
                 # Fallback to estimates
                 actual_input_tokens = input_tokens
                 actual_output_tokens = self._count_tokens(output_text)
-                thinking_tokens = 0
             
             # Calculate cost (Gemini 2.5 Flash pricing)
             input_cost = (actual_input_tokens / 1_000_000) * 0.25
             output_cost = (actual_output_tokens / 1_000_000) * 0.50
-            thinking_cost = (thinking_tokens / 1_000_000) * 0.50  # Thinking tokens billed as output
-            total_cost = input_cost + output_cost + thinking_cost
+            total_cost = input_cost + output_cost
             
             logger.info(
-                f"LLM response - Input: {actual_input_tokens}, Output: {actual_output_tokens}, "
-                f"Thinking: {thinking_tokens}, Cost: ${total_cost:.6f}, "
+                f"LLM response - Output tokens: {actual_output_tokens}, "
+                f"Cost: ${total_cost:.6f}, "
                 f"Response preview: '{output_text[:100]}...'"
             )
             
