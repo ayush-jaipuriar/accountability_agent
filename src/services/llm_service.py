@@ -60,14 +60,14 @@ class LLMService:
     - Error handling and retries
     """
     
-    def __init__(self, project_id: str, location: str = "asia-south1", model_name: str = "gemini-2.0-flash-exp"):
+    def __init__(self, project_id: str, location: str = "asia-south1", model_name: str = "gemini-2.5-flash"):
         """
         Initialize Vertex AI client
         
         Args:
             project_id: GCP project ID (e.g., "accountability-agent")
             location: GCP region (e.g., "asia-south1" for Mumbai)
-            model_name: Gemini model to use (e.g., "gemini-2.0-flash-exp", "gemini-2.5-flash-lite")
+            model_name: Gemini model to use (e.g., "gemini-2.5-flash", "gemini-2.5-flash-lite")
             
         Theory:
         -------
@@ -245,7 +245,7 @@ class LLMService:
 _llm_service_instance: Optional[LLMService] = None
 
 
-def get_llm_service(project_id: str, location: str = "asia-south1", model_name: str = "gemini-2.0-flash-exp") -> LLMService:
+def get_llm_service(project_id: str, location: str = "asia-south1", model_name: str = "gemini-2.5-flash") -> LLMService:
     """
     Get or create LLM service instance (singleton pattern)
     
@@ -263,7 +263,7 @@ def get_llm_service(project_id: str, location: str = "asia-south1", model_name: 
     Args:
         project_id: GCP project ID
         location: GCP region (default: asia-south1)
-        model_name: Gemini model to use (default: gemini-2.0-flash-exp)
+        model_name: Gemini model to use (default: gemini-2.5-flash)
         
     Returns:
         LLMService instance
