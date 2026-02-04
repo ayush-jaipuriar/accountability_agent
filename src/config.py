@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     
     # ===== Vertex AI Configuration =====
     vertex_ai_location: str = "asia-south1"
-    gemini_model: str = "gemini-1.5-flash-002"  # Use Gemini 1.5 Flash (stable, available)
+    gemini_model: str = "gemini-2.0-flash-exp"  # Use Gemini 2.0 Flash (experimental, fast)
     gemini_api_key: Optional[str] = None  # For direct Gemini API (alternative to Vertex AI)
     
     # ===== Application Settings =====

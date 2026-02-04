@@ -497,16 +497,16 @@ class TelegramBotManager:
         shields_display = "🛡️" * user.streak_shields.available + "⚪" * (user.streak_shields.total - user.streak_shields.available)
         
         status_text = (
-            f"**📊 Your Status**\n\n"
-            f"{streak_emoji} **Streak:** {user.streaks.current_streak} days\n"
-            f"🏆 **Personal Best:** {user.streaks.longest_streak} days\n"
-            f"📈 **Total Check-ins:** {user.streaks.total_checkins}\n"
-            f"🎯 **Mode:** {user.constitution_mode.title()}\n"
-            f"🛡️ **Streak Shields:** {shields_display} ({user.streak_shields.available}/{user.streak_shields.total})\n\n"
-            f"**📅 Last 7 Days:**\n"
+            f"<b>📊 Your Status</b>\n\n"
+            f"{streak_emoji} <b>Streak:</b> {user.streaks.current_streak} days\n"
+            f"🏆 <b>Personal Best:</b> {user.streaks.longest_streak} days\n"
+            f"📈 <b>Total Check-ins:</b> {user.streaks.total_checkins}\n"
+            f"🎯 <b>Mode:</b> {user.constitution_mode.title()}\n"
+            f"🛡️ <b>Streak Shields:</b> {shields_display} ({user.streak_shields.available}/{user.streak_shields.total})\n\n"
+            f"<b>📅 Last 7 Days:</b>\n"
             f"• Check-ins completed: {len(recent_checkins)}/7\n"
             f"• Average compliance: {avg_compliance:.1f}%\n\n"
-            f"**✅ Today:**\n"
+            f"<b>✅ Today:</b>\n"
         )
         
         if checked_in_today:
@@ -524,7 +524,7 @@ class TelegramBotManager:
         else:
             status_text += "\n🎯 Ready to start a new streak? Use /checkin"
         
-        await update.message.reply_text(status_text)
+        await update.message.reply_text(status_text, parse_mode='HTML')
         logger.info(f"✅ /status command from {user_id}")
     
     async def mode_command(
