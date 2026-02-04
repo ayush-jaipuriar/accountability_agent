@@ -171,8 +171,20 @@ class LLMService:
                 config=config
             )
             
-            # Extract text from response
-            output_text = response.text
+            # Extract text from response (safely handle None)
+            output_text = response.text if response.text else ""
+            
+            # Handle empty responses
+            if not output_text:
+                logger.warning("Empty response from LLM - response may have been blocked or failed")
+                # Check if response has candidates
+                if hasattr(response, 'candidates') and response.candidates:
+                    candidate = response.candidates[0]
+                    finish_reason = getattr(candidate, 'finish_reason', None)
+                    logger.error(f"Response empty. Finish reason: {finish_reason}")
+                    if finish_reason == 3:  # SAFETY
+                        raise ValueError("Response blocked by safety filters")
+                raise ValueError("LLM returned empty response")
             
             # Get actual token usage from response metadata
             if hasattr(response, 'usage_metadata') and response.usage_metadata:
