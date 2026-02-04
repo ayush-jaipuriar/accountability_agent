@@ -137,15 +137,14 @@ class LLMService:
             logger.info(f"LLM request - Input tokens: {input_tokens}, Prompt preview: '{prompt[:100]}...'")
             
             # Configure generation parameters
+            # NOTE: thinking_budget parameter not supported in vertexai SDK v1.42.0
+            # Would need to upgrade to google-genai SDK to disable thinking mode
+            # For now, keeping increased token limits (1.5x) for better response quality
             generation_config = GenerationConfig(
                 max_output_tokens=max_output_tokens,
                 temperature=temperature,
                 top_p=top_p,
-                top_k=top_k,
-                # Disable thinking/reasoning mode for gemini-2.5-flash
-                # This prevents the model from spending tokens on internal reasoning
-                # Reference: https://cloud.google.com/vertex-ai/generative-ai/docs/thinking
-                thinking_budget=0
+                top_k=top_k
             )
             
             # Generate response
