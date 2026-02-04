@@ -262,7 +262,7 @@ Respond with ONLY the category word (lowercase, no punctuation).
         
         response = await self.llm.generate_text(
             prompt=prompt,
-            max_output_tokens=10,
+            max_output_tokens=50,  # Increased from 10 - gemini-2.5-flash needs more headroom
             temperature=0.3  # Low temperature for classification (deterministic)
         )
         
@@ -467,7 +467,7 @@ Generate the response now:
         
         response = await self.llm.generate_text(
             prompt=prompt,
-            max_output_tokens=400,
+            max_output_tokens=800,  # Increased from 400 - CBT responses need more space
             temperature=0.7  # Slightly creative for natural language
         )
         

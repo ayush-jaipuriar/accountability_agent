@@ -166,8 +166,13 @@ class LLMService:
                     logger.warning(f"Response finish reason: {reason}")
                     if reason == 1:  # STOP (normal completion)
                         output_text = "(empty response)"
+                    elif reason == 2:  # MAX_TOKENS (hit token limit)
+                        logger.error(f"Response hit max_output_tokens limit ({max_output_tokens}). Consider increasing.")
+                        raise ValueError(f"Response hit token limit. Try increasing max_output_tokens.")
                     elif reason == 3:  # SAFETY (blocked by safety filters)
                         raise ValueError("Response blocked by safety filters. Try rephrasing the prompt.")
+                    elif reason == 4:  # RECITATION
+                        raise ValueError("Response blocked due to recitation of copyrighted content.")
                     else:
                         raise ValueError(f"Response generation failed: {reason}")
                 else:
