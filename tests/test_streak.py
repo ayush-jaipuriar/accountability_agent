@@ -19,7 +19,9 @@ from src.utils.streak import (
     calculate_new_streak,
     update_streak_data,
     get_streak_emoji,
-    days_until_milestone
+    days_until_milestone,
+    check_milestone,
+    MILESTONE_MESSAGES
 )
 
 
@@ -242,6 +244,135 @@ def test_streak_year_boundary():
     """Test streak across year boundary."""
     # Dec 31, 2025 → Jan 1, 2026
     assert should_increment_streak("2025-12-31", "2026-01-01") == True
+
+
+# ===== Test: Milestone Detection (Phase 3C Day 4) =====
+
+def test_check_milestone_30_days():
+    """Test 30-day milestone is detected."""
+    milestone = check_milestone(30)
+    
+    assert milestone is not None
+    assert milestone['title'] == "🎉 30 DAYS!"
+    assert "top 10%" in milestone['message'].lower()
+    assert milestone['percentile'] == "Top 10%"
+
+
+def test_check_milestone_60_days():
+    """Test 60-day milestone is detected."""
+    milestone = check_milestone(60)
+    
+    assert milestone is not None
+    assert milestone['title'] == "🔥 60 DAYS!"
+    assert "top 5%" in milestone['message'].lower()
+
+
+def test_check_milestone_90_days():
+    """Test 90-day milestone is detected."""
+    milestone = check_milestone(90)
+    
+    assert milestone is not None
+    assert milestone['title'] == "💎 90 DAYS!"
+    assert "top 2%" in milestone['message'].lower()
+
+
+def test_check_milestone_180_days():
+    """Test 180-day milestone is detected."""
+    milestone = check_milestone(180)
+    
+    assert milestone is not None
+    assert milestone['title'] == "🏆 HALF YEAR!"
+    assert "top 1%" in milestone['message'].lower()
+
+
+def test_check_milestone_365_days():
+    """Test 365-day milestone is detected."""
+    milestone = check_milestone(365)
+    
+    assert milestone is not None
+    assert milestone['title'] == "👑 ONE YEAR!"
+    assert "top 0.1%" in milestone['message'].lower()
+
+
+def test_check_milestone_non_milestone():
+    """Test non-milestone streaks return None."""
+    # Test various non-milestone values
+    assert check_milestone(1) is None
+    assert check_milestone(7) is None
+    assert check_milestone(29) is None
+    assert check_milestone(31) is None
+    assert check_milestone(50) is None
+    assert check_milestone(100) is None
+    assert check_milestone(200) is None
+
+
+def test_update_streak_data_returns_milestone():
+    """Test update_streak_data includes milestone when hit."""
+    updates = update_streak_data(
+        current_streak=29,
+        longest_streak=29,
+        total_checkins=29,
+        last_checkin_date="2026-02-05",
+        new_checkin_date="2026-02-06"
+    )
+    
+    # Should hit 30-day milestone
+    assert updates['current_streak'] == 30
+    assert updates['milestone_hit'] is not None
+    assert updates['milestone_hit']['title'] == "🎉 30 DAYS!"
+
+
+def test_update_streak_data_no_milestone():
+    """Test update_streak_data returns None for non-milestones."""
+    updates = update_streak_data(
+        current_streak=28,
+        longest_streak=28,
+        total_checkins=28,
+        last_checkin_date="2026-02-05",
+        new_checkin_date="2026-02-06"
+    )
+    
+    # Should be day 29 (not a milestone)
+    assert updates['current_streak'] == 29
+    assert updates['milestone_hit'] is None
+
+
+def test_milestone_not_triggered_on_reset():
+    """Test milestone not triggered when streak resets."""
+    updates = update_streak_data(
+        current_streak=50,
+        longest_streak=50,
+        total_checkins=100,
+        last_checkin_date="2026-01-20",  # Large gap
+        new_checkin_date="2026-02-06"
+    )
+    
+    # Streak resets to 1, no milestone
+    assert updates['current_streak'] == 1
+    assert updates['milestone_hit'] is None
+
+
+def test_all_milestone_messages_exist():
+    """Test all 5 milestone messages are defined."""
+    assert len(MILESTONE_MESSAGES) == 5
+    assert 30 in MILESTONE_MESSAGES
+    assert 60 in MILESTONE_MESSAGES
+    assert 90 in MILESTONE_MESSAGES
+    assert 180 in MILESTONE_MESSAGES
+    assert 365 in MILESTONE_MESSAGES
+
+
+def test_milestone_messages_have_required_fields():
+    """Test all milestone messages have required fields."""
+    for days, milestone_data in MILESTONE_MESSAGES.items():
+        assert 'title' in milestone_data
+        assert 'message' in milestone_data
+        assert 'percentile' in milestone_data
+        
+        # Check fields are non-empty
+        assert len(milestone_data['title']) > 0
+        assert len(milestone_data['message']) > 0
+        assert len(milestone_data['percentile']) > 0
 
 
 # ===== Run Tests =====

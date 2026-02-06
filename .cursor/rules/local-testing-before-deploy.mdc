@@ -1,0 +1,21 @@
+---
+description: Require thorough local testing before any deploy
+alwaysApply: true
+---
+
+# Local Testing Required Before Deploy
+
+- Never deploy changes until thorough local testing is completed and the feature is confirmed working.
+- Use production-matching conditions where possible (Docker + Python 3.11 + prod-like env vars).
+- Capture proof of local test output in the relevant `.md` log file for the iteration.
+- Only deploy after user explicitly approves.
+
+## Example (Required Sequence)
+
+```text
+1) Update code
+2) Run local tests in Docker (prod-like)
+3) Record results in a .md file
+4) Ask for explicit approval
+5) Deploy
+```

@@ -90,6 +90,9 @@ class TelegramBotManager:
         self.application.add_handler(CommandHandler("set_partner", self.set_partner_command))
         self.application.add_handler(CommandHandler("unlink_partner", self.unlink_partner_command))
         
+        # Phase 3C: Achievement system commands
+        self.application.add_handler(CommandHandler("achievements", self.achievements_command))
+        
         # Phase 3A: Callback query handlers for inline keyboard buttons
         self.application.add_handler(CallbackQueryHandler(self.mode_selection_callback, pattern="^mode_"))
         self.application.add_handler(CallbackQueryHandler(self.timezone_confirmation_callback, pattern="^tz_"))
@@ -425,6 +428,7 @@ class TelegramBotManager:
             "/status - View streak, compliance, and recent stats\n"
             "/mode - Change constitution mode (optimization/maintenance/survival)\n"
             "/use_shield - Use a streak shield to protect your streak\n"
+            "/achievements - View your unlocked achievements 🏆\n"
             "/help - Show this help message\n\n"
             "<b>👥 Accountability Partners (Phase 3B):</b>\n"
             "/set_partner @username - Link an accountability partner\n"
@@ -897,6 +901,126 @@ class TelegramBotManager:
         )
         
         logger.info(f"✅ Partnership unlinked: {user_id} ↔️ {partner.user_id}")
+    
+    # ===== Phase 3C: Achievement System Commands =====
+    
+    async def achievements_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle /achievements command (Phase 3C).
+        
+        Display user's unlocked achievements grouped by rarity.
+        Shows progress toward next milestone.
+        
+        **Theory - Why This Works:**
+        - Viewing achievements creates **progress visualization**
+        - Rarity grouping creates **status hierarchy** (legendary first)
+        - Next milestone creates **goal clarity** (X days until Month Master)
+        - Together these drive continued engagement
+        """
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+        
+        if not user:
+            await update.message.reply_text(
+                "❌ User not found. Please use /start first."
+            )
+            return
+        
+        # Import achievement service
+        from src.services.achievement_service import achievement_service
+        
+        # If no achievements yet, show motivation message
+        if not user.achievements:
+            await update.message.reply_text(
+                "🎯 **No achievements yet!**\n\n"
+                "Keep checking in daily to unlock:\n"
+                "🎯 First Step (1 day)\n"
+                "🏅 Week Warrior (7 days)\n"
+                "🏆 Month Master (30 days)\n"
+                "⭐ Perfect Week (7 days at 100%)\n\n"
+                f"Your current streak: **{user.streaks.current_streak} days** 🔥\n\n"
+                "Complete your daily check-in with /checkin",
+                parse_mode="Markdown"
+            )
+            return
+        
+        # Build achievements display message
+        message_parts = []
+        message_parts.append(f"🏆 **Your Achievements ({len(user.achievements)}/{len(achievement_service.get_all_achievements())})**\n")
+        
+        # Group achievements by rarity
+        from collections import defaultdict
+        by_rarity = defaultdict(list)
+        
+        for achievement_id in user.achievements:
+            achievement = achievement_service.get_achievement(achievement_id)
+            if achievement:
+                by_rarity[achievement.rarity].append(achievement)
+        
+        # Display by rarity (legendary → epic → rare → common)
+        rarity_order = ["legendary", "epic", "rare", "common"]
+        rarity_labels = {
+            "legendary": "👑 LEGENDARY",
+            "epic": "💎 EPIC",
+            "rare": "🌟 RARE",
+            "common": "🏅 COMMON"
+        }
+        
+        for rarity in rarity_order:
+            if by_rarity[rarity]:
+                message_parts.append(f"\n**{rarity_labels[rarity]}**")
+                for achievement in by_rarity[rarity]:
+                    message_parts.append(f"{achievement.icon} {achievement.name}")
+                    # Optionally add description (commented out to keep message short)
+                    # message_parts.append(f"   _{achievement.description}_")
+        
+        # Add progress toward next milestone
+        current_streak = user.streaks.current_streak
+        next_milestone = None
+        next_milestone_name = None
+        
+        streak_milestones = {
+            7: ("week_warrior", "Week Warrior"),
+            14: ("fortnight_fighter", "Fortnight Fighter"),
+            30: ("month_master", "Month Master"),
+            90: ("quarter_conqueror", "Quarter Conqueror"),
+            180: ("half_year_hero", "Half Year Hero"),
+            365: ("year_yoda", "Year Yoda")
+        }
+        
+        for milestone_days, (achievement_id, achievement_name) in streak_milestones.items():
+            if current_streak < milestone_days:
+                next_milestone = milestone_days
+                next_milestone_name = achievement_name
+                break
+        
+        if next_milestone:
+            days_remaining = next_milestone - current_streak
+            message_parts.append(
+                f"\n📈 **Next Milestone:** {next_milestone_name} "
+                f"({days_remaining} day{'s' if days_remaining != 1 else ''} to go!)"
+            )
+        else:
+            # User has completed all streak milestones!
+            message_parts.append("\n🎉 **All streak milestones unlocked!** You're a legend! 👑")
+        
+        # Add call to action
+        message_parts.append(
+            f"\n💪 Keep going! Current streak: **{current_streak} days** 🔥"
+        )
+        
+        final_message = "\n".join(message_parts)
+        
+        await update.message.reply_text(
+            final_message,
+            parse_mode="Markdown"
+        )
+        
+        logger.info(f"✅ Displayed {len(user.achievements)} achievements for user {user_id}")
     
     # ===== Phase 3B: General Message Handler =====
     

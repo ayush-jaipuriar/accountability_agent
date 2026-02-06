@@ -93,9 +93,9 @@ According to [Google Cloud documentation](https://cloud.google.com/vertex-ai/gen
 **Implementation in `src/services/llm_service.py`:**
 
 ```python
-from vertexai.generative_models import GenerationConfig
+from google.genai import types
 
-generation_config = GenerationConfig(
+config = types.GenerateContentConfig(
     max_output_tokens=max_output_tokens,
     temperature=temperature,
     top_p=top_p,
@@ -103,9 +103,77 @@ generation_config = GenerationConfig(
     # Disable thinking/reasoning mode for gemini-2.5-flash
     # This prevents the model from spending tokens on internal reasoning
     # Reference: https://cloud.google.com/vertex-ai/generative-ai/docs/thinking
-    thinking_budget=0  # ✅ Key parameter!
+    thinking_config=types.ThinkingConfig(
+        thinking_budget=0  # ✅ Key parameter!
+    )
 )
 ```
+
+---
+
+## 🧪 Local Validation (Docker, Python 3.11)
+
+### **Why this matters**
+The production container uses Python 3.11. Local testing in a 3.13 venv pulled an
+older `google-genai` version that **did not** accept `thinking_budget`, which caused
+the exact validation error we saw in Cloud Run. We must validate in a **prod-like**
+container to be sure the SDK version and dependencies match.
+
+### **Fix: Dependency Alignment**
+The root cause was dependency resolution:
+
+- `google-genai>=1.0.0` + `httpx~=0.27.0` ⟶ resolves to **google-genai 1.2.0**
+- `google-genai 1.2.0` ⟶ **does not support** `thinking_budget`
+
+Updated `requirements.txt` to enforce:
+
+- `google-genai>=1.61.0`
+- `httpx>=0.28.1,<0.29`
+
+This installs a version that **does** support `ThinkingConfig(thinking_budget=0)`.
+
+### **Local Test Result (Production-Match Container)**
+Test executed inside Docker (Python 3.11, same as Cloud Run):
+
+```
+Testing ThinkingConfig with thinking_budget=0...
+✅ SUCCESS! Response: 2+2 = 4
+Prompt tokens: 7
+Output tokens: 6
+Thinking tokens: None
+```
+
+**Conclusion:** The SDK now accepts `thinking_budget=0` and returns valid output.
+
+### **LLMService End-to-End Check**
+Verified the exact application wrapper `LLMService.generate_text()` in the same
+Docker container:
+
+```
+Hello there, it's a pleasure to make your acquaintance!
+```
+
+**Conclusion:** The app-level LLM call path succeeds with thinking disabled.
+
+---
+
+## 🚀 Deployment Approval (Pending Verification)
+
+**Date:** February 4, 2026  
+**Status:** Approved by user, deployment initiated.  
+
+**Next Step:** After deploy, validate:
+- "I'm feeling lonely" returns full CBT response
+- No `ThinkingConfig` validation errors in logs
+
+---
+
+## 📌 Process Rule Added (Cursor Global Rule)
+
+**Rule:** `.cursor/rules/local-testing-before-deploy.mdc`  
+**Purpose:** Enforce thorough local testing (prod-like) before any deploy.  
+
+This ensures we never deploy without local confirmation and explicit user approval.
 
 **What this does:**
 - Sets the thinking token budget to 0

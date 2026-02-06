@@ -23,7 +23,10 @@ Example Timeline:
 """
 
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Dict
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def should_increment_streak(last_checkin_date: str, current_date: str) -> bool:
@@ -351,3 +354,192 @@ def calculate_days_without_checkin(last_checkin_date: Optional[str]) -> int:
     curr_date_dt = datetime.strptime(current_date, "%Y-%m-%d")
     
     return (curr_date_dt - last_date).days
+
+
+# ===== Phase 3C: Milestone Celebrations =====
+
+# Milestone message templates
+MILESTONE_MESSAGES = {
+    30: {
+        "title": "🎉 30 DAYS!",
+        "message": (
+            "🎉 **30 DAYS!** You're in the top 10% of accountability seekers.\n\n"
+            "You've proven you can commit. This is where most people quit, but you pushed through. "
+            "Your constitution is becoming automatic. **Habit formation threshold reached.**\n\n"
+            "Keep going! 💪"
+        ),
+        "percentile": "Top 10%"
+    },
+    60: {
+        "title": "🔥 60 DAYS!",
+        "message": (
+            "🔥 **60 DAYS!** Two months of consistency. You're unstoppable.\n\n"
+            "The habit is locked in. You don't rely on willpower anymore - it's just what you do. "
+            "**You're in the top 5% now.** This is the version of yourself you were meant to be.\n\n"
+            "This is mastery. 🚀"
+        ),
+        "percentile": "Top 5%"
+    },
+    90: {
+        "title": "💎 90 DAYS!",
+        "message": (
+            "💎 **90 DAYS!** Quarter conquered. Elite territory.\n\n"
+            "Three months of unbroken commitment. **You're operating at a level 98% of people never reach.** "
+            "Your June 2026 goals? They're within reach. This is what winning looks like.\n\n"
+            "Elite status achieved. 🏆"
+        ),
+        "percentile": "Top 2%"
+    },
+    180: {
+        "title": "🏆 HALF YEAR!",
+        "message": (
+            "🏆 **HALF YEAR!** You've built a new identity.\n\n"
+            "Six months of daily accountability. **You're not the same person who started this journey.** "
+            "Top 1% consistency. Your future self thanks you for showing up every single day.\n\n"
+            "This is transformation. 👑"
+        ),
+        "percentile": "Top 1%"
+    },
+    365: {
+        "title": "👑 ONE YEAR!",
+        "message": (
+            "👑 **ONE YEAR!** You are the 1%. Welcome to mastery.\n\n"
+            "365 consecutive days. You've achieved what less than 0.1% of people ever will. "
+            "**This isn't just a streak - it's proof of who you are.** Constitution isn't something you follow anymore. "
+            "It's who you've become.\n\n"
+            "Congratulations. You've mastered yourself. 🌟"
+        ),
+        "percentile": "Top 0.1%"
+    }
+}
+
+
+def check_milestone(new_streak: int) -> Optional[Dict[str, str]]:
+    """
+    Check if user hit a major milestone with this streak update.
+    
+    Theory - Why Milestones Work:
+    ------------------------------
+    Milestones mark **psychological transition points** in behavior change:
+    
+    1. **30 Days - Habit Formation Threshold:**
+       - Research: Habits take 21-66 days to form (median: 66 days, Lally et al., 2009)
+       - 30 days is past the "trying it out" phase
+       - User has proven commitment
+       - Message: "You've proven you can commit"
+    
+    2. **60 Days - Habit Solidification:**
+       - Neural pathways strengthened
+       - Behavior becomes automatic (less willpower needed)
+       - Message: "You don't rely on willpower anymore"
+    
+    3. **90 Days - Quarter Marker:**
+       - 3 months = significant life period
+       - Identity starts to shift ("I'm someone who does this")
+       - Message: "You're operating at a level 98% never reach"
+    
+    4. **180 Days - Identity Transformation:**
+       - Half year = life phase change
+       - Behavior is now part of identity
+       - Message: "You're not the same person who started"
+    
+    5. **365 Days - Mastery:**
+       - Full year = legendary achievement
+       - Identity fully transformed
+       - Message: "It's who you've become"
+    
+    Messaging Principles:
+    ---------------------
+    - Validate accomplishment (not generic praise)
+    - Reference research/percentiles (social proof)
+    - Connect to identity shift (habit → identity)
+    - Forward-looking (this is just beginning)
+    
+    Args:
+        new_streak: Updated streak count
+    
+    Returns:
+        Milestone dict with title and message, or None if not a milestone
+    
+    Example:
+        >>> check_milestone(30)
+        {
+            'title': '🎉 30 DAYS!',
+            'message': '🎉 30 DAYS! You're in the top 10%...',
+            'percentile': 'Top 10%'
+        }
+        
+        >>> check_milestone(29)
+        None  # Not a milestone
+    """
+    if new_streak in MILESTONE_MESSAGES:
+        logger.info(f"🎉 Milestone hit: {new_streak} days!")
+        return MILESTONE_MESSAGES[new_streak]
+    
+    return None
+
+
+def update_streak_data(
+    current_streak: int,
+    longest_streak: int,
+    total_checkins: int,
+    last_checkin_date: Optional[str],
+    new_checkin_date: str
+) -> dict:
+    """
+    Calculate all streak updates after a check-in.
+    
+    This is the main function used by the check-in handler.
+    
+    Returns a dictionary with updated streak data to store in Firestore.
+    
+    Phase 3C Update: Now also checks for milestones and returns milestone data.
+    
+    Args:
+        current_streak: Current streak value
+        longest_streak: All-time best streak
+        total_checkins: Lifetime total check-ins
+        last_checkin_date: Last check-in date (None if first)
+        new_checkin_date: Today's check-in date
+        
+    Returns:
+        dict: Updated streak data with keys:
+            - current_streak: New streak value
+            - longest_streak: Updated if current exceeds longest
+            - last_checkin_date: Today's date
+            - total_checkins: Incremented by 1
+            - milestone_hit: Milestone dict if milestone reached, None otherwise (Phase 3C)
+            
+    Example:
+        >>> updates = update_streak_data(
+        ...     current_streak=29,
+        ...     longest_streak=29,
+        ...     total_checkins=29,
+        ...     last_checkin_date="2026-02-05",
+        ...     new_checkin_date="2026-02-06"
+        ... )
+        >>> updates['current_streak']
+        30
+        >>> updates['milestone_hit']
+        {'title': '🎉 30 DAYS!', 'message': '...', 'percentile': 'Top 10%'}
+    """
+    # Calculate new streak
+    new_streak = calculate_new_streak(
+        current_streak,
+        last_checkin_date,
+        new_checkin_date
+    )
+    
+    # Update longest streak if current exceeds it
+    new_longest = max(new_streak, longest_streak)
+    
+    # ===== PHASE 3C: Check for milestone =====
+    milestone = check_milestone(new_streak)
+    
+    return {
+        "current_streak": new_streak,
+        "longest_streak": new_longest,
+        "last_checkin_date": new_checkin_date,
+        "total_checkins": total_checkins + 1,
+        "milestone_hit": milestone  # Phase 3C addition
+    }

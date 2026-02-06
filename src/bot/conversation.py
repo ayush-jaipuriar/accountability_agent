@@ -36,6 +36,7 @@ import re
 import logging
 
 from src.services.firestore_service import firestore_service
+from src.services.achievement_service import achievement_service
 from src.models.schemas import (
     DailyCheckIn,
     Tier1NonNegotiables,
@@ -159,7 +160,7 @@ async def ask_tier1_question(message, context):
     ]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await message.reply_text(question_text, reply_markup=reply_markup)
+    await message.reply_text(question_text, reply_markup=reply_markup, parse_mode="Markdown")
 
 
 # ===== State Q1: Tier 1 Non-Negotiables =====
@@ -201,7 +202,8 @@ async def handle_tier1_response(
     
     # Show what was selected
     response_text = "✅ YES" if response_bool else "❌ NO"
-    await query.edit_message_reply_markup(reply_markup=None)  # Remove buttons
+    
+    # Send confirmation without removing buttons yet
     await query.message.reply_text(
         f"{item_labels.get(item, item.title())}: {response_text}"
     )
@@ -211,17 +213,19 @@ async def handle_tier1_response(
     answered_items = set(context.user_data['tier1_responses'].keys())
     
     if required_items.issubset(answered_items):
-        # All answered → move to Q2
+        # All answered → Remove buttons and move to Q2
+        await query.edit_message_reply_markup(reply_markup=None)
         await query.message.reply_text(
-            "**📋 Question 2/4**\n\n"
-            "**Challenges & Handling:**\n"
+            "📋 Question 2/4\n\n"
+            "Challenges & Handling:\n"
             "What challenges did you face today? How did you handle them?\n\n"
             "📝 Type your response (10-500 characters).\n\n"
-            "_Example: 'Urge to watch porn around 10 PM. Went for a walk and texted friend instead.'_"
+            "Example: 'Urge to watch porn around 10 PM. Went for a walk and texted friend instead.'",
+            parse_mode=None  # No markdown formatting
         )
         return Q2_CHALLENGES
     
-    # Still need more answers
+    # Still need more answers - keep buttons visible
     return Q1_TIER1
 
 
@@ -266,7 +270,8 @@ async def handle_challenges_response(
         "**Self-Rating & Reflection:**\n"
         "Rate today 1-10 on constitution alignment. Why that score?\n\n"
         "📝 Format: Start with number (1-10), then explain.\n\n"
-        "_Example: '8 - Solid day overall. Missed one study hour but otherwise strong.'_"
+        "_Example: '8 - Solid day overall. Missed one study hour but otherwise strong.'_",
+        parse_mode="Markdown"
     )
     
     return Q3_RATING
@@ -331,7 +336,8 @@ async def handle_rating_response(
         "1. What's tomorrow's #1 priority?\n"
         "2. What's the biggest potential obstacle?\n\n"
         "📝 Format: Priority | Obstacle\n\n"
-        "_Example: 'Priority: Complete 3 LeetCode problems. Obstacle: Late evening meeting might drain energy.'_"
+        "_Example: 'Priority: Complete 3 LeetCode problems. Obstacle: Late evening meeting might drain energy.'_",
+        parse_mode="Markdown"
     )
     
     return Q4_TOMORROW
@@ -462,6 +468,13 @@ async def finish_checkin(
         
         firestore_service.update_user_streak(user_id, streak_updates)
         
+        # Extract milestone if hit (Phase 3C Day 4)
+        milestone_hit = streak_updates.get('milestone_hit')
+        if milestone_hit:
+            logger.info(
+                f"🎉 User {user_id} hit milestone: {streak_updates['current_streak']} days!"
+            )
+        
         # Generate AI-powered feedback message
         is_new_record = (
             streak_updates['current_streak'] > streak_updates['longest_streak'] - 1
@@ -496,6 +509,19 @@ async def finish_checkin(
             
             feedback_parts.append(f"📈 Total check-ins: {streak_updates['total_checkins']}")
             feedback_parts.append(f"\n---\n\n{ai_feedback}")
+            
+            # ===== PHASE 3C: Add Social Proof (Day 3) =====
+            try:
+                # Get updated user for social proof calculation
+                user_profile = firestore_service.get_user(user_id)
+                if user_profile:
+                    social_proof = achievement_service.get_social_proof_message(user_profile)
+                    if social_proof:
+                        feedback_parts.append(f"\n{social_proof}")
+                        logger.info(f"📊 Added social proof for user {user_id}")
+            except Exception as e:
+                logger.error(f"⚠️ Social proof generation failed (non-critical): {e}")
+            
             feedback_parts.append(f"\n---\n\n🎯 See you tomorrow at 9 PM!")
             
             final_message = "\n".join(feedback_parts)
@@ -523,11 +549,93 @@ async def finish_checkin(
                 )
             
             feedback_parts.append(f"\n📈 Total: {streak_updates['total_checkins']} check-ins")
+            
+            # ===== PHASE 3C: Add Social Proof to Fallback (Day 3) =====
+            try:
+                user_profile = firestore_service.get_user(user_id)
+                if user_profile:
+                    social_proof = achievement_service.get_social_proof_message(user_profile)
+                    if social_proof:
+                        feedback_parts.append(f"\n{social_proof}")
+            except Exception as e:
+                logger.error(f"⚠️ Social proof failed in fallback: {e}")
+            
             feedback_parts.append(f"\n🎯 See you tomorrow!")
             
             final_message = "\n".join(feedback_parts)
         
-        await update.message.reply_text(final_message)
+        await update.message.reply_text(final_message, parse_mode="Markdown")
+        
+        # ===== PHASE 3C: Achievement System Integration =====
+        # Check for newly unlocked achievements after streak update
+        try:
+            # Get updated user profile with current streak
+            user = firestore_service.get_user(user_id)
+            
+            if user:
+                # Get recent check-ins for performance achievement checks (30 days)
+                recent_checkins = firestore_service.get_recent_checkins(user_id, days=30)
+                
+                # Check for newly unlocked achievements
+                newly_unlocked = achievement_service.check_achievements(user, recent_checkins)
+                
+                if newly_unlocked:
+                    logger.info(
+                        f"🎉 User {user_id} unlocked {len(newly_unlocked)} achievement(s): "
+                        f"{', '.join(newly_unlocked)}"
+                    )
+                    
+                    # Process each newly unlocked achievement
+                    for achievement_id in newly_unlocked:
+                        # Unlock achievement in Firestore (with duplicate prevention)
+                        achievement_service.unlock_achievement(user_id, achievement_id)
+                        
+                        # Generate celebration message
+                        celebration_message = achievement_service.get_celebration_message(
+                            achievement_id,
+                            user
+                        )
+                        
+                        # Send celebration as separate message (after check-in feedback)
+                        await update.message.reply_text(
+                            celebration_message,
+                            parse_mode="Markdown"
+                        )
+                        
+                        logger.info(f"✅ Sent celebration for {achievement_id} to user {user_id}")
+                else:
+                    logger.debug(f"No new achievements for user {user_id}")
+            
+        except Exception as e:
+            # Don't fail check-in if achievement system has issues
+            logger.error(f"⚠️ Achievement checking failed (non-critical): {e}", exc_info=True)
+        
+        # ===== End Achievement System Integration =====
+        
+        # ===== PHASE 3C DAY 4: Milestone Celebrations =====
+        # Send milestone celebration if milestone was hit
+        if milestone_hit:
+            try:
+                milestone_message = (
+                    f"**{milestone_hit['title']}**\n\n"
+                    f"{milestone_hit['message']}"
+                )
+                
+                await update.message.reply_text(
+                    milestone_message,
+                    parse_mode="Markdown"
+                )
+                
+                logger.info(
+                    f"🎉 Sent milestone celebration ({streak_updates['current_streak']} days) "
+                    f"to user {user_id}"
+                )
+                
+            except Exception as e:
+                # Don't fail check-in if milestone message fails
+                logger.error(f"⚠️ Milestone celebration failed (non-critical): {e}", exc_info=True)
+        
+        # ===== End Milestone Celebrations =====
         
         logger.info(
             f"✅ Check-in completed for {user_id}: {compliance_score}% compliance, "
