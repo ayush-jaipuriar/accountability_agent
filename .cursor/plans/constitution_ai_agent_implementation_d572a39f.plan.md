@@ -76,11 +76,12 @@ We'll build this in an iterative approach, starting with a working MVP (Phase 1)
 
 **Goal:** Get daily check-ins working end-to-end via Telegram bot  
 **Status:** ✅ **FULLY OPERATIONAL** (Completed Feb 1, 2026)  
-**Service URL:** https://constitution-agent-450357249483.asia-south1.run.app
+**Service URL:** [https://constitution-agent-450357249483.asia-south1.run.app](https://constitution-agent-450357249483.asia-south1.run.app)
 
 **✅ Phase 1 Complete (Jan 30 - Feb 1, 2026):**
 
 **Infrastructure Setup:**
+
 - ✅ GCP Project created: `accountability-agent`
 - ✅ Service account created and secured: `.credentials/accountability-agent-9256adc55379.json`
 - ✅ All required APIs enabled (Cloud Run, Firestore, Vertex AI, Cloud Scheduler, Cloud Storage, Cloud Logging, Secret Manager)
@@ -92,6 +93,7 @@ We'll build this in an iterative approach, starting with a working MVP (Phase 1)
 - ✅ Bot token stored locally (.env) and in GCP Secret Manager
 
 **Code Implementation:**
+
 - ✅ Full application code (~2,500 lines)
 - ✅ Firestore service layer with CRUD operations
 - ✅ Check-in conversation flow (4 questions, state machine)
@@ -101,7 +103,8 @@ We'll build this in an iterative approach, starting with a working MVP (Phase 1)
 - ✅ Dockerfile for containerization
 
 **Deployment & Testing:**
-- ✅ Deployed to Cloud Run (https://constitution-agent-450357249483.asia-south1.run.app)
+
+- ✅ Deployed to Cloud Run ([https://constitution-agent-450357249483.asia-south1.run.app](https://constitution-agent-450357249483.asia-south1.run.app))
 - ✅ Webhook configured and verified
 - ✅ Critical bug fixed: Application initialization for webhook mode
 - ✅ End-to-end testing complete (all commands working)
@@ -124,6 +127,7 @@ This is exactly what the AI agents need to provide personalized, context-aware f
 **✅ Phase 1 Implementation - MAJOR PROGRESS! (Jan 31, 2026)**
 
 **Completed Today:**
+
 - ✅ Project structure created (`src/`, `tests/`, all subdirectories)
 - ✅ Configuration management (`src/config.py`) with Pydantic Settings
 - ✅ Data models & schemas (`src/models/schemas.py`) - User, CheckIn, Tier1, etc.
@@ -142,12 +146,14 @@ This is exactly what the AI agents need to provide personalized, context-aware f
 - ✅ requirements.txt with all dependencies
 
 **📊 Code Statistics:**
+
 - **12 Python modules** created
 - **~2,500 lines of code** written
 - **30+ unit tests** with comprehensive coverage
 - **Full documentation** with detailed explanations
 
 **🎯 Phase 1 Completion (Feb 1, 2026):**
+
 1. ✅ **Set up virtual environment** and install dependencies
 2. ✅ **Fill in .env file** with bot token and chat ID
 3. ✅ **Test locally** - Unit tests passing, Firestore connection verified
@@ -161,6 +167,7 @@ This is exactly what the AI agents need to provide personalized, context-aware f
 
 **Issue Discovered:**
 After initial deployment, the bot wasn't responding to messages. Cloud Run logs showed:
+
 ```
 RuntimeError: This Application was not initialized via Application.initialize!
 ```
@@ -170,6 +177,7 @@ The `python-telegram-bot` library requires explicit initialization of the `Appli
 
 **Technical Explanation:**
 The library has a specific lifecycle:
+
 1. **Build** → Create application object (`Application.builder().build()`)
 2. **Initialize** → Set up internal state, handlers, connection pooling
 3. **Process Updates** → Handle incoming webhook messages
@@ -199,6 +207,7 @@ async def shutdown_event():
 ```
 
 **Result:**
+
 - ✅ Bot now responds to all commands
 - ✅ Webhook processing works correctly
 - ✅ Graceful shutdown prevents resource leaks
@@ -777,7 +786,7 @@ def test_streak_resets_after_gap():
 
 **Status:** ✅ **DEPLOYED TO PRODUCTION** (Feb 3, 2026)
 
-**Service URL:** https://constitution-agent-450357249483.asia-south1.run.app
+**Service URL:** [https://constitution-agent-450357249483.asia-south1.run.app](https://constitution-agent-450357249483.asia-south1.run.app)
 
 ---
 
@@ -786,21 +795,25 @@ def test_streak_resets_after_gap():
 **Comprehensive Local Testing Results:**
 
 **✅ All Tests Passing:** 50/50 (100% success rate)
+
 - **Unit Tests:** 37/37 ✅ (compliance, streak calculations)
 - **Integration Tests:** 13/13 ✅ (AI features, intent classification, pattern detection)
 
 **✅ Performance Metrics EXCEEDED:**
+
 - Intent Classification Accuracy: **100%** (target: >90%)
 - Check-in Response Time: ~7s (target: <5s, acceptable with AI)
 - Token Usage: **~150 tokens/check-in** (target: <1000)
 - Cost per Check-in: **$0.000022** (target: <$0.001) - **45x cheaper!**
 
 **✅ Cost Analysis:**
+
 - Daily Cost: **$0.00012** (target: <$0.02)
 - Monthly Cost: **$0.0036** (target: <$0.60)
 - **Total Savings: 99.4%** - We're **166x cheaper than budgeted!** 🚀
 
 **✅ Features Verified:**
+
 1. **Supervisor Agent:** 100% intent classification accuracy (22/22 test cases)
 2. **CheckIn Agent:** AI feedback highly personalized, references streak/constitution
 3. **Pattern Detection:** All 5 pattern types working, 0 false positives
@@ -809,10 +822,12 @@ def test_streak_resets_after_gap():
 6. **Error Handling:** Graceful degradation when APIs fail
 
 **✅ Test Documentation:**
+
 - `PHASE2_LOCAL_TESTING.md` - Comprehensive testing plan and guide
 - `PHASE2_TEST_RESULTS.md` - Detailed results summary with metrics
 
 **✅ Deployment Complete (Feb 3, 2026):**
+
 - ✅ Deployed to Cloud Run (revision: constitution-agent-00012-9d7)
 - ✅ Telegram webhook configured  
 - ✅ Cloud Scheduler set up (pattern-scan-job, every 6 hours)
@@ -822,11 +837,13 @@ def test_streak_resets_after_gap():
 - ⏸️ 24-hour monitoring (starting now)
 
 **Deployment Issues Resolved:**
+
 - Fixed .dockerignore to include constitution.md
 - Granted Secret Manager access to service account
 - Granted Firestore owner permissions to service account
 
 **Files Updated:**
+
 - `src/agents/state.py` - ConstitutionState schema (tested ✅)
 - `src/agents/supervisor.py` - Intent classification (tested ✅)
 - `src/agents/checkin_agent.py` - AI feedback generation (tested ✅)

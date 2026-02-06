@@ -55,6 +55,74 @@ logger = logging.getLogger(__name__)
 Q1_TIER1, Q2_CHALLENGES, Q3_RATING, Q4_TOMORROW = range(4)
 
 
+# ===== Phase 3D: Career Mode Adaptive Questions =====
+
+def get_skill_building_question(career_mode: str) -> dict:
+    """
+    Get skill building question adapted to user's career mode.
+    
+    **Design Pattern: Strategy Pattern**
+    - Same interface (returns consistent dict structure)
+    - Different behavior based on state (career_mode)
+    - Clean separation of concerns
+    
+    **Why This Matters:**
+    Your career phase determines what "skill building" means:
+    - Learning phase: LeetCode, system design, courses
+    - Job search: Applications + skill building
+    - Employed: Promotion-focused work
+    
+    The question adapts to your current reality, making tracking more meaningful.
+    
+    Args:
+        career_mode: User's current career phase
+            - "skill_building": Learning phase (LeetCode, system design)
+            - "job_searching": Active job hunt
+            - "employed": Working toward promotion
+    
+    Returns:
+        dict with keys:
+            - question: Full question text shown in check-in
+            - label: Short label for button/summary
+            - description: Explanation of what counts
+            
+    Example:
+        >>> q = get_skill_building_question("skill_building")
+        >>> print(q["label"])
+        "📚 Skill Building: 2+ hours?"
+    """
+    
+    if career_mode == "skill_building":
+        return {
+            "question": "📚 **Skill Building:** 2+ hours today?",
+            "label": "📚 Skill Building",
+            "description": "(LeetCode, system design, AI/ML upskilling, courses, projects)"
+        }
+    
+    elif career_mode == "job_searching":
+        return {
+            "question": "💼 **Job Search Progress:** Made progress today?",
+            "label": "💼 Job Search",
+            "description": "(Applications, interviews, LeetCode, networking)"
+        }
+    
+    elif career_mode == "employed":
+        return {
+            "question": "🎯 **Career Progress:** Worked toward promotion/raise?",
+            "label": "🎯 Career",
+            "description": "(High-impact work, skill development, visibility projects)"
+        }
+    
+    else:
+        # Default fallback (defensive programming)
+        logger.warning(f"⚠️ Unknown career_mode: {career_mode}, using default")
+        return {
+            "question": "📚 **Skill Building:** 2+ hours today?",
+            "label": "📚 Skill Building",
+            "description": "(Career-focused learning and development)"
+        }
+
+
 # ===== Entry Point =====
 
 async def start_checkin(
@@ -112,16 +180,38 @@ async def ask_tier1_question(message, context):
     """
     Ask Question 1: Tier 1 non-negotiables with inline keyboard.
     
-    5 items to answer (Y/N):
+    **Phase 3D Expansion: 5 items → 6 items**
+    
+    6 items to answer (Y/N):
     1. Sleep (7+ hours)
     2. Training (workout or rest day)
     3. Deep Work (2+ hours)
-    4. Zero Porn
-    5. Boundaries
+    4. Skill Building (2+ hours) - **NEW in Phase 3D** - Adapts to career mode
+    5. Zero Porn
+    6. Boundaries
+    
+    **Why 6 Items?**
+    - Constitution mandates daily skill building (LeetCode, system design, AI/ML)
+    - June 2026 career goal (₹28-42 LPA) requires tracking career progress
+    - Skill building is different from general deep work (career-specific learning)
+    
+    **Adaptive Question Logic:**
+    - Skill building question adapts based on user's career_mode
+    - skill_building mode: "Did you do 2+ hours skill building?"
+    - job_searching mode: "Did you make job search progress?"
+    - employed mode: "Did you work toward promotion/raise?"
     """
-    # Get current mode for context
+    # Get user to determine career mode
+    user_id = context.user_data.get('user_id')
+    user = firestore_service.get_user(user_id)
+    
+    # Get current mode for training target
     mode = context.user_data.get('mode', 'maintenance')
     training_target = "6x/week" if mode == "optimization" else "4x/week"
+    
+    # Get adaptive skill building question
+    career_mode = user.career_mode if user else "skill_building"
+    skill_q = get_skill_building_question(career_mode)
     
     question_text = (
         "**📋 Daily Check-In - Question 1/4**\n\n"
@@ -130,12 +220,13 @@ async def ask_tier1_question(message, context):
         "• 💤 **Sleep:** 7+ hours last night?\n"
         f"• 💪 **Training:** Workout OR rest day? ({training_target})\n"
         "• 🧠 **Deep Work:** 2+ hours focused work/study?\n"
+        f"• {skill_q['question']} {skill_q['description']}\n"
         "• 🚫 **Zero Porn:** No consumption today?\n"
         "• 🛡️ **Boundaries:** No toxic interactions?\n\n"
         "Click the buttons below to answer:"
     )
     
-    # Create inline keyboard with buttons
+    # Create inline keyboard with buttons (now 6 items)
     keyboard = [
         [
             InlineKeyboardButton("💤 Sleep: YES", callback_data="sleep_yes"),
@@ -148,6 +239,11 @@ async def ask_tier1_question(message, context):
         [
             InlineKeyboardButton("🧠 Deep Work: YES", callback_data="deepwork_yes"),
             InlineKeyboardButton("🧠 Deep Work: NO", callback_data="deepwork_no")
+        ],
+        [
+            # Phase 3D: New skill building button (adapts label to career mode)
+            InlineKeyboardButton(f"{skill_q['label']}: YES", callback_data="skillbuilding_yes"),
+            InlineKeyboardButton(f"{skill_q['label']}: NO", callback_data="skillbuilding_no")
         ],
         [
             InlineKeyboardButton("🚫 Zero Porn: YES", callback_data="porn_yes"),
@@ -196,6 +292,7 @@ async def handle_tier1_response(
         'sleep': '💤 Sleep',
         'training': '💪 Training',
         'deepwork': '🧠 Deep Work',
+        'skillbuilding': '📚 Skill Building',  # Phase 3D: New item
         'porn': '🚫 Zero Porn',
         'boundaries': '🛡️ Boundaries'
     }
@@ -208,8 +305,8 @@ async def handle_tier1_response(
         f"{item_labels.get(item, item.title())}: {response_text}"
     )
     
-    # Check if all 5 items answered
-    required_items = {'sleep', 'training', 'deepwork', 'porn', 'boundaries'}
+    # Check if all 6 items answered (Phase 3D: was 5, now 6)
+    required_items = {'sleep', 'training', 'deepwork', 'skillbuilding', 'porn', 'boundaries'}
     answered_items = set(context.user_data['tier1_responses'].keys())
     
     if required_items.issubset(answered_items):
@@ -419,12 +516,13 @@ async def finish_checkin(
         # Calculate check-in duration
         duration = int((datetime.utcnow() - context.user_data['checkin_start_time']).total_seconds())
         
-        # Create Tier1NonNegotiables object
+        # Create Tier1NonNegotiables object (Phase 3D: Now 6 items)
         tier1_data = context.user_data['tier1_responses']
         tier1 = Tier1NonNegotiables(
             sleep=tier1_data.get('sleep', False),
             training=tier1_data.get('training', False),
             deep_work=tier1_data.get('deepwork', False),
+            skill_building=tier1_data.get('skillbuilding', False),  # Phase 3D: New field
             zero_porn=tier1_data.get('porn', False),
             boundaries=tier1_data.get('boundaries', False)
         )

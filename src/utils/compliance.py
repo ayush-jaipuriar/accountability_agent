@@ -13,7 +13,7 @@ Why Pure Functions?
 Compliance Score Formula:
     score = (completed_items / total_items) * 100
     
-Where total_items = 5 (Tier 1 non-negotiables)
+Where total_items = 6 (Tier 1 non-negotiables - Phase 3D expansion)
 """
 
 from src.models.schemas import Tier1NonNegotiables
@@ -23,12 +23,20 @@ def calculate_compliance_score(tier1: Tier1NonNegotiables) -> float:
     """
     Calculate compliance score as percentage of Tier 1 items completed.
     
-    Tier 1 Non-Negotiables (5 items):
+    **Phase 3D Expansion: 5 items → 6 items**
+    
+    Tier 1 Non-Negotiables (6 items):
     1. Sleep: 7+ hours
     2. Training: Workout OR rest day
     3. Deep Work: 2+ hours
-    4. Zero Porn: No consumption (absolute)
-    5. Boundaries: No toxic interactions
+    4. Skill Building: 2+ hours career-focused learning (NEW in Phase 3D)
+    5. Zero Porn: No consumption (absolute)
+    6. Boundaries: No toxic interactions
+    
+    **Impact on Scoring:**
+    - Before Phase 3D: Each item = 20% (5 items)
+    - After Phase 3D: Each item = 16.67% (6 items)
+    - 100% requires all 6 items completed
     
     Args:
         tier1: Tier 1 non-negotiables responses
@@ -39,23 +47,24 @@ def calculate_compliance_score(tier1: Tier1NonNegotiables) -> float:
     Examples:
         >>> tier1 = Tier1NonNegotiables(
         ...     sleep=True, training=True, deep_work=False,
-        ...     zero_porn=True, boundaries=True
+        ...     skill_building=True, zero_porn=True, boundaries=True
         ... )
         >>> calculate_compliance_score(tier1)
-        80.0
+        83.33  # 5/6 items completed
         
         >>> tier1_perfect = Tier1NonNegotiables(
         ...     sleep=True, training=True, deep_work=True,
-        ...     zero_porn=True, boundaries=True
+        ...     skill_building=True, zero_porn=True, boundaries=True
         ... )
         >>> calculate_compliance_score(tier1_perfect)
-        100.0
+        100.0  # 6/6 items completed
     """
-    # Count completed items
+    # Count completed items (Phase 3D: Now 6 items)
     items = [
         tier1.sleep,
         tier1.training,
         tier1.deep_work,
+        tier1.skill_building,  # Phase 3D: New item
         tier1.zero_porn,
         tier1.boundaries
     ]
@@ -203,6 +212,11 @@ def get_tier1_breakdown(tier1: Tier1NonNegotiables) -> dict:
             "completed": tier1.deep_work,
             "hours": tier1.deep_work_hours
         },
+        "skill_building": {  # Phase 3D: New item
+            "completed": tier1.skill_building,
+            "hours": tier1.skill_building_hours,
+            "activity": tier1.skill_building_activity
+        },
         "zero_porn": {
             "completed": tier1.zero_porn
         },
@@ -237,6 +251,8 @@ def get_missed_items(tier1: Tier1NonNegotiables) -> list[str]:
         missed.append("training")
     if not tier1.deep_work:
         missed.append("deep_work")
+    if not tier1.skill_building:  # Phase 3D: New item
+        missed.append("skill_building")
     if not tier1.zero_porn:
         missed.append("zero_porn")
     if not tier1.boundaries:

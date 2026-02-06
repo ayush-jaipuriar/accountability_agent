@@ -13,8 +13,10 @@ Example:
 - Without Pattern Detection: User sleeps poorly for 2 weeks → burns out → quits
 - With Pattern Detection: User sleeps poorly for 3 days → agent sends warning → user corrects course
 
-The 5 Patterns We Detect:
---------------------------
+The 9 Patterns We Detect (Phase 3D Complete):
+----------------------------------------------
+**Phase 1-2 Patterns (Original 5):**
+
 1. **Sleep Degradation** (HIGH severity)
    - Trigger: <6 hours for 3+ consecutive nights
    - Violates: Physical Sovereignty
@@ -35,10 +37,37 @@ The 5 Patterns We Detect:
    - Violates: Overall system discipline
    - Risk: Slow degradation of all standards
 
-5. **Deep Work Collapse** (MEDIUM severity)
+5. **Deep Work Collapse** (CRITICAL severity - Phase 3D upgraded)
    - Trigger: <1.5 hours for 5+ days
-   - Violates: Create Don't Consume principle
-   - Risk: Drift into consumption mode (social media, videos, etc.)
+   - Violates: Create Don't Consume + Career Goal
+   - Risk: June 2026 goal (₹28-42 LPA) at risk, career progress stalls
+   - Historical: Jan 2025 collapse → 3-month job search stall
+
+**Phase 3D Patterns (Advanced - NEW):**
+
+6. **Snooze Trap** (WARNING severity)
+   - Trigger: Waking >30min late for 3+ consecutive days
+   - Violates: Constitution Interrupt Pattern 2
+   - Risk: Rushed mornings → missed deep work → discipline erosion
+   - Data: Optional (wake_time in check-in metadata)
+
+7. **Consumption Vortex** (WARNING severity)
+   - Trigger: >3 hours daily consumption for 5+ days
+   - Violates: Principle 2 (Create Don't Consume)
+   - Risk: Creator → consumer shift, time waste, career stall
+   - Data: Optional (consumption_hours in check-in responses)
+
+8. **Relationship Interference** (CRITICAL severity - NEW)
+   - Trigger: Boundary violations correlate (>70%) with sleep/training failures
+   - Violates: Principle 5 (Fear of Loss is Not a Reason to Stay)
+   - Risk: Toxic relationship pattern, 6-month spiral (historical: Feb-July 2025)
+   - Detection: Correlation-based (not simple threshold)
+
+9. **Ghosting** (ESCALATING severity - Phase 3B)
+   - Trigger: Missing check-ins for 2+ consecutive days
+   - Violates: Daily accountability commitment
+   - Risk: Disappearance, streak loss, full system abandonment
+   - Escalation: Day 2 (gentle) → Day 5+ (emergency)
 
 Key Concepts:
 -------------
@@ -182,6 +211,19 @@ class PatternDetectionAgent:
         if pattern := self._detect_deep_work_collapse(checkins):
             patterns.append(pattern)
             logger.warning(f"⚠️  Pattern detected: {pattern.type}")
+        
+        # Phase 3D: New advanced patterns
+        if pattern := self._detect_snooze_trap(checkins):
+            patterns.append(pattern)
+            logger.warning(f"⚠️  Pattern detected: {pattern.type}")
+        
+        if pattern := self._detect_consumption_vortex(checkins):
+            patterns.append(pattern)
+            logger.warning(f"⚠️  Pattern detected: {pattern.type}")
+        
+        if pattern := self._detect_relationship_interference(checkins):
+            patterns.append(pattern)
+            logger.error(f"🚨 CRITICAL pattern detected: {pattern.type}")
         
         if patterns:
             logger.warning(f"🚨 Pattern detection complete: {len(patterns)} pattern(s) found")
@@ -354,38 +396,425 @@ class PatternDetectionAgent:
     
     def _detect_deep_work_collapse(self, checkins: List[DailyCheckIn]) -> Optional[Pattern]:
         """
-        Detect: Low deep work for 5+ days
-        Severity: MEDIUM (Create Don't Consume violation)
+        Detect: Low deep work for 5+ days (Phase 3D Enhanced)
+        Severity: CRITICAL (Upgraded from MEDIUM - directly impacts June 2026 career goal)
         
-        Why 5 days instead of 3?
+        **Why CRITICAL Severity (Phase 3D Upgrade)?**
+        - Constitution mandates 2+ hours deep work daily
+        - June 2026 career goal (₹28-42 LPA) depends on daily skill building
+        - Historical: Jan 2025 deep work collapse → 3-month job search stall
+        - Without deep work: No LeetCode, no system design, no career progress
+        
+        **Detection Logic:**
+        - Threshold: <1.5 hours (75% of 2-hour target)
+        - Window: 5+ consecutive days (not just busy week, systemic issue)
+        - Uses existing Tier 1 deep_work data (no new data collection needed)
+        
+        **Why 5 days instead of 3?**
         - Deep work is more variable day-to-day
-        - Some days have unavoidable meetings
-        - 5-day pattern = systemic issue, not just busy week
+        - Some days have unavoidable meetings/interruptions
+        - 5-day pattern = systemic issue requiring intervention
         
-        Threshold: <1.5 hours (half of 2-hour target)
-        - Below this = consumption mode (browsing, videos, social media)
+        **Data Source:**
+        Uses existing tier1_non_negotiables.deep_work (boolean)
+        - deep_work=True → 2+ hours (target met)
+        - deep_work=False → <2 hours (below target, estimate ~1 hour)
+        
+        Args:
+            checkins: Recent check-ins (last 7 days recommended)
+            
+        Returns:
+            Pattern object if deep work collapse detected, None otherwise
+            
+        Example:
+            Last 5 days: deep_work = [False, False, False, False, False]
+            All below target → Pattern detected
         """
         if len(checkins) < 5:
             return None
         
         recent_5 = checkins[-5:]
         
-        # Estimate deep work hours (Phase 1 only has boolean deep_work)
-        # Assumption: deep_work=True means 2+ hours, False means <2 hours (estimate 1 hour)
-        low_deep_work_days = [c for c in recent_5 if not c.tier1_non_negotiables.deep_work]
+        # Count days with low deep work
+        low_deep_work_days = []
+        total_deep_work = 0
         
+        for checkin in recent_5:
+            tier1 = checkin.tier1_non_negotiables
+            
+            # Check if deep work completed
+            deep_work_completed = tier1.deep_work
+            
+            # Estimate hours (if deep_work_hours available, use it; else estimate)
+            deep_work_hours = getattr(tier1, 'deep_work_hours', None)
+            if deep_work_hours is None:
+                # Estimate based on boolean
+                deep_work_hours = 2.5 if deep_work_completed else 1.0
+            
+            total_deep_work += deep_work_hours
+            
+            # Track days below 1.5 hour threshold
+            if deep_work_hours < 1.5:
+                low_deep_work_days.append({
+                    'date': checkin.date,
+                    'hours': deep_work_hours
+                })
+        
+        # Trigger if 5+ days below threshold
         if len(low_deep_work_days) >= 5:
-            dates = [c.date for c in recent_5]
+            avg_hours = total_deep_work / len(recent_5)
+            dates = [d['date'] for d in low_deep_work_days]
             
             return Pattern(
                 type="deep_work_collapse",
-                severity="medium",
+                severity="critical",  # Phase 3D: Upgraded from "medium"
                 detected_at=datetime.utcnow(),
                 data={
-                    "consecutive_days": 5,
+                    "days_affected": len(low_deep_work_days),
+                    "avg_deep_work_hours": round(avg_hours, 1),
+                    "target": 2.0,
                     "threshold": 1.5,
                     "dates": dates,
-                    "message": "Deep work below target for 5+ consecutive days"
+                    "message": f"Deep work avg {avg_hours:.1f} hrs/day for {len(low_deep_work_days)} days (target: 2hrs)"
+                }
+            )
+        
+        return None
+    
+    def _detect_snooze_trap(self, checkins: List[DailyCheckIn]) -> Optional[Pattern]:
+        """
+        Detect: Waking >30min late for 3+ consecutive days (Phase 3D)
+        Severity: WARNING
+        
+        **Constitution Reference:**
+        From Section G - Interrupt Pattern 2: "The Snooze Trap"
+        - Trigger: "Just 10 more minutes" thought
+        - Consequence: 15min earlier bedtime per snooze
+        - Warning: 3 snoozes/week = Maintenance Mode breakdown
+        
+        **Why This Matters:**
+        Snooze trap is an early warning sign that leads to:
+        - Rushed mornings → no deep work → compliance decline
+        - Sleep debt accumulation → physical recovery suffers
+        - Discipline erosion → other habits start slipping
+        
+        **Data Requirements:**
+        - wake_time stored in check-in metadata
+        - target_wake_time in user settings (default: 06:30 from constitution)
+        
+        **Graceful Degradation:**
+        If wake_time data not available → returns None (can't detect pattern)
+        This is intentional: optional data enables optional pattern detection
+        
+        Args:
+            checkins: Recent check-ins (last 7 days recommended)
+            
+        Returns:
+            Pattern object if snooze trap detected, None otherwise
+            
+        Example:
+            Target wake: 06:30
+            Actual: 07:00, 07:15, 07:30 (3 days)
+            Snooze duration: 30min, 45min, 60min
+            Average: 45min → PATTERN DETECTED
+        """
+        if len(checkins) < 3:
+            return None
+        
+        # Get last 3 check-ins
+        recent_3 = checkins[-3:]
+        
+        # Collect snooze data
+        snooze_days = []
+        target_wake = "06:30"  # Constitution default
+        
+        for checkin in recent_3:
+            # Check if wake_time metadata exists
+            if not hasattr(checkin, 'metadata') or not checkin.metadata:
+                continue
+            
+            wake_time = checkin.metadata.get('wake_time')
+            if not wake_time:
+                continue
+            
+            # Calculate snooze duration
+            snooze_minutes = self._calculate_snooze_duration(target_wake, wake_time)
+            
+            if snooze_minutes > 30:
+                snooze_days.append({
+                    'date': checkin.date,
+                    'wake_time': wake_time,
+                    'snooze_minutes': snooze_minutes
+                })
+        
+        # Trigger if 3+ consecutive days with >30min snooze
+        if len(snooze_days) >= 3:
+            avg_snooze = sum(d['snooze_minutes'] for d in snooze_days) / len(snooze_days)
+            worst_day = max(snooze_days, key=lambda x: x['snooze_minutes'])
+            
+            return Pattern(
+                type="snooze_trap",
+                severity="warning",
+                detected_at=datetime.utcnow(),
+                data={
+                    "days_affected": [d['date'] for d in snooze_days],
+                    "avg_snooze_minutes": int(avg_snooze),
+                    "worst_day": worst_day,
+                    "target_wake": target_wake,
+                    "message": f"Snoozed avg {int(avg_snooze)}min for {len(snooze_days)} days"
+                }
+            )
+        
+        return None
+    
+    def _calculate_snooze_duration(self, target: str, actual: str) -> int:
+        """
+        Calculate snooze duration in minutes.
+        
+        **Theory - Time Difference Calculation:**
+        1. Parse time strings to datetime objects (HH:MM format)
+        2. Calculate difference: actual - target
+        3. Convert to minutes
+        4. Positive = woke late, Negative = woke early
+        
+        Args:
+            target: Target wake time (HH:MM format, e.g., "06:30")
+            actual: Actual wake time (HH:MM format, e.g., "07:15")
+        
+        Returns:
+            Snooze duration in minutes (positive if late, negative if early)
+            
+        Examples:
+            >>> _calculate_snooze_duration("06:30", "07:00")
+            30  # 30 minutes late
+            
+            >>> _calculate_snooze_duration("06:30", "06:15")
+            -15  # 15 minutes early
+        """
+        from datetime import datetime
+        
+        try:
+            target_time = datetime.strptime(target, "%H:%M")
+            actual_time = datetime.strptime(actual, "%H:%M")
+            
+            diff = actual_time - target_time
+            return int(diff.total_seconds() / 60)
+        except Exception as e:
+            logger.error(f"❌ Error calculating snooze duration: {e}")
+            return 0
+    
+    def _detect_consumption_vortex(self, checkins: List[DailyCheckIn]) -> Optional[Pattern]:
+        """
+        Detect: >3 hours daily consumption for 5+ days (Phase 3D)
+        Severity: WARNING
+        
+        **Constitution Reference:**
+        From Section G - Interrupt Pattern 3: "The Consumption Vortex"
+        - Trigger: Opening YouTube/Reddit without purpose
+        - Warning: >2hrs/day consumption → AI flags
+        - Quote: "You spent 12hrs on YouTube this week. What are you avoiding?"
+        
+        **Why This Matters:**
+        Consumption vortex indicates shift from creator → consumer:
+        - Time that could go to skill building → wasted
+        - Dopamine hijacking → makes deep work harder
+        - Avoidance behavior → something being avoided
+        
+        **Historical Context:**
+        Jan 2025: Consumption vortex → job search stalled → 3-month spiral
+        
+        **Data Requirements:**
+        - consumption_hours in check-in responses
+        - User manually reports (optional)
+        
+        **Graceful Degradation:**
+        If consumption_hours not tracked → returns None
+        Pattern detection is optional when data is optional
+        
+        Args:
+            checkins: Recent check-ins (last 7 days recommended)
+            
+        Returns:
+            Pattern object if consumption vortex detected, None otherwise
+            
+        Example:
+            Day 1: 4hrs YouTube
+            Day 2: 5hrs Reddit  
+            Day 3: 3.5hrs social media
+            Day 4: 4.5hrs gaming
+            Day 5: 4hrs YouTube
+            Total: 21hrs → Average 4.2hrs/day → PATTERN DETECTED
+        """
+        if len(checkins) < 5:
+            return None
+        
+        # Get last 7 days (analyze 5+ high consumption days)
+        recent = checkins[-7:]
+        
+        # Collect consumption data
+        high_consumption_days = []
+        total_consumption = 0
+        
+        for checkin in recent:
+            # Check if consumption_hours exists in responses
+            if not hasattr(checkin, 'responses') or not checkin.responses:
+                continue
+            
+            # consumption_hours might be in a metadata field or custom response
+            # For Phase 3D, we'll check responses dict
+            consumption_hours = getattr(checkin.responses, 'consumption_hours', None)
+            
+            if consumption_hours is None:
+                # Try metadata as fallback
+                if hasattr(checkin, 'metadata') and checkin.metadata:
+                    consumption_hours = checkin.metadata.get('consumption_hours')
+            
+            if consumption_hours is None:
+                continue
+            
+            # Count days with >3 hours consumption
+            if consumption_hours > 3:
+                high_consumption_days.append({
+                    'date': checkin.date,
+                    'hours': consumption_hours
+                })
+                total_consumption += consumption_hours
+        
+        # Trigger if 5+ days with >3 hours
+        if len(high_consumption_days) >= 5:
+            avg_consumption = total_consumption / len(high_consumption_days)
+            worst_day = max(high_consumption_days, key=lambda x: x['hours'])
+            
+            return Pattern(
+                type="consumption_vortex",
+                severity="warning",
+                detected_at=datetime.utcnow(),
+                data={
+                    "days_affected": len(high_consumption_days),
+                    "avg_consumption_hours": round(avg_consumption, 1),
+                    "worst_day": worst_day,
+                    "total_weekly_hours": round(total_consumption, 1),
+                    "dates": [d['date'] for d in high_consumption_days],
+                    "message": f"Consumed {avg_consumption:.1f} hrs/day for {len(high_consumption_days)} days"
+                }
+            )
+        
+        return None
+    
+    def _detect_relationship_interference(self, checkins: List[DailyCheckIn]) -> Optional[Pattern]:
+        """
+        Detect: Boundary violations correlate with sleep/training failures (Phase 3D)
+        Severity: CRITICAL
+        
+        **Constitution Reference:**
+        From Section G - Interrupt Pattern 4: "The Boundary Violation (Relationship)"
+        From Principle 5: "Fear of Loss is Not a Reason to Stay"
+        - Trigger: Sacrificing sleep/study/training for relationship
+        - Warning: 3 sacrifices/week = recurring toxic pattern
+        
+        **What Makes This Pattern Critical?**
+        Historical evidence from constitution:
+        - Feb-July 2025: 6-month regression due to toxic relationship
+        - Boundary violations → sleep/training failures → job search stall
+        - Pattern ended in breakup anyway (loss feared happened regardless)
+        
+        **Correlation-Based Detection:**
+        Unlike other patterns (simple threshold), this detects CORRELATION:
+        1. Count days where boundaries violated (Tier 1 item = False)
+        2. Count days where boundaries violated AND (sleep OR training failed)
+        3. Calculate correlation: interference_days / boundary_violation_days
+        4. If correlation >70% → pattern exists
+        
+        **Why 70% Threshold?**
+        - 5/7 boundary violations → 5 sleep/training failures = 71% correlation
+        - Random coincidence unlikely at >70%
+        - Constitution history shows this was consistent pattern
+        
+        **Theory - Correlation vs Causation:**
+        We can't prove causation (did boundary violation CAUSE sleep failure?),
+        but high correlation is sufficient for intervention:
+        - If always happen together → pattern exists
+        - User needs to examine relationship dynamics
+        
+        Args:
+            checkins: Recent check-ins (last 7 days recommended)
+            
+        Returns:
+            Pattern object if relationship interference detected, None otherwise
+            
+        Example:
+            Day 1: Boundaries=No, Sleep=5.5hrs → INTERFERENCE
+            Day 2: Boundaries=No, Training=No → INTERFERENCE
+            Day 3: Boundaries=Yes, Sleep=7.5hrs → OK
+            Day 4: Boundaries=No, Sleep=6hrs → INTERFERENCE
+            Day 5: Boundaries=No, Training=No → INTERFERENCE
+            Day 6: Boundaries=No, Sleep=6.5hrs → INTERFERENCE
+            Day 7: Boundaries=Yes, Training=Yes → OK
+            
+            Result: 5 boundary violations, 5 interferences = 100% correlation → CRITICAL
+        """
+        if len(checkins) < 5:
+            return None  # Need at least 5 days for meaningful correlation
+        
+        # Get last 7 days
+        recent = checkins[-7:]
+        
+        # Track boundary violations and their consequences
+        boundary_violation_days = []
+        interference_days = []
+        
+        for checkin in recent:
+            tier1 = checkin.tier1_non_negotiables
+            
+            # Check if boundaries violated
+            boundaries_violated = not tier1.boundaries
+            
+            if boundaries_violated:
+                boundary_violation_days.append(checkin.date)
+                
+                # Check if sleep or training also failed
+                # Sleep failure: <7 hours (use sleep_hours if available, else assume from boolean)
+                sleep_hours = getattr(tier1, 'sleep_hours', None)
+                if sleep_hours is not None:
+                    sleep_failed = sleep_hours < 7
+                else:
+                    # If only boolean available, sleep=False means failed
+                    sleep_failed = not tier1.sleep
+                
+                training_failed = not tier1.training
+                
+                # Interference = boundaries violated AND (sleep OR training failed)
+                if sleep_failed or training_failed:
+                    interference_days.append({
+                        'date': checkin.date,
+                        'sleep_hours': sleep_hours,
+                        'training_completed': tier1.training,
+                        'sleep_failed': sleep_failed,
+                        'training_failed': training_failed
+                    })
+        
+        # Need at least 3 boundary violations to establish pattern
+        if len(boundary_violation_days) < 3:
+            return None
+        
+        # Calculate correlation
+        correlation = len(interference_days) / len(boundary_violation_days)
+        
+        # Trigger if correlation >70%
+        if correlation > 0.7:
+            correlation_pct = int(correlation * 100)
+            
+            return Pattern(
+                type="relationship_interference",
+                severity="critical",  # CRITICAL due to historical 6-month spiral
+                detected_at=datetime.utcnow(),
+                data={
+                    "days_affected": len(interference_days),
+                    "boundary_violations": len(boundary_violation_days),
+                    "correlation_pct": correlation_pct,
+                    "total_days_analyzed": len(recent),
+                    "interference_details": interference_days,
+                    "message": f"{len(interference_days)}/{len(boundary_violation_days)} boundary violations → failures ({correlation_pct}% correlation)"
                 }
             )
         

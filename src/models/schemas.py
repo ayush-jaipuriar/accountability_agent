@@ -228,12 +228,26 @@ class Tier1NonNegotiables(BaseModel):
     """
     Tier 1 non-negotiables from constitution.
     
-    5 Core Habits (Boolean + Optional Details):
+    **Phase 3D Expansion: 5 items → 6 items**
+    
+    6 Core Habits (Boolean + Optional Details):
     1. Sleep: 7+ hours
     2. Training: Workout or scheduled rest day
     3. Deep Work: 2+ hours focused work
-    4. Zero Porn: No consumption (absolute rule)
-    5. Boundaries: No toxic interactions
+    4. Skill Building: 2+ hours career-focused learning (NEW in Phase 3D)
+    5. Zero Porn: No consumption (absolute rule)
+    6. Boundaries: No toxic interactions
+    
+    **Why Add Skill Building?**
+    - Constitution Section III.B mandates daily skill building (LeetCode, system design)
+    - June 2026 career goal (₹28-42 LPA) requires tracking
+    - Different from general deep work (career-specific learning)
+    - Question adapts to career mode (skill_building/job_searching/employed)
+    
+    **Backward Compatibility:**
+    - skill_building has default value False
+    - Old check-ins without this field will work (Pydantic sets default)
+    - New check-ins require this field
     """
     sleep: bool                                   # Did you get 7+ hours?
     sleep_hours: Optional[float] = None           # Actual hours slept (e.g., 7.5)
@@ -244,6 +258,11 @@ class Tier1NonNegotiables(BaseModel):
     
     deep_work: bool                               # Did you complete 2+ hours?
     deep_work_hours: Optional[float] = None       # Actual hours (e.g., 2.5)
+    
+    # Phase 3D: New field for career tracking
+    skill_building: bool = False                  # Did you do career-focused learning?
+    skill_building_hours: Optional[float] = None  # Actual hours (e.g., 2.5)
+    skill_building_activity: Optional[str] = None # "LeetCode", "System Design", "Courses", etc.
     
     zero_porn: bool                               # Did you maintain zero porn?
     

@@ -345,16 +345,37 @@ gcloud run deploy constitution-agent \
 
 ## 🚀 Deployment Status
 
-**Build Status:** ✅ READY  
-**Tests Status:** ⏳ Manual testing pending  
-**Deployment Status:** ⏳ Awaiting user confirmation  
+**Build Status:** ✅ COMPLETE  
+**Deployment Status:** ✅ **SUCCESSFUL**  
+**Service URL:** https://constitution-agent-2lvj3hhnkq-uc.a.run.app  
+**Webhook Status:** ✅ Configured  
+**Health Check:** ✅ Passing  
 
-**Next Action:** Deploy to Cloud Run
+**Deployment Details:**
+- **Revision:** constitution-agent-00003-z9z
+- **Deployed:** February 6, 2026 at 17:58 UTC
+- **Traffic:** 100% to new revision
+- **Memory:** 512Mi
+- **CPU:** 1 core
+- **Timeout:** 300 seconds
+- **Max Instances:** 10
+
+**Environment Variables:**
+- ✅ GCP_PROJECT_ID=accountability-agent
+- ✅ FIRESTORE_COLLECTION=users
+- ✅ TELEGRAM_BOT_TOKEN (from Secret Manager)
+- ✅ TELEGRAM_CHAT_ID (from Secret Manager)
+
+**Webhook Configuration:**
+- ✅ URL: https://constitution-agent-2lvj3hhnkq-uc.a.run.app/webhook
+- ✅ Pending Updates: 0
+- ✅ Max Connections: 40
+- ✅ IP: 34.143.74.2
 
 ---
 
 **Prepared By:** AI Assistant  
 **Build Date:** February 6, 2026  
-**Deployment Window:** Immediate  
-**Expected Downtime:** None (rolling update)  
-**Rollback Available:** Yes (previous revision preserved)
+**Deployed:** February 6, 2026 17:58 UTC  
+**Downtime:** None (rolling update)  
+**Rollback Available:** Yes (previous revisions: constitution-agent-00001-fgn, 00002-kx4)

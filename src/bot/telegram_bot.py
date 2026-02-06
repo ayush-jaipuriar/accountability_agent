@@ -93,9 +93,15 @@ class TelegramBotManager:
         # Phase 3C: Achievement system commands
         self.application.add_handler(CommandHandler("achievements", self.achievements_command))
         
+        # Phase 3D: Career mode command
+        self.application.add_handler(CommandHandler("career", self.career_command))
+        
         # Phase 3A: Callback query handlers for inline keyboard buttons
         self.application.add_handler(CallbackQueryHandler(self.mode_selection_callback, pattern="^mode_"))
         self.application.add_handler(CallbackQueryHandler(self.timezone_confirmation_callback, pattern="^tz_"))
+        
+        # Phase 3D: Career mode callback handlers
+        self.application.add_handler(CallbackQueryHandler(self.career_callback, pattern="^career_"))
         
         # Phase 3B: Partner request callbacks
         self.application.add_handler(CallbackQueryHandler(self.accept_partner_callback, pattern="^accept_partner:"))
@@ -427,6 +433,7 @@ class TelegramBotManager:
             "/checkin - Start daily check-in (4 questions)\n"
             "/status - View streak, compliance, and recent stats\n"
             "/mode - Change constitution mode (optimization/maintenance/survival)\n"
+            "/career - Change career phase (skill building/job searching/employed) 🎯\n"
             "/use_shield - Use a streak shield to protect your streak\n"
             "/achievements - View your unlocked achievements 🏆\n"
             "/help - Show this help message\n\n"
@@ -573,6 +580,167 @@ class TelegramBotManager:
         
         await update.message.reply_text(mode_info)
         logger.info(f"✅ /mode command from {user_id}")
+    
+    # ===== Phase 3D: Career Mode Commands =====
+    
+    async def career_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle /career command (Phase 3D Career Tracking).
+        
+        Display and toggle career mode.
+        
+        **Career Mode System:**
+        - **skill_building:** Learning phase (LeetCode, system design, upskilling)
+        - **job_searching:** Active job hunt (applications, interviews)
+        - **employed:** Working toward promotion/raise
+        
+        **Why This Matters:**
+        Career mode determines how the Tier 1 skill building question is phrased.
+        The question adapts to your current career phase for more relevant tracking.
+        
+        **Constitution Alignment:**
+        - Tracks progress toward ₹28-42 LPA June 2026 goal
+        - Ensures daily skill building (LeetCode, system design)
+        - Adapts as you transition from learning → job searching → employed
+        """
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+        
+        if not user:
+            await update.message.reply_text(
+                "❌ User not found. Please use /start first."
+            )
+            return
+        
+        # Career mode descriptions
+        mode_descriptions = {
+            "skill_building": (
+                "📚 **Skill Building**\n"
+                "Learning phase: LeetCode, system design, AI/ML upskilling, courses, projects\n\n"
+                "✅ **Skill building question:** Did you do 2+ hours skill building?"
+            ),
+            "job_searching": (
+                "💼 **Job Searching**\n"
+                "Active job hunt: Applications, interviews, networking, skill building\n\n"
+                "✅ **Skill building question:** Did you make job search progress?"
+            ),
+            "employed": (
+                "🎯 **Employed**\n"
+                "Working toward promotion/raise: High-impact work, skill development, visibility\n\n"
+                "✅ **Skill building question:** Did you work toward promotion/raise?"
+            )
+        }
+        
+        current_desc = mode_descriptions.get(user.career_mode, "Unknown mode")
+        
+        message = (
+            f"**🎯 Career Phase Tracking**\n\n"
+            f"**Current Mode:**\n{current_desc}\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"**Why Career Mode Matters:**\n"
+            f"• Your Tier 1 skill building question adapts to your career phase\n"
+            f"• Tracks progress toward ₹28-42 LPA June 2026 goal\n"
+            f"• Aligns check-ins with constitution career protocols\n\n"
+            f"**Change mode using buttons below:**"
+        )
+        
+        # Create inline keyboard for mode selection
+        keyboard = [
+            [InlineKeyboardButton("📚 Skill Building", callback_data="career_skill")],
+            [InlineKeyboardButton("💼 Job Searching", callback_data="career_job")],
+            [InlineKeyboardButton("🎯 Employed", callback_data="career_employed")]
+        ]
+        
+        await update.message.reply_text(
+            message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
+        logger.info(f"✅ /career command from {user_id}")
+    
+    async def career_callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle career mode selection from inline buttons (Phase 3D).
+        
+        **Callback Data Format:**
+        - career_skill → skill_building mode
+        - career_job → job_searching mode
+        - career_employed → employed mode
+        
+        **Process:**
+        1. Parse callback data to get selected mode
+        2. Update user's career_mode in Firestore
+        3. Edit message to show confirmation
+        4. Log change
+        
+        **Impact:**
+        Starting next check-in, Tier 1 skill building question will adapt
+        to the new career mode.
+        """
+        query = update.callback_query
+        await query.answer()  # Acknowledge button press (prevents loading spinner)
+        
+        user_id = str(query.from_user.id)
+        callback_data = query.data
+        
+        # Map callback data to career mode
+        mode_map = {
+            "career_skill": "skill_building",
+            "career_job": "job_searching",
+            "career_employed": "employed"
+        }
+        
+        new_mode = mode_map.get(callback_data)
+        
+        if not new_mode:
+            await query.edit_message_text("❌ Invalid selection.")
+            logger.error(f"❌ Invalid career callback data: {callback_data}")
+            return
+        
+        # Update career mode in Firestore
+        success = firestore_service.update_user(user_id, {"career_mode": new_mode})
+        
+        if not success:
+            await query.edit_message_text(
+                "❌ Failed to update career mode. Please try again."
+            )
+            logger.error(f"❌ Failed to update career mode for {user_id}")
+            return
+        
+        # Mode names for display
+        mode_names = {
+            "skill_building": "📚 Skill Building",
+            "job_searching": "💼 Job Searching",
+            "employed": "🎯 Employed"
+        }
+        
+        # Mode descriptions for confirmation
+        mode_questions = {
+            "skill_building": "Did you do 2+ hours skill building?",
+            "job_searching": "Did you make job search progress?",
+            "employed": "Did you work toward promotion/raise?"
+        }
+        
+        # Send confirmation
+        await query.edit_message_text(
+            f"✅ **Career mode updated!**\n\n"
+            f"**New Mode:** {mode_names[new_mode]}\n\n"
+            f"**Your Tier 1 skill building question will now be:**\n"
+            f"\"{mode_questions[new_mode]}\"\n\n"
+            f"This change takes effect starting your next check-in.\n\n"
+            f"🎯 Keep tracking progress toward your June 2026 goal! (₹28-42 LPA)",
+            parse_mode="Markdown"
+        )
+        
+        logger.info(f"✅ User {user_id} changed career mode to {new_mode}")
     
     async def use_shield_command(
         self,
