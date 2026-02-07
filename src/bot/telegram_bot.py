@@ -96,6 +96,15 @@ class TelegramBotManager:
         # Phase 3D: Career mode command
         self.application.add_handler(CommandHandler("career", self.career_command))
         
+        # Phase 3E: Quick check-in handled by ConversationHandler (see conversation.py)
+        # No separate handler needed here
+        
+        # Phase 3E: Stats commands
+        from src.bot.stats_commands import weekly_command, monthly_command, yearly_command
+        self.application.add_handler(CommandHandler("weekly", weekly_command))
+        self.application.add_handler(CommandHandler("monthly", monthly_command))
+        self.application.add_handler(CommandHandler("yearly", yearly_command))
+        
         # Phase 3A: Callback query handlers for inline keyboard buttons
         self.application.add_handler(CallbackQueryHandler(self.mode_selection_callback, pattern="^mode_"))
         self.application.add_handler(CallbackQueryHandler(self.timezone_confirmation_callback, pattern="^tz_"))
@@ -109,8 +118,10 @@ class TelegramBotManager:
         
         # Phase 3B: General message handler for emotional support and queries
         # This catches all non-command text messages
+        # CRITICAL: Must be in group 1 (lower priority than ConversationHandler in group 0)
         self.application.add_handler(
-            MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_general_message)
+            MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_general_message),
+            group=1  # Lower priority ensures ConversationHandler processes /checkin first
         )
         
         logger.info("✅ Command handlers registered")
@@ -123,9 +134,14 @@ class TelegramBotManager:
         
         Args:
             conversation_handler: ConversationHandler for check-ins
+            
+        **CRITICAL: Handler Groups**
+        ConversationHandler is added to group 0 (default, highest priority).
+        This ensures /checkin and /quickcheckin commands are caught by the
+        ConversationHandler BEFORE the general message handler.
         """
-        self.application.add_handler(conversation_handler)
-        logger.info("✅ Conversation handler registered")
+        self.application.add_handler(conversation_handler, group=0)
+        logger.info("✅ Conversation handler registered (group 0 - highest priority)")
     
     def get_application(self) -> Application:
         """
@@ -238,7 +254,7 @@ class TelegramBotManager:
                 f"Let's personalize your experience..."
             )
             
-            await update.message.reply_text(welcome_message)
+            await update.message.reply_text(welcome_message, parse_mode='Markdown')
             
             # Step 2: Mode Selection with Inline Keyboard
             mode_message = (
@@ -265,7 +281,7 @@ class TelegramBotManager:
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await update.message.reply_text(mode_message, reply_markup=reply_markup)
+            await update.message.reply_text(mode_message, reply_markup=reply_markup, parse_mode='Markdown')
         
         logger.info(f"✅ /start command from {user_id} ({user.first_name})")
     
@@ -429,38 +445,45 @@ class TelegramBotManager:
         """
         help_text = (
             "<b>📋 Available Commands:</b>\n\n"
-            "/start - Welcome message & setup\n"
-            "/checkin - Start daily check-in (4 questions)\n"
-            "/status - View streak, compliance, and recent stats\n"
-            "/mode - Change constitution mode (optimization/maintenance/survival)\n"
-            "/career - Change career phase (skill building/job searching/employed) 🎯\n"
-            "/use_shield - Use a streak shield to protect your streak\n"
-            "/achievements - View your unlocked achievements 🏆\n"
-            "/help - Show this help message\n\n"
-            "<b>👥 Accountability Partners (Phase 3B):</b>\n"
-            "/set_partner @username - Link an accountability partner\n"
-            "/unlink_partner - Remove your accountability partner\n\n"
-            "<b>💭 Emotional Support (Phase 3B):</b>\n"
+            "<b>Check-Ins:</b>\n"
+            "/checkin - Full check-in (4 questions, ~8 min)\n"
+            "/quickcheckin - Quick check-in (Tier 1 only, ~2 min, 2/week limit) ⚡\n\n"
+            "<b>Stats & Progress:</b>\n"
+            "/status - Current streak and recent stats\n"
+            "/weekly - Last 7 days summary 📊\n"
+            "/monthly - Last 30 days summary 📊\n"
+            "/yearly - Year-to-date summary 📊\n"
+            "/achievements - View unlocked achievements 🏆\n\n"
+            "<b>Settings:</b>\n"
+            "/mode - Change constitution mode\n"
+            "/career - Change career phase 🎯\n"
+            "/use_shield - Use streak shield 🛡️\n\n"
+            "<b>👥 Accountability Partners:</b>\n"
+            "/set_partner @username - Link accountability partner\n"
+            "/unlink_partner - Remove partner\n\n"
+            "<b>💭 Emotional Support:</b>\n"
             "Send a message describing how you're feeling:\n"
             "• 'I'm feeling lonely tonight'\n"
             "• 'Having urges right now'\n"
             "• 'Feeling stressed about work'\n\n"
+            "<b>📊 Natural Language Queries:</b>\n"
+            "Ask me questions about your data:\n"
+            "• 'What's my average compliance this month?'\n"
+            "• 'When did I last miss training?'\n"
+            "• 'Show me my longest streak'\n"
+            "• 'How much am I sleeping?'\n\n"
             "<b>🎯 How Check-Ins Work:</b>\n"
-            "1. You'll be asked 4 questions\n"
-            "2. Answer about your Tier 1 non-negotiables\n"
-            "3. I'll calculate your compliance score\n"
-            "4. Your streak updates automatically\n"
-            "5. You get immediate feedback\n\n"
+            "• <b>Full Check-In:</b> 4 questions (Tier 1 + reflection)\n"
+            "• <b>Quick Check-In:</b> Tier 1 only (limited to 2/week)\n"
+            "• Both count toward your streak\n"
+            "• Get AI-powered feedback\n"
+            "• Track patterns and progress\n\n"
             "<b>⏰ Timing:</b>\n"
-            "• Check-ins scheduled at 9 PM IST\n"
-            "• You can check in anytime with /checkin\n"
+            "• Daily reminders at 9 PM IST\n"
+            "• Check in anytime with /checkin or /quickcheckin\n"
             "• One check-in per day maximum\n"
-            "• Streak continues if you check in within 48 hours\n\n"
-            "<b>🔥 Streak Rules:</b>\n"
-            "• Increments: Check in within 48 hours of last check-in\n"
-            "• Resets: Gap exceeds 48 hours (2+ days)\n"
-            "• Longest streak never decreases (historical record)\n\n"
-            "Need support? You've got this! 💪"
+            "• Streak continues if within 48 hours\n\n"
+            "Need help? Just ask! I understand natural language. 💪"
         )
         
         await update.message.reply_text(help_text, parse_mode='HTML')
@@ -578,7 +601,7 @@ class TelegramBotManager:
             f"/mode survival"
         )
         
-        await update.message.reply_text(mode_info)
+        await update.message.reply_text(mode_info, parse_mode='Markdown')
         logger.info(f"✅ /mode command from {user_id}")
     
     # ===== Phase 3D: Career Mode Commands =====
@@ -706,7 +729,7 @@ class TelegramBotManager:
             return
         
         # Update career mode in Firestore
-        success = firestore_service.update_user(user_id, {"career_mode": new_mode})
+        success = firestore_service.update_user_career_mode(user_id, new_mode)
         
         if not success:
             await query.edit_message_text(
@@ -777,7 +800,8 @@ class TelegramBotManager:
                 f"You've used all {user.streak_shields.total} shields this month.\n"
                 f"Shields reset every 30 days.\n\n"
                 f"**Last reset:** {user.streak_shields.last_reset or 'Never'}\n\n"
-                f"💪 The best protection is consistency! Try to check in daily."
+                f"💪 The best protection is consistency! Try to check in daily.",
+                parse_mode='Markdown'
             )
             return
         
@@ -794,7 +818,8 @@ class TelegramBotManager:
                 f"You've already checked in for {checkin_date}.\n"
                 f"Your streak is safe! 🔥\n\n"
                 f"🛡️ Shields remaining: {user.streak_shields.available}/{user.streak_shields.total}\n\n"
-                f"Save your shields for emergencies."
+                f"Save your shields for emergencies.",
+                parse_mode='Markdown'
             )
             return
         
@@ -821,14 +846,16 @@ class TelegramBotManager:
                 f"**Shields remaining:** {updated_user.streak_shields.available}/{updated_user.streak_shields.total}\n\n"
                 f"⚠️ **Important:** Shields are for emergencies only!\n"
                 f"Using too many shields defeats the purpose of daily accountability.\n\n"
-                f"Get back on track tomorrow with /checkin! 💪"
+                f"Get back on track tomorrow with /checkin! 💪",
+                parse_mode='Markdown'
             )
             
             logger.info(f"✅ User {user_id} used streak shield ({updated_user.streak_shields.available} remaining)")
         else:
             await update.message.reply_text(
                 f"❌ **Failed to use shield**\n\n"
-                f"Something went wrong. Please try again or contact support."
+                f"Something went wrong. Please try again or contact support.",
+                parse_mode='Markdown'
             )
             logger.error(f"❌ Failed to use streak shield for {user_id}")
     
@@ -870,7 +897,8 @@ class TelegramBotManager:
             await update.message.reply_text(
                 "❌ **Invalid usage**\n\n"
                 "Format: /set_partner @username\n\n"
-                "Example: /set_partner @john_doe"
+                "Example: /set_partner @john_doe",
+                parse_mode='Markdown'
             )
             return
         
@@ -883,7 +911,8 @@ class TelegramBotManager:
             await update.message.reply_text(
                 f"❌ **User not found**\n\n"
                 f"User @{partner_username} hasn't started using the bot yet.\n\n"
-                "They need to send /start first!"
+                "They need to send /start first!",
+                parse_mode='Markdown'
             )
             return
         
@@ -916,12 +945,14 @@ class TelegramBotManager:
                 f"• Mutual support and motivation\n\n"
                 f"Accept this request?"
             ),
+            parse_mode='Markdown',
             reply_markup=reply_markup
         )
         
         await update.message.reply_text(
             f"✅ **Partner request sent to @{partner_username}!**\n\n"
-            f"Waiting for them to accept..."
+            f"Waiting for them to accept...",
+            parse_mode='Markdown'
         )
         
         logger.info(f"✅ Partner request sent: {user_id} → {partner.user_id}")
@@ -1051,7 +1082,8 @@ class TelegramBotManager:
             # Just unlink on this side
             firestore_service.set_accountability_partner(user_id, None, None)
             await update.message.reply_text(
-                "✅ **Partnership removed.**"
+                "✅ **Partnership removed.**",
+                parse_mode='Markdown'
             )
             return
         
@@ -1060,7 +1092,8 @@ class TelegramBotManager:
         firestore_service.set_accountability_partner(partner.user_id, None, None)
         
         await update.message.reply_text(
-            f"✅ **Partnership with {partner.name} removed.**"
+            f"✅ **Partnership with {partner.name} removed.**",
+            parse_mode='Markdown'
         )
         
         await context.bot.send_message(
@@ -1198,19 +1231,25 @@ class TelegramBotManager:
         context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         """
-        Handle general text messages (non-commands) - Phase 3B.
+        Handle general text messages (non-commands) - Phase 3B + 3E.
         
         **Flow:**
         1. Use supervisor to classify intent (emotional, query, checkin)
         2. Route to appropriate agent:
            - emotional → Emotional Support Agent
-           - query → Query handler (future)
+           - query → Query Agent (Phase 3E: Natural language queries)
            - checkin → Suggest /checkin command
+        
+        **Phase 3E Enhancement:**
+        Query intent now routes to QueryAgent which:
+        - Classifies query type (compliance, streak, training, etc.)
+        - Fetches relevant data from Firestore
+        - Generates natural language response
         
         **Why This Handler?**
         Users don't always use commands. They might say:
         - "I'm feeling lonely" (emotional)
-        - "What's my streak?" (query)
+        - "What's my average compliance?" (query → QueryAgent)
         - "Ready to check in" (checkin intent)
         
         This handler intelligently routes these messages.
@@ -1224,6 +1263,7 @@ class TelegramBotManager:
             # Import agents (avoid circular imports)
             from src.agents.supervisor import SupervisorAgent
             from src.agents.emotional_agent import get_emotional_agent
+            from src.agents.query_agent import get_query_agent  # Phase 3E
             from src.agents.state import create_initial_state
             
             # Create supervisor
@@ -1262,14 +1302,22 @@ class TelegramBotManager:
                 )
                 
             elif intent == "query":
-                # User asking a question
-                await update.message.reply_text(
+                # Phase 3E: Natural language query processing
+                query_agent = get_query_agent(project_id=settings.gcp_project_id)
+                state = await query_agent.process(state)
+                
+                response = state.get("response", 
                     "I can help with that! Here are some useful commands:\n\n"
                     "📊 /status - See your streak and stats\n"
+                    "⚡ /weekly - Last 7 days summary\n"
+                    "📅 /monthly - Last 30 days summary\n"
                     "✅ /checkin - Do your daily check-in\n"
-                    "❓ /help - See all available commands\n\n"
-                    "What would you like to do?"
+                    "❓ /help - See all available commands"
                 )
+                
+                await update.message.reply_text(response, parse_mode="Markdown")
+                
+                logger.info(f"✅ Query answered for {user_id}")
                 
             else:
                 # Unknown intent (shouldn't happen, but handle gracefully)

@@ -55,7 +55,7 @@ cat .env | grep -E "TELEGRAM_BOT_TOKEN|GCP_PROJECT_ID"
 **Expected output:**
 ```
 GCP_PROJECT_ID=accountability-agent
-TELEGRAM_BOT_TOKEN=8197561499:AAEhBUhrnAbnbSSMCBq08-xWWyIDlwZoRdk
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
 ```
 
 ✅ **If you see these values, environment is configured correctly.**

@@ -130,13 +130,19 @@ async def start_checkin(
     context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     """
-    Entry point for /checkin command.
+    Entry point for /checkin and /quickcheckin commands (Phase 3E: Added quick check-in).
     
-    Checks if:
-    1. User exists in database
-    2. User hasn't already checked in today
+    **Process:**
+    1. Check if user exists
+    2. Check if already checked in today
+    3. If /quickcheckin: Check weekly limit (2/week)
+    4. Initialize conversation data
+    5. Start Question 1 (Tier 1)
     
-    Then starts conversation with Question 1.
+    **Phase 3E Quick Check-In:**
+    - /quickcheckin triggers Tier 1-only flow (skip Q2-Q4)
+    - Limited to 2 per week (enforced here)
+    - Resets every Monday 12:00 AM IST
     
     Returns:
         int: Next state (Q1_TIER1) or ConversationHandler.END
@@ -149,6 +155,45 @@ async def start_checkin(
         await update.message.reply_text(
             "❌ Please use /start first to create your profile."
         )
+        return ConversationHandler.END
+    
+    # Detect if this is a quick check-in
+    command = update.message.text.split()[0] if update.message and update.message.text else ""
+    is_quick_checkin = command == "/quickcheckin"
+    
+    # Phase 3E: Check quick check-in weekly limit
+    if is_quick_checkin and user.quick_checkin_count >= 2:
+        from src.utils.timezone_utils import get_next_monday
+        
+        # Build list of dates when quick check-ins were used
+        history_lines = []
+        for date_str in user.quick_checkin_used_dates[-2:]:  # Last 2 dates
+            # Try to get compliance from that check-in
+            try:
+                checkin = firestore_service.get_checkin(user_id, date_str)
+                compliance = f"{checkin.compliance_score:.0f}% compliance" if checkin else ""
+                history_lines.append(f"• {date_str} - {compliance}")
+            except:
+                history_lines.append(f"• {date_str}")
+        
+        history_text = "\n".join(history_lines) if history_lines else "• Not tracked"
+        
+        # Get next Monday for reset date
+        reset_date = get_next_monday(format_string="%A, %B %d")  # "Monday, February 10"
+        
+        await update.message.reply_text(
+            f"❌ **Quick Check-In Limit Reached**\n\n"
+            f"You've used both quick check-ins this week (max 2/week):\n\n"
+            f"{history_text}\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"**Use /checkin for full check-in.**\n\n"
+            f"🔄 Limit resets: {reset_date} at 12:00 AM IST\n\n"
+            f"💡 **Why the limit?**\n"
+            f"Full check-ins provide better insights and accountability.\n"
+            f"Quick check-ins are for genuinely busy days only.",
+            parse_mode="Markdown"
+        )
+        logger.info(f"❌ User {user_id} hit quick check-in limit (2/week)")
         return ConversationHandler.END
     
     # Check if already checked in today (Phase 3A: Use 3 AM cutoff logic)
@@ -169,10 +214,34 @@ async def start_checkin(
     context.user_data['date'] = checkin_date  # Phase 3A: Use 3 AM cutoff
     context.user_data['mode'] = user.constitution_mode
     
+    # Phase 3E: Set quick check-in flag if /quickcheckin was used
+    if is_quick_checkin:
+        context.user_data['checkin_type'] = 'quick'
+        
+        # Show quick check-in intro
+        from src.utils.timezone_utils import get_next_monday
+        remaining = 2 - user.quick_checkin_count
+        reset_date = get_next_monday(format_string="%A, %B %d")
+        
+        await update.message.reply_text(
+            f"⚡ **Quick Check-In Mode**\n\n"
+            f"Complete Tier 1 in ~2 minutes (6 questions only)\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"**Available This Week:** {remaining}/2 quick check-ins\n"
+            f"**Resets:** {reset_date} at 12:00 AM IST\n\n"
+            f"💡 Quick check-ins count toward your streak but provide\n"
+            f"abbreviated feedback. Use /checkin for full insights.\n\n"
+            f"Let's go! Starting Tier 1 questions...",
+            parse_mode="Markdown"
+        )
+    else:
+        context.user_data['checkin_type'] = 'full'
+    
     # Start Question 1: Tier 1 non-negotiables
     await ask_tier1_question(update.message, context)
     
-    logger.info(f"✅ Check-in started for {user_id}")
+    logger_msg = "⚡ Quick check-in" if is_quick_checkin else "✅ Full check-in"
+    logger.info(f"{logger_msg} started for {user_id}")
     return Q1_TIER1
 
 
@@ -310,17 +379,41 @@ async def handle_tier1_response(
     answered_items = set(context.user_data['tier1_responses'].keys())
     
     if required_items.issubset(answered_items):
-        # All answered → Remove buttons and move to Q2
+        # All answered → Remove buttons
         await query.edit_message_reply_markup(reply_markup=None)
-        await query.message.reply_text(
-            "📋 Question 2/4\n\n"
-            "Challenges & Handling:\n"
-            "What challenges did you face today? How did you handle them?\n\n"
-            "📝 Type your response (10-500 characters).\n\n"
-            "Example: 'Urge to watch porn around 10 PM. Went for a walk and texted friend instead.'",
-            parse_mode=None  # No markdown formatting
-        )
-        return Q2_CHALLENGES
+        
+        # Phase 3E: Check if this is a quick check-in
+        is_quick_checkin = context.user_data.get('checkin_type') == 'quick'
+        
+        if is_quick_checkin:
+            # Quick check-in: Skip Q2-Q4 and finish immediately
+            await query.message.reply_text(
+                "⚡ **Quick Check-In Complete!**\n\n"
+                "Processing Tier 1 responses and generating feedback...",
+                parse_mode="Markdown"
+            )
+            
+            # Set dummy values for Q2-Q4 (required by finish_checkin)
+            context.user_data['challenges'] = "Quick check-in (Q2-Q4 skipped)"
+            context.user_data['rating'] = 7  # Neutral rating
+            context.user_data['rating_reason'] = "Quick check-in mode"
+            context.user_data['tomorrow_priority'] = "Continue daily check-ins"
+            context.user_data['tomorrow_obstacle'] = "None identified"
+            
+            # Finish check-in
+            await finish_checkin_quick(update, context)
+            return ConversationHandler.END
+        else:
+            # Normal check-in: Move to Q2
+            await query.message.reply_text(
+                "📋 Question 2/4\n\n"
+                "Challenges & Handling:\n"
+                "What challenges did you face today? How did you handle them?\n\n"
+                "📝 Type your response (10-500 characters).\n\n"
+                "Example: 'Urge to watch porn around 10 PM. Went for a walk and texted friend instead.'",
+                parse_mode=None  # No markdown formatting
+            )
+            return Q2_CHALLENGES
     
     # Still need more answers - keep buttons visible
     return Q1_TIER1
@@ -748,6 +841,181 @@ async def finish_checkin(
         )
 
 
+# ===== Phase 3E: Quick Check-In Completion =====
+
+async def finish_checkin_quick(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """
+    Complete quick check-in (Phase 3E).
+    
+    **Differences from Regular Check-In:**
+    1. Tier 1 ONLY (no Q2-Q4 data)
+    2. Abbreviated AI feedback (1-2 sentences vs 3-4 paragraphs)
+    3. Increment quick_checkin_count
+    4. Track date in quick_checkin_used_dates
+    5. Mark as quick check-in in database
+    
+    **Process:**
+    1. Create CheckIn object (with dummy Q2-Q4 data)
+    2. Calculate compliance score
+    3. Update streak
+    4. Store in Firestore with is_quick_checkin=True
+    5. Generate abbreviated feedback
+    6. Increment quick check-in counter
+    7. Send feedback
+    
+    **Why Abbreviated Feedback:**
+    - Quick check-ins are for busy days
+    - User wants fast completion (~2 min total)
+    - Full AI analysis requires Q2-Q4 context
+    - 1-2 sentences acknowledge wins + suggest focus area
+    """
+    user_id = context.user_data['user_id']
+    date = context.user_data['date']
+    
+    try:
+        # Calculate check-in duration
+        duration = int((datetime.utcnow() - context.user_data['checkin_start_time']).total_seconds())
+        
+        # Create Tier1NonNegotiables object
+        tier1_data = context.user_data['tier1_responses']
+        tier1 = Tier1NonNegotiables(
+            sleep=tier1_data.get('sleep', False),
+            training=tier1_data.get('training', False),
+            deep_work=tier1_data.get('deepwork', False),
+            skill_building=tier1_data.get('skillbuilding', False),
+            zero_porn=tier1_data.get('porn', False),
+            boundaries=tier1_data.get('boundaries', False)
+        )
+        
+        # Create CheckInResponses with dummy data (Q2-Q4 skipped)
+        responses = CheckInResponses(
+            challenges=context.user_data['challenges'],
+            rating=context.user_data['rating'],
+            rating_reason=context.user_data['rating_reason'],
+            tomorrow_priority=context.user_data['tomorrow_priority'],
+            tomorrow_obstacle=context.user_data['tomorrow_obstacle']
+        )
+        
+        # Calculate compliance score
+        compliance_score = calculate_compliance_score(tier1)
+        
+        # Create DailyCheckIn object with is_quick_checkin=True
+        checkin = DailyCheckIn(
+            date=date,
+            user_id=user_id,
+            mode=context.user_data['mode'],
+            tier1_non_negotiables=tier1,
+            responses=responses,
+            compliance_score=compliance_score,
+            completed_at=datetime.utcnow(),
+            duration_seconds=duration,
+            is_quick_checkin=True  # Phase 3E: Mark as quick check-in
+        )
+        
+        # Store check-in
+        firestore_service.store_checkin(user_id, checkin)
+        
+        # Update streak
+        user = firestore_service.get_user(user_id)
+        streak_updates = update_streak_data(
+            current_streak=user.streaks.current_streak,
+            longest_streak=user.streaks.longest_streak,
+            total_checkins=user.streaks.total_checkins,
+            last_checkin_date=user.streaks.last_checkin_date,
+            new_checkin_date=date
+        )
+        
+        firestore_service.update_user_streak(user_id, streak_updates)
+        
+        # Phase 3E: Increment quick check-in counter
+        new_count = user.quick_checkin_count + 1
+        updated_dates = user.quick_checkin_used_dates + [date]
+        
+        firestore_service.update_user(user_id, {
+            "quick_checkin_count": new_count,
+            "quick_checkin_used_dates": updated_dates
+        })
+        
+        logger.info(f"⚡ Quick check-in counter incremented for {user_id}: {new_count}/2")
+        
+        # Generate abbreviated AI feedback (1-2 sentences)
+        try:
+            checkin_agent = get_checkin_agent(settings.gcp_project_id)
+            
+            # Generate abbreviated feedback
+            ai_feedback = await checkin_agent.generate_abbreviated_feedback(
+                user_id=user_id,
+                tier1=tier1,
+                compliance_score=compliance_score,
+                current_streak=streak_updates['current_streak']
+            )
+            
+        except Exception as e:
+            logger.error(f"Abbreviated AI feedback failed, using fallback: {e}")
+            
+            # Fallback abbreviated feedback
+            wins = []
+            if tier1.sleep:
+                wins.append("sleep")
+            if tier1.training:
+                wins.append("training")
+            if tier1.boundaries:
+                wins.append("boundaries")
+            
+            if wins:
+                ai_feedback = f"Good job on {', '.join(wins[:2])}! "
+            else:
+                ai_feedback = "Check-in recorded. "
+            
+            # Suggest focus area
+            if not tier1.deep_work:
+                ai_feedback += "Focus on deep work tomorrow."
+            elif not tier1.skill_building:
+                ai_feedback += "Don't skip skill building tomorrow."
+            else:
+                ai_feedback += "Keep up the momentum!"
+        
+        # Build final message
+        feedback_parts = []
+        feedback_parts.append("⚡ **Quick Check-In Complete!**\n")
+        feedback_parts.append(f"📊 Compliance: {compliance_score}%")
+        feedback_parts.append(f"🔥 Streak: {streak_updates['current_streak']} days")
+        feedback_parts.append(f"\n{ai_feedback}")
+        feedback_parts.append(f"\n━━━━━━━━━━━━━━━━━━━━")
+        feedback_parts.append(f"\n**Quick Check-Ins This Week:** {new_count}/2")
+        feedback_parts.append(f"Use /checkin for full check-in next time.")
+        
+        final_message = "\n".join(feedback_parts)
+        
+        # Get the query object from update (since this was triggered by callback query)
+        query = update.callback_query
+        if query:
+            await query.message.reply_text(final_message, parse_mode="Markdown")
+        else:
+            await update.message.reply_text(final_message, parse_mode="Markdown")
+        
+        logger.info(
+            f"⚡ Quick check-in completed for {user_id}: {compliance_score}% compliance, "
+            f"{streak_updates['current_streak']} day streak, count: {new_count}/2"
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Error completing quick check-in: {e}", exc_info=True)
+        if update.callback_query:
+            await update.callback_query.message.reply_text(
+                "❌ Sorry, there was an error saving your quick check-in. "
+                "Please try /quickcheckin again or use /checkin for full check-in."
+            )
+        else:
+            await update.message.reply_text(
+                "❌ Sorry, there was an error saving your quick check-in. "
+                "Please try /quickcheckin again or use /checkin for full check-in."
+            )
+
+
 # ===== Cancel/Timeout Handlers =====
 
 async def cancel_checkin(
@@ -791,12 +1059,15 @@ def create_checkin_conversation_handler() -> ConversationHandler:
     """
     Create and configure the check-in conversation handler.
     
+    Phase 3E: Added /quickcheckin as entry point
+    
     Returns:
         ConversationHandler: Configured conversation handler
     """
     return ConversationHandler(
         entry_points=[
-            CommandHandler("checkin", start_checkin)
+            CommandHandler("checkin", start_checkin),
+            CommandHandler("quickcheckin", start_checkin)  # Phase 3E: Quick check-in entry
         ],
         states={
             Q1_TIER1: [
@@ -816,5 +1087,6 @@ def create_checkin_conversation_handler() -> ConversationHandler:
             CommandHandler("cancel", cancel_checkin)
         ],
         conversation_timeout=900,  # 15 minutes
-        name="checkin_conversation"
+        name="checkin_conversation",
+        block=True  # CRITICAL: Block other handlers when conversation is active
     )

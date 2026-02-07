@@ -109,10 +109,14 @@ class SupervisorAgent:
     
     async def classify_intent(self, state: ConstitutionState) -> ConstitutionState:
         """
-        Classify user message intent
+        Classify user message intent (Phase 3E: Enhanced with query detection).
         
         This is the main entry point for the Supervisor.
         It takes the current state, classifies the intent, and returns updated state.
+        
+        **Phase 3E Enhancement:**
+        Added fast keyword-based detection for query intents before LLM call.
+        This saves API costs for obvious queries like "what's my streak?"
         
         Args:
             state: Current conversation state
@@ -136,6 +140,23 @@ class SupervisorAgent:
         message = state["message"]
         
         logger.info(f"Classifying intent for user {user_id}: '{message[:50]}...'")
+        
+        # Phase 3E: Fast query detection (saves API call)
+        message_lower = message.lower()
+        
+        # Query keywords that strongly indicate a data query
+        query_keywords = [
+            "what's my", "what is my", "show me", "show my", 
+            "how much", "how many", "when did", "when was",
+            "average", "longest", "recent", "this month", "this week",
+            "my streak", "my compliance", "my stats", "my training"
+        ]
+        
+        if any(keyword in message_lower for keyword in query_keywords):
+            logger.info(f"📊 Fast query detection: '{message[:50]}...' → query")
+            state["intent"] = "query"
+            state["intent_confidence"] = 0.95  # High confidence for keyword match
+            return state
         
         # Get user context to help classification
         user_context = self._get_user_context(user_id)
@@ -188,14 +209,14 @@ class SupervisorAgent:
             Dictionary with user context (streak, last check-in, etc.)
         """
         try:
-            user_profile = firestore_service.get_user_profile(user_id)
+            user_profile = firestore_service.get_user(user_id)  # Fixed: was get_user_profile
             
             if user_profile:
                 return {
-                    "current_streak": user_profile.current_streak,
+                    "current_streak": user_profile.streaks.current_streak,
                     "last_checkin_date": user_profile.last_checkin_date,
-                    "longest_streak": user_profile.longest_streak,
-                    "constitution_mode": user_profile.constitution_mode
+                    "longest_streak": user_profile.streaks.longest_streak,
+                    "constitution_mode": user_profile.mode
                 }
             else:
                 # New user (no profile yet)

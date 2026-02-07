@@ -660,6 +660,88 @@ async def reminder_third(request: Request):
         raise HTTPException(500, f"Third reminder failed: {str(e)}")
 
 
+# ===== Phase 3E: Quick Check-In Reset =====
+
+@app.post("/cron/reset_quick_checkins")
+async def reset_quick_checkins(request: Request):
+    """
+    Reset quick check-in counters every Monday 12:00 AM IST (Phase 3E).
+    
+    **Purpose:**
+    - Quick check-ins limited to 2 per week
+    - Counter resets every Monday to give users a fresh start
+    - Tracks history of which dates were used
+    
+    **Triggered by:** Cloud Scheduler (weekly, Monday 00:00 IST)
+    
+    **Process:**
+    1. Get all users
+    2. Reset quick_checkin_count to 0
+    3. Clear quick_checkin_used_dates (optional: keep for history)
+    4. Update quick_checkin_reset_date to next Monday
+    
+    Returns:
+        dict: Reset results (users processed)
+    """
+    from src.utils.timezone_utils import get_next_monday
+    
+    scheduler_header = request.headers.get("X-CloudScheduler-JobName")
+    logger.info(f"🔄 Quick check-in reset triggered by: {scheduler_header or 'manual'}")
+    
+    try:
+        # Get all users
+        all_users = firestore_service.get_all_users()
+        logger.info(f"🔄 Resetting quick check-in counters for {len(all_users)} users")
+        
+        reset_count = 0
+        errors = 0
+        next_monday = get_next_monday(format_string="%Y-%m-%d")
+        
+        for user in all_users:
+            try:
+                # Get current count (for logging)
+                previous_count = user.quick_checkin_count
+                
+                # Reset counter and update reset date
+                firestore_service.update_user(user.user_id, {
+                    "quick_checkin_count": 0,
+                    # Clear history (or keep last 4 weeks for analytics)
+                    "quick_checkin_used_dates": [],
+                    "quick_checkin_reset_date": next_monday
+                })
+                
+                reset_count += 1
+                
+                if previous_count > 0:
+                    logger.info(
+                        f"✅ Reset quick check-ins for {user.user_id} ({user.name}): "
+                        f"{previous_count}/2 → 0/2"
+                    )
+                
+            except Exception as e:
+                logger.error(f"❌ Failed to reset quick check-ins for {user.user_id}: {e}")
+                errors += 1
+        
+        result = {
+            "status": "reset_complete",
+            "timestamp": datetime.utcnow().isoformat(),
+            "total_users": len(all_users),
+            "reset_count": reset_count,
+            "errors": errors,
+            "next_reset_date": next_monday
+        }
+        
+        logger.info(
+            f"✅ Quick check-in reset complete: {reset_count} users reset, "
+            f"{errors} errors. Next reset: {next_monday}"
+        )
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Quick check-in reset failed: {e}", exc_info=True)
+        raise HTTPException(500, f"Quick check-in reset failed: {str(e)}")
+
+
 # ===== Error Handlers =====
 
 @app.exception_handler(Exception)

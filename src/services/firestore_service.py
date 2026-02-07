@@ -197,6 +197,31 @@ class FirestoreService:
             logger.error(f"❌ Failed to update user mode: {e}")
             raise
     
+    def update_user_career_mode(self, user_id: str, career_mode: str) -> bool:
+        """
+        Update user's career mode (Phase 3D).
+        
+        Modes: skill_building, job_searching, employed
+        
+        Args:
+            user_id: User's unique ID
+            career_mode: New career mode
+            
+        Returns:
+            bool: True if update successful, False otherwise
+        """
+        try:
+            user_ref = self.db.collection('users').document(user_id)
+            user_ref.update({
+                "career_mode": career_mode,
+                "updated_at": datetime.utcnow()
+            })
+            logger.info(f"✅ Updated career mode for {user_id}: {career_mode}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Failed to update career mode: {e}")
+            return False
+    
     # ===== Check-In Operations =====
     
     def store_checkin(self, user_id: str, checkin: DailyCheckIn) -> None:
@@ -926,6 +951,60 @@ class FirestoreService:
             
         except Exception as e:
             logger.error(f"❌ Failed to log emotional interaction: {e}")
+    
+    # ===== Phase 3E: Pattern Retrieval =====
+    
+    def get_patterns(
+        self,
+        user_id: str,
+        days: int = 30
+    ) -> List:
+        """
+        Get detected patterns for user (Phase 3E Query Agent support).
+        
+        **Purpose:**
+        Allows Query Agent to answer: "How often do I get sleep degradation?"
+        
+        **Firestore Structure:**
+        patterns/{pattern_id}
+        {
+            user_id: str
+            pattern_name: str (e.g., "sleep_degradation")
+            detected_at: datetime
+            severity: str
+            data_points: List
+        }
+        
+        Args:
+            user_id: User ID to fetch patterns for
+            days: Number of days to look back
+            
+        Returns:
+            List of Pattern objects (empty if none found)
+        """
+        try:
+            from datetime import datetime, timedelta
+            
+            # Calculate cutoff date
+            cutoff_date = datetime.utcnow() - timedelta(days=days)
+            
+            # Query patterns collection
+            patterns_ref = self.db.collection('patterns')
+            query = patterns_ref.where('user_id', '==', user_id) \
+                               .where('detected_at', '>=', cutoff_date) \
+                               .order_by('detected_at', direction=firestore.Query.DESCENDING)
+            
+            patterns = []
+            for doc in query.stream():
+                patterns.append(doc.to_dict())
+            
+            logger.info(f"📊 Retrieved {len(patterns)} patterns for user {user_id} (last {days} days)")
+            return patterns
+            
+        except Exception as e:
+            # Graceful handling if patterns collection doesn't exist yet
+            logger.warning(f"⚠️ Could not fetch patterns for {user_id}: {e}")
+            return []  # Return empty list instead of crashing
     
     # ===== Health Check =====
     

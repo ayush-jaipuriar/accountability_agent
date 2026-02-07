@@ -103,6 +103,8 @@ class User(BaseModel):
     # ===== Phase 3A: Multi-User & Reminders =====
     reminder_times: ReminderTimes = Field(default_factory=ReminderTimes)  # Reminder configuration
     quick_checkin_count: int = Field(default=0, ge=0)  # Quick check-ins used this week (max 2)
+    quick_checkin_used_dates: List[str] = Field(default_factory=list)  # Dates when quick check-ins were used
+    quick_checkin_reset_date: str = ""  # Next Monday for weekly reset
     streak_shields: StreakShields = Field(default_factory=StreakShields)  # Streak protection
     
     # ===== Phase 3B: Emotional Support & Accountability =====
@@ -141,6 +143,8 @@ class User(BaseModel):
             # Phase 3A: Multi-user & Reminders
             "reminder_times": self.reminder_times.model_dump(),
             "quick_checkin_count": self.quick_checkin_count,
+            "quick_checkin_used_dates": self.quick_checkin_used_dates,
+            "quick_checkin_reset_date": self.quick_checkin_reset_date,
             "streak_shields": self.streak_shields.model_dump(),
             
             # Phase 3B: Accountability
@@ -316,6 +320,9 @@ class DailyCheckIn(BaseModel):
     completed_at: datetime = Field(default_factory=datetime.utcnow)
     duration_seconds: int = Field(default=0, ge=0)  # Time taken to complete (for analytics)
     
+    # Phase 3E: Quick check-in tracking
+    is_quick_checkin: bool = False  # Was this a quick check-in (Tier 1 only)?
+    
     def to_firestore(self) -> dict:
         """Convert to Firestore-compatible dictionary."""
         return {
@@ -326,7 +333,8 @@ class DailyCheckIn(BaseModel):
             "responses": self.responses.model_dump(),
             "compliance_score": self.compliance_score,
             "completed_at": self.completed_at,
-            "duration_seconds": self.duration_seconds
+            "duration_seconds": self.duration_seconds,
+            "is_quick_checkin": self.is_quick_checkin
         }
     
     @classmethod

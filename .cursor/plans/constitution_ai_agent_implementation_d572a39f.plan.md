@@ -854,6 +854,72 @@ def test_streak_resets_after_gap():
 
 ---
 
+## 🎉 Phase 3E Complete! (Feb 7, 2026)
+
+**Status:** ✅ **DEPLOYED TO PRODUCTION**  
+**Revision:** constitution-agent-00029-vvz  
+**Service URL:** [https://constitution-agent-450357249483.asia-south1.run.app](https://constitution-agent-450357249483.asia-south1.run.app)
+
+### ✅ Phase 3E Features Delivered:
+
+**1. Quick Check-In Mode ⚡**
+- Tier 1-only check-ins (6 questions vs 10)
+- Abbreviated AI feedback (1-2 sentences, ~100 tokens)
+- Weekly limit: 2 quick check-ins per week
+- Auto-reset every Monday at midnight IST
+- Schema: Added `quick_checkin_count`, `quick_checkin_used_dates`, `quick_checkin_reset_date` to User model
+- Still counts toward daily streak
+
+**2. Query Agent 🤖**
+- Natural language data queries
+- 6 query types: compliance_average, streak_info, training_history, sleep_trends, pattern_frequency, goal_progress
+- Fast keyword detection (50% cost savings)
+- Gemini-powered responses with context
+
+**3. Stats Commands 📊**
+- `/weekly` - Last 7 days summary
+- `/monthly` - Last 30 days with achievements
+- `/yearly` - Year-to-date with career progress
+- Pure data aggregation (no LLM = $0 cost)
+
+**4. Cloud Scheduler Integration**
+- Weekly reset cron job (`reset-quick-checkins`)
+- Runs every Monday at 00:00 IST
+- Resets quick check-in counters for all users
+
+### Code Changes:
+- **New Files:** 3 (query_agent.py, analytics_service.py, stats_commands.py)
+- **Modified Files:** 9 (schemas, conversation, telegram_bot, supervisor, etc.)
+- **Total Lines:** ~1,500 lines
+
+### Bug Fixes During Deployment:
+1. ✅ Handler priority conflict (ConversationHandler group 0, MessageHandler group 1)
+2. ✅ Markdown formatting (added `parse_mode='Markdown'` to 15 locations)
+3. ✅ Conversation handler blocking (added `block=True`)
+4. ✅ Supervisor method name (fixed `get_user_profile` → `get_user`)
+
+### Testing Results:
+- **Automated Tests:** 17/17 passed (100%)
+- **Local Docker Testing:** All systems operational
+- **Production Health:** ✅ Healthy
+- **Webhook:** ✅ Configured
+- **Cron Job:** ✅ Scheduled
+
+### Cost Impact:
+- Quick check-ins: ~$5/month (1000 users)
+- Query Agent: ~$10-20/month
+- Stats: $0/month
+- **Total Added: ~$15-25/month**
+
+### Documentation:
+- `PHASE3E_IMPLEMENTATION.md` - Technical details
+- `PHASE3E_DEPLOYMENT_SUCCESS.md` - Deployment summary
+- `BUGFIX_*.md` - 3 bug fix documents
+
+**Next Run:** Monday, Feb 10, 2026 at 00:00 IST (cron job)
+
+---
+
 ### 2.1 LangGraph Architecture Setup
 
 **What:** Introduce LangGraph as the orchestration layer for multiple AI agents.

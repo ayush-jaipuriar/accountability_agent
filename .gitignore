@@ -2,11 +2,19 @@
 .credentials/
 *.json
 !requirements.txt
+!package.json
+!package-lock.json
+!tsconfig.json
 
 # Environment Variables
 .env
+.env.*
 .env.local
 .env.*.local
+.env.backup
+.env.bak
+*.env.bak
+.envrc
 
 # Python
 __pycache__/
@@ -65,3 +73,20 @@ logs/
 *.tmp
 tmp/
 temp/
+
+# Security - Additional patterns
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.crt
+*.der
+*_rsa
+*_dsa
+*_ed25519
+*.secret
+secrets/
+secret.yaml
+secret.yml
+*.credentials

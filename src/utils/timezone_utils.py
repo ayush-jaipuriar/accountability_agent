@@ -310,3 +310,50 @@ def seconds_until_checkin_time(target_time_str: str = "21:00") -> int:
     # Calculate difference
     time_diff = target_datetime - now_ist
     return int(time_diff.total_seconds())
+
+
+def get_next_monday(timezone: str = "Asia/Kolkata", format_string: str = "%B %d, %Y") -> str:
+    """
+    Get the date of the next Monday (for weekly resets).
+    
+    Used for:
+    - Quick check-in weekly reset (every Monday 12:00 AM)
+    - Displaying when limit resets to users
+    
+    Args:
+        timezone: Timezone to use (default: Asia/Kolkata)
+        format_string: How to format the date (default: "February 10, 2026")
+        
+    Returns:
+        str: Next Monday's date formatted as specified
+        
+    Examples:
+        If today is Wednesday, Feb 5, 2026:
+        >>> get_next_monday()
+        'February 10, 2026'  # Following Monday
+        
+        If today is Monday, Feb 3, 2026:
+        >>> get_next_monday()
+        'February 10, 2026'  # Next Monday (not today)
+        
+    Phase 3E Usage:
+    ---------------
+    - Quick check-ins reset every Monday 12:00 AM
+    - Show users: "Limit resets: Monday Feb 10 at 12:00 AM IST"
+    """
+    from datetime import timedelta
+    
+    tz = pytz.timezone(timezone)
+    now = datetime.now(tz)
+    
+    # Calculate days until next Monday
+    # Monday = 0, Sunday = 6
+    days_ahead = 7 - now.weekday()  # Days until next Monday
+    
+    # If today is Monday, go to next week's Monday
+    if days_ahead == 0:
+        days_ahead = 7
+    
+    next_monday = now + timedelta(days=days_ahead)
+    
+    return next_monday.strftime(format_string)

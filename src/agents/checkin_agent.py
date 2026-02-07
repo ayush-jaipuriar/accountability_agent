@@ -182,6 +182,115 @@ class CheckInAgent:
             # Fallback to Phase 1 hardcoded feedback
             return self._fallback_feedback(compliance_score, current_streak)
     
+    async def generate_abbreviated_feedback(
+        self,
+        user_id: str,
+        tier1: Tier1NonNegotiables,
+        compliance_score: int,
+        current_streak: int
+    ) -> str:
+        """
+        Generate abbreviated feedback for quick check-ins (Phase 3E).
+        
+        **Goal:** 1-2 sentences that:
+        1. Acknowledge 1-2 wins from Tier 1
+        2. Suggest 1 focus area for tomorrow
+        
+        **Why Abbreviated:**
+        - Quick check-ins skip Q2-Q4 (no challenges, priorities, obstacles)
+        - User wants fast completion (~2 minutes total)
+        - Limited context = limited analysis
+        - Still provide value: recognize wins + actionable advice
+        
+        **Format:**
+        "Good job on X and Y! Focus on Z tomorrow."
+        OR
+        "Strong performance on X! Don't skip Y tomorrow."
+        
+        Args:
+            user_id: User ID
+            tier1: Tier 1 non-negotiables object
+            compliance_score: Today's compliance score (0-100)
+            current_streak: Current streak count
+            
+        Returns:
+            Abbreviated feedback (1-2 sentences, <100 words)
+        """
+        try:
+            # Build abbreviated prompt
+            prompt = f"""Generate brief (1-2 sentences) check-in feedback.
+
+**Tier 1 Results:**
+- Sleep: {'✅' if tier1.sleep else '❌'} (7+ hours)
+- Training: {'✅' if tier1.training else '❌'} (workout or rest)
+- Deep Work: {'✅' if tier1.deep_work else '❌'} (2+ hours)
+- Skill Building: {'✅' if tier1.skill_building else '❌'} (2+ hours career learning)
+- Zero Porn: {'✅' if tier1.zero_porn else '❌'}
+- Boundaries: {'✅' if tier1.boundaries else '❌'} (no toxic interactions)
+
+**Compliance:** {compliance_score}%
+**Streak:** {current_streak} days
+
+**Task:** Generate 1-2 sentences:
+1. Acknowledge 1-2 wins (things with ✅)
+2. Suggest 1 focus area for tomorrow (prioritize ❌ items)
+
+**Requirements:**
+- Maximum 100 words
+- Specific (mention actual areas like "sleep", "deep work")
+- Encouraging but direct
+- No generic platitudes
+
+**Examples:**
+- "Great work on sleep and training! Focus on skill building tomorrow."
+- "Strong day with perfect compliance! Keep this momentum going."
+- "Good boundaries maintained! Prioritize deep work and skill building tomorrow."
+- "Sleep on track! Don't skip training tomorrow - consistency matters."
+
+**Your Response (1-2 sentences only):**"""
+
+            # Generate abbreviated feedback with Gemini
+            logger.info(f"⚡ Generating abbreviated feedback for quick check-in (user {user_id})")
+            
+            feedback = await self.llm.generate_text(
+                prompt=prompt,
+                max_output_tokens=150,  # Very short output
+                temperature=0.5  # Lower creativity for consistency
+            )
+            
+            logger.info(f"✅ Generated abbreviated feedback ({len(feedback)} chars) for user {user_id}")
+            
+            return feedback.strip()
+            
+        except Exception as e:
+            logger.error(f"❌ Abbreviated AI feedback failed: {e}", exc_info=True)
+            
+            # Fallback abbreviated feedback
+            wins = []
+            if tier1.sleep:
+                wins.append("sleep")
+            if tier1.training:
+                wins.append("training")
+            if tier1.boundaries:
+                wins.append("boundaries")
+            
+            if wins:
+                feedback = f"Good job on {', '.join(wins[:2])}! "
+            else:
+                feedback = "Check-in recorded. "
+            
+            # Suggest focus area
+            if not tier1.deep_work:
+                feedback += "Focus on deep work tomorrow."
+            elif not tier1.skill_building:
+                feedback += "Don't skip skill building tomorrow."
+            elif not tier1.sleep:
+                feedback += "Prioritize sleep tomorrow."
+            else:
+                feedback += "Keep up the momentum!"
+            
+            return feedback
+    
     def _get_recent_checkins(self, user_id: str, days: int = 7) -> List[Dict]:
         """
         Get recent check-ins for trend analysis

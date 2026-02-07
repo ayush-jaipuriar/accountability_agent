@@ -1,0 +1,188 @@
+---
+description: Safe git workflow practices to prevent accidents and data loss
+alwaysApply: true
+---
+
+# Git Workflow Safety
+
+Essential git safety practices learned from production incidents.
+
+## Before Every Commit
+
+### 1. Review What You're Committing
+```bash
+# ALWAYS run these before committing:
+git status              # See what's staged/untracked
+git diff --cached       # Review exact changes being committed
+```
+
+### 2. Check for Sensitive Files
+```bash
+# Look for files that shouldn't be committed:
+git status --short | grep -E "\.(env|bak|key|credentials)"
+```
+
+### 3. Verify .gitignore is Working
+```bash
+# Test if files are properly ignored:
+git check-ignore -v .env
+git check-ignore -v .env.bak
+```
+
+## When Creating Backup Files
+
+**Problem:** Tools like `sed -i.bak` create backup files that may not be ignored.
+
+**Safe practices:**
+
+```bash
+❌ AVOID:
+sed -i.bak 's/old/new/' .env    # Creates .env.bak (not ignored!)
+
+✅ SAFE:
+# Option 1: Don't create backups
+sed -i '' 's/old/new/' .env     # macOS: no backup
+
+# Option 2: Create in ignored directory
+cp .env /tmp/env.backup         # Outside git repo
+sed -i '' 's/old/new/' .env
+
+# Option 3: Ensure pattern is ignored
+echo "*.bak" >> .gitignore      # Before creating backup
+sed -i.bak 's/old/new/' file
+```
+
+## Untracked Files Warning
+
+**If `git status` shows untracked files with sensitive names:**
+
+```bash
+# Example warning signs:
+Untracked files:
+  .env.bak          # ⚠️ DANGER
+  credentials.json  # ⚠️ DANGER
+  secrets.yaml      # ⚠️ DANGER
+```
+
+**Immediate actions:**
+1. DO NOT run `git add .` or `git add -A`
+2. Add pattern to `.gitignore` first
+3. Delete the file if it's a backup
+4. Commit .gitignore update before other changes
+
+## Safe Adding Strategy
+
+```bash
+❌ DANGEROUS:
+git add .          # Adds everything (might include secrets!)
+git add -A         # Adds everything (might include secrets!)
+
+✅ SAFE:
+git add src/       # Add specific directories
+git add *.py       # Add specific file types
+git add -p         # Review each change interactively
+
+# Or add files explicitly:
+git add file1.py file2.py file3.md
+```
+
+## Staging Area Verification
+
+Before committing, verify staging area:
+
+```bash
+# 1. See list of staged files
+git diff --cached --name-only
+
+# 2. Check for sensitive patterns
+git diff --cached --name-only | grep -E "\.(env|bak|key)"
+
+# 3. If found, unstage immediately:
+git reset HEAD path/to/file
+```
+
+## Branch Protection
+
+**Before force operations, verify branch:**
+
+```bash
+# ❌ DANGEROUS on main:
+git push --force
+git reset --hard HEAD~5
+
+# ✅ SAFE - check branch first:
+git branch --show-current    # Ensure not on main
+git push --force origin feature-branch
+```
+
+## Documentation Files
+
+**When writing docs with commands/examples:**
+
+- ✅ Use placeholders: `${VARIABLE_NAME}`
+- ✅ Use fake values: `your_token_here`
+- ❌ NEVER paste actual tokens/keys
+- ❌ NEVER show full credentials in examples
+
+## Recovery: If Secrets Are Staged
+
+```bash
+# 1. Unstage the file
+git reset HEAD file-with-secret.md
+
+# 2. Clean the file
+# (replace secrets with placeholders)
+
+# 3. Stage the cleaned version
+git add file-with-secret.md
+
+# 4. Verify it's clean
+git diff --cached file-with-secret.md
+```
+
+## Pre-Push Checklist
+
+- [ ] Reviewed `git log` - commits make sense
+- [ ] No "WIP", "test", "debug" commits
+- [ ] No secrets in any commit
+- [ ] Commit messages are descriptive
+- [ ] Not pushing to main by accident (check branch)
+
+## Emergency: Already Committed Secrets
+
+**If secrets already committed but NOT pushed:**
+
+```bash
+# 1. DO NOT PUSH
+# 2. Remove the commit:
+git reset --soft HEAD~1    # Undo commit, keep changes
+# 3. Clean the files
+# 4. Recommit
+
+# Or amend:
+git commit --amend         # Fix the last commit
+```
+
+**If secrets already pushed to GitHub:**
+
+1. **Rotate secrets immediately** (assume compromised)
+2. **Notify security team/user**
+3. **Remove from git history** (use BFG Repo-Cleaner or git filter-branch)
+4. **Force push** (coordinate with team)
+
+## Lesson from Feb 7, 2026
+
+**What happened:**
+- `sed -i.bak` created `.env.bak` during deployment
+- Bot token appeared in documentation
+- Files staged but caught before push
+
+**What saved us:**
+- Running `git status` before committing
+- Seeing "Untracked files: .env.bak"
+- Stopping to investigate
+
+**Prevention:**
+- ALWAYS review `git status` output
+- NEVER ignore untracked files with sensitive names
+- CHECK staged changes with `git diff --cached`
