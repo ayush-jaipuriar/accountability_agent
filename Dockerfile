@@ -10,8 +10,17 @@ WORKDIR /app
 
 # ===== System Dependencies =====
 # Install system packages needed by Python libraries
+# Phase 3F additions:
+# - fontconfig, fonts-dejavu-core: For matplotlib font rendering
+# - libfreetype6: Font library for matplotlib
+# - libjpeg62-turbo, zlib1g: Image libraries for Pillow
 RUN apt-get update && apt-get install -y \
     curl \
+    fontconfig \
+    fonts-dejavu-core \
+    libfreetype6 \
+    libjpeg62-turbo \
+    zlib1g \
     && rm -rf /var/lib/apt/lists/*
 
 # ===== Python Dependencies =====

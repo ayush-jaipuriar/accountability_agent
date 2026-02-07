@@ -742,6 +742,58 @@ async def reset_quick_checkins(request: Request):
         raise HTTPException(500, f"Quick check-in reset failed: {str(e)}")
 
 
+# ===== Phase 3F: Weekly Report Trigger =====
+
+@app.post("/trigger/weekly-report")
+async def weekly_report_trigger(request: Request):
+    """
+    Trigger weekly report generation for all users (Phase 3F).
+    
+    Called by Cloud Scheduler every Sunday 9:00 AM IST.
+    
+    **Process:**
+    1. Iterate over all active users
+    2. For each user: generate 4 graphs + AI insights
+    3. Send report via Telegram (text + 4 images)
+    4. Return aggregate results
+    
+    **Performance Considerations:**
+    - Reports are generated sequentially (Telegram rate limits: 30 msg/s)
+    - Each report takes ~5-15 seconds (graph generation + LLM call)
+    - For 10 users: ~2.5 minutes total
+    - Cloud Run timeout: 300s (5 minutes) - sufficient for 20+ users
+    
+    **Cost:**
+    - Graph generation: $0.00 (matplotlib)
+    - AI insights: ~$0.003/month (300 tokens × 40 reports)
+    - Cloud Scheduler: $0.10/month per job
+    
+    Returns:
+        dict: Aggregate report results
+    """
+    from src.agents.reporting_agent import send_weekly_reports_to_all
+    
+    scheduler_header = request.headers.get("X-CloudScheduler-JobName")
+    logger.info(f"📊 Weekly report triggered by: {scheduler_header or 'manual'}")
+    
+    try:
+        results = await send_weekly_reports_to_all(
+            project_id=settings.gcp_project_id,
+            bot=bot_manager.bot,
+        )
+        
+        logger.info(
+            f"✅ Weekly reports complete: {results['reports_sent']} sent, "
+            f"{results['reports_failed']} failed"
+        )
+        
+        return results
+        
+    except Exception as e:
+        logger.error(f"❌ Weekly report trigger failed: {e}", exc_info=True)
+        raise HTTPException(500, f"Weekly report failed: {str(e)}")
+
+
 # ===== Error Handlers =====
 
 @app.exception_handler(Exception)

@@ -119,6 +119,11 @@ class User(BaseModel):
     # ===== Phase 3D: Career Tracking =====
     career_mode: str = "skill_building"  # skill_building | job_searching | employed
     
+    # ===== Phase 3F: Social Features =====
+    leaderboard_opt_in: bool = True          # Whether user appears on leaderboard
+    referred_by: Optional[str] = None        # User ID of the person who referred this user
+    referral_code: Optional[str] = None      # Unique referral code for this user
+    
     def to_firestore(self) -> dict:
         """
         Convert to Firestore-compatible dictionary.
@@ -157,7 +162,12 @@ class User(BaseModel):
             "xp": self.xp,
             
             # Phase 3D: Career
-            "career_mode": self.career_mode
+            "career_mode": self.career_mode,
+            
+            # Phase 3F: Social
+            "leaderboard_opt_in": self.leaderboard_opt_in,
+            "referred_by": self.referred_by,
+            "referral_code": self.referral_code
         }
     
     @classmethod

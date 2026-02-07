@@ -338,7 +338,7 @@ class AchievementService:
         # Perfect Week: 7 consecutive days at 100% compliance
         if len(recent_checkins) >= 7:
             last_7 = recent_checkins[-7:]  # Get last 7 check-ins
-            if all(c.computed.compliance_score == 100.0 for c in last_7):
+            if all(c.compliance_score == 100.0 for c in last_7):
                 if "perfect_week" not in user.achievements:
                     unlocked.append("perfect_week")
                     logger.info(
@@ -349,7 +349,7 @@ class AchievementService:
         # Perfect Month: 30 consecutive days at 100% compliance
         if len(recent_checkins) >= 30:
             last_30 = recent_checkins[-30:]
-            if all(c.computed.compliance_score == 100.0 for c in last_30):
+            if all(c.compliance_score == 100.0 for c in last_30):
                 if "perfect_month" not in user.achievements:
                     unlocked.append("perfect_month")
                     logger.info(

@@ -893,7 +893,7 @@ class PatternDetectionAgent:
                 "days_missing": days_since,
                 "last_checkin_date": user.streaks.last_checkin_date,
                 "previous_streak": user.streaks.current_streak,
-                "current_mode": user.constitution.current_mode if user.constitution else None
+                "current_mode": user.constitution_mode
             }
         )
         

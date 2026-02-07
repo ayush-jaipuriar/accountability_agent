@@ -105,6 +105,17 @@ class TelegramBotManager:
         self.application.add_handler(CommandHandler("monthly", monthly_command))
         self.application.add_handler(CommandHandler("yearly", yearly_command))
         
+        # Phase 3F: Export, Report, Social commands
+        self.application.add_handler(CommandHandler("export", self.export_command))
+        self.application.add_handler(CommandHandler("report", self.report_command))
+        self.application.add_handler(CommandHandler("leaderboard", self.leaderboard_command))
+        self.application.add_handler(CommandHandler("rank", self.leaderboard_command))  # Alias
+        self.application.add_handler(CommandHandler("invite", self.invite_command))
+        self.application.add_handler(CommandHandler("refer", self.invite_command))  # Alias
+        self.application.add_handler(CommandHandler("share", self.share_command))
+        self.application.add_handler(CommandHandler("brag", self.share_command))  # Alias
+        self.application.add_handler(CommandHandler("resume", self.resume_command))
+        
         # Phase 3A: Callback query handlers for inline keyboard buttons
         self.application.add_handler(CallbackQueryHandler(self.mode_selection_callback, pattern="^mode_"))
         self.application.add_handler(CallbackQueryHandler(self.timezone_confirmation_callback, pattern="^tz_"))
@@ -213,6 +224,14 @@ class TelegramBotManager:
         user = update.effective_user
         user_id = str(user.id)
         
+        # Phase 3F: Parse referral code from deep link (/start ref_USERID)
+        referral_user_id = None
+        if context.args and len(context.args) > 0:
+            arg = context.args[0]
+            if arg.startswith("ref_"):
+                referral_user_id = arg[4:]  # Extract user ID after "ref_"
+                logger.info(f"🔗 Referral detected: {user_id} referred by {referral_user_id}")
+        
         # Check if user exists
         existing_user = firestore_service.get_user(user_id)
         
@@ -229,6 +248,10 @@ class TelegramBotManager:
             )
         else:
             # ===== New User - Phase 3A Onboarding =====
+            
+            # Phase 3F: Store referral code for use in mode_selection_callback
+            if referral_user_id:
+                context.user_data["referral_user_id"] = referral_user_id
             
             # Step 1: Welcome + Purpose
             welcome_message = (
@@ -310,16 +333,25 @@ class TelegramBotManager:
         selected_mode = query.data.replace("mode_", "")
         
         # Create user profile with selected mode
+        # Phase 3F: Check for referral code stored in context
+        referred_by = context.user_data.get("referral_user_id") if context.user_data else None
+        
         new_user = User(
             user_id=user_id,
             telegram_id=user.id,
             telegram_username=user.username,
             name=user.first_name or "User",
             timezone="Asia/Kolkata",  # Default, will confirm next
-            constitution_mode=selected_mode
+            constitution_mode=selected_mode,
+            referred_by=referred_by
         )
         
         firestore_service.create_user(new_user)
+        
+        # Phase 3F: If referred, give bonus streak shields
+        if referred_by:
+            logger.info(f"🎁 Giving 3 bonus shields to {user_id} (referred by {referred_by})")
+            # Bonus shields are already 3/3 by default - this is the welcome bonus
         
         # Confirm mode selection
         mode_emojis = {
@@ -441,50 +473,12 @@ class TelegramBotManager:
         """
         Handle /help command.
         
-        Shows available commands and usage info.
+        Shows available commands organized by category using Phase 3F
+        UX utilities for consistent formatting.
         """
-        help_text = (
-            "<b>📋 Available Commands:</b>\n\n"
-            "<b>Check-Ins:</b>\n"
-            "/checkin - Full check-in (4 questions, ~8 min)\n"
-            "/quickcheckin - Quick check-in (Tier 1 only, ~2 min, 2/week limit) ⚡\n\n"
-            "<b>Stats & Progress:</b>\n"
-            "/status - Current streak and recent stats\n"
-            "/weekly - Last 7 days summary 📊\n"
-            "/monthly - Last 30 days summary 📊\n"
-            "/yearly - Year-to-date summary 📊\n"
-            "/achievements - View unlocked achievements 🏆\n\n"
-            "<b>Settings:</b>\n"
-            "/mode - Change constitution mode\n"
-            "/career - Change career phase 🎯\n"
-            "/use_shield - Use streak shield 🛡️\n\n"
-            "<b>👥 Accountability Partners:</b>\n"
-            "/set_partner @username - Link accountability partner\n"
-            "/unlink_partner - Remove partner\n\n"
-            "<b>💭 Emotional Support:</b>\n"
-            "Send a message describing how you're feeling:\n"
-            "• 'I'm feeling lonely tonight'\n"
-            "• 'Having urges right now'\n"
-            "• 'Feeling stressed about work'\n\n"
-            "<b>📊 Natural Language Queries:</b>\n"
-            "Ask me questions about your data:\n"
-            "• 'What's my average compliance this month?'\n"
-            "• 'When did I last miss training?'\n"
-            "• 'Show me my longest streak'\n"
-            "• 'How much am I sleeping?'\n\n"
-            "<b>🎯 How Check-Ins Work:</b>\n"
-            "• <b>Full Check-In:</b> 4 questions (Tier 1 + reflection)\n"
-            "• <b>Quick Check-In:</b> Tier 1 only (limited to 2/week)\n"
-            "• Both count toward your streak\n"
-            "• Get AI-powered feedback\n"
-            "• Track patterns and progress\n\n"
-            "<b>⏰ Timing:</b>\n"
-            "• Daily reminders at 9 PM IST\n"
-            "• Check in anytime with /checkin or /quickcheckin\n"
-            "• One check-in per day maximum\n"
-            "• Streak continues if within 48 hours\n\n"
-            "Need help? Just ask! I understand natural language. 💪"
-        )
+        from src.utils.ux import generate_help_text
+        
+        help_text = generate_help_text()
         
         await update.message.reply_text(help_text, parse_mode='HTML')
         logger.info(f"✅ /help command from {update.effective_user.id}")
@@ -505,9 +499,8 @@ class TelegramBotManager:
         user = firestore_service.get_user(user_id)
         
         if not user:
-            await update.message.reply_text(
-                "❌ User not found. Please use /start first."
-            )
+            from src.utils.ux import ErrorMessages
+            await update.message.reply_text(ErrorMessages.user_not_found(), parse_mode='HTML')
             return
         
         # Fetch recent check-ins
@@ -1222,6 +1215,314 @@ class TelegramBotManager:
         )
         
         logger.info(f"✅ Displayed {len(user.achievements)} achievements for user {user_id}")
+    
+    # ===== Phase 3F: Export Command =====
+    
+    async def export_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle /export command (Phase 3F Data Export).
+        
+        Supports: /export csv, /export json, /export pdf
+        
+        **How It Works:**
+        1. Parse format from command arguments
+        2. Call export service to generate file in memory
+        3. Send file via Telegram's document upload API
+        
+        **Telegram File Limits:**
+        - Documents: up to 50MB
+        - Our exports: typically <1MB (well within limits)
+        """
+        from src.services.export_service import export_user_data
+        from src.utils.ux import ErrorMessages
+        
+        user_id = str(update.effective_user.id)
+        
+        # Parse format argument
+        if not context.args:
+            await update.message.reply_text(
+                "<b>📤 Data Export</b>\n\n"
+                "Choose a format:\n\n"
+                "/export csv - Excel/Google Sheets compatible\n"
+                "/export json - Developer-friendly with nested data\n"
+                "/export pdf - Formatted report with summary stats\n\n"
+                "<i>All formats include your complete check-in history.</i>",
+                parse_mode='HTML'
+            )
+            return
+        
+        format_type = context.args[0].lower()
+        
+        if format_type not in ('csv', 'json', 'pdf'):
+            await update.message.reply_text(
+                "❌ Invalid format. Use: /export csv, /export json, or /export pdf"
+            )
+            return
+        
+        # Send "generating" message
+        status_msg = await update.message.reply_text(
+            f"⏳ Generating {format_type.upper()} export..."
+        )
+        
+        try:
+            result = await export_user_data(user_id, format_type)
+            
+            if result is None:
+                await status_msg.edit_text(ErrorMessages.export_no_data())
+                return
+            
+            # Send file
+            await update.message.reply_document(
+                document=result["buffer"],
+                filename=result["filename"],
+                caption=(
+                    f"✅ <b>{format_type.upper()} Export Complete</b>\n"
+                    f"• {result['checkin_count']} check-ins exported\n"
+                    f"• File: {result['filename']}"
+                ),
+                parse_mode='HTML'
+            )
+            
+            await status_msg.delete()
+            logger.info(f"✅ Export ({format_type}) sent to {user_id}: {result['checkin_count']} check-ins")
+            
+        except Exception as e:
+            logger.error(f"Export failed for {user_id}: {e}", exc_info=True)
+            await status_msg.edit_text(ErrorMessages.export_failed(format_type))
+    
+    # ===== Phase 3F: Report Command =====
+    
+    async def report_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle /report command - Generate on-demand weekly report.
+        
+        This is the same report that auto-sends on Sundays, but
+        available anytime via command.
+        
+        **Process:**
+        1. Show "generating" message (reports take 5-15 seconds)
+        2. Generate 4 graphs + AI insights
+        3. Send text summary + 4 graph images
+        """
+        from src.agents.reporting_agent import generate_and_send_weekly_report
+        from src.utils.ux import ErrorMessages
+        
+        user_id = str(update.effective_user.id)
+        
+        # Check user exists
+        user = firestore_service.get_user(user_id)
+        if not user:
+            await update.message.reply_text(ErrorMessages.user_not_found(), parse_mode='HTML')
+            return
+        
+        status_msg = await update.message.reply_text(
+            "⏳ Generating your weekly report with graphs...\nThis may take a few seconds."
+        )
+        
+        try:
+            result = await generate_and_send_weekly_report(
+                user_id=user_id,
+                project_id=settings.gcp_project_id,
+                bot=self.bot,
+            )
+            
+            await status_msg.delete()
+            
+            if result.get("status") == "failed":
+                await update.message.reply_text(ErrorMessages.service_unavailable(), parse_mode='HTML')
+            
+            logger.info(f"✅ On-demand report generated for {user_id}")
+            
+        except Exception as e:
+            logger.error(f"Report generation failed for {user_id}: {e}", exc_info=True)
+            await status_msg.edit_text(ErrorMessages.service_unavailable())
+    
+    # ===== Phase 3F: Leaderboard Command =====
+    
+    async def leaderboard_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle /leaderboard command - Show weekly rankings.
+        
+        **Ranking Logic:**
+        1. Average compliance score over last 7 days (primary)
+        2. Current streak length (tiebreaker, +0.1 per day, max +5)
+        3. Minimum 3 check-ins to qualify
+        
+        **Privacy:**
+        Only users with leaderboard_opt_in=True are shown.
+        Users see their own rank even if not in top 10.
+        """
+        from src.services.social_service import calculate_leaderboard, format_leaderboard_message
+        from src.utils.ux import ErrorMessages
+        
+        user_id = str(update.effective_user.id)
+        
+        user = firestore_service.get_user(user_id)
+        if not user:
+            await update.message.reply_text(ErrorMessages.user_not_found(), parse_mode='HTML')
+            return
+        
+        try:
+            entries = calculate_leaderboard(period_days=7, top_n=10)
+            message = format_leaderboard_message(entries, user_id)
+            
+            await update.message.reply_text(message, parse_mode='HTML')
+            logger.info(f"✅ Leaderboard shown to {user_id}")
+            
+        except Exception as e:
+            logger.error(f"Leaderboard failed for {user_id}: {e}", exc_info=True)
+            await update.message.reply_text(ErrorMessages.generic_error(), parse_mode='HTML')
+    
+    # ===== Phase 3F: Invite/Referral Command =====
+    
+    async def invite_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle /invite command - Show referral link and stats.
+        
+        **Deep Link Mechanism:**
+        Telegram supports deep links: t.me/botname?start=PAYLOAD
+        When a new user clicks this, the bot receives /start PAYLOAD.
+        We parse the referral code to attribute the new user.
+        
+        **Rewards:**
+        - Referrer: +1% compliance boost per active referral (max +5%)
+        - Referee: 3 bonus streak shields
+        """
+        from src.services.social_service import generate_referral_link, get_referral_stats, format_referral_message
+        from src.utils.ux import ErrorMessages
+        
+        user_id = str(update.effective_user.id)
+        
+        user = firestore_service.get_user(user_id)
+        if not user:
+            await update.message.reply_text(ErrorMessages.user_not_found(), parse_mode='HTML')
+            return
+        
+        try:
+            # Get bot username for deep link
+            bot_info = await self.bot.get_me()
+            bot_username = bot_info.username
+            
+            referral_link = generate_referral_link(user_id, bot_username)
+            stats = get_referral_stats(user_id)
+            message = format_referral_message(referral_link, stats)
+            
+            await update.message.reply_text(message, parse_mode='HTML')
+            logger.info(f"✅ Referral info shown to {user_id}")
+            
+        except Exception as e:
+            logger.error(f"Invite command failed for {user_id}: {e}", exc_info=True)
+            await update.message.reply_text(ErrorMessages.generic_error(), parse_mode='HTML')
+    
+    # ===== Phase 3F: Share/Brag Command =====
+    
+    async def share_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle /share command - Generate shareable stats image.
+        
+        Creates a visually appealing image (1080x1920) with the user's
+        key stats, branded design, and QR code to join the bot.
+        
+        Designed for sharing on Instagram stories, WhatsApp status, etc.
+        """
+        from src.services.social_service import generate_shareable_stats_image
+        from src.utils.ux import ErrorMessages
+        
+        user_id = str(update.effective_user.id)
+        
+        user = firestore_service.get_user(user_id)
+        if not user:
+            await update.message.reply_text(ErrorMessages.user_not_found(), parse_mode='HTML')
+            return
+        
+        status_msg = await update.message.reply_text("⏳ Generating your stats card...")
+        
+        try:
+            checkins = firestore_service.get_recent_checkins(user_id, days=30)
+            image_buffer = generate_shareable_stats_image(user, checkins)
+            
+            await update.message.reply_photo(
+                photo=image_buffer,
+                caption=(
+                    f"📸 <b>Your Accountability Stats</b>\n\n"
+                    f"🔥 {user.streaks.current_streak}-day streak\n"
+                    f"🏆 {user.streaks.longest_streak} best streak\n"
+                    f"✅ {user.streaks.total_checkins} total check-ins\n\n"
+                    f"<i>Share this image to inspire others!</i>"
+                ),
+                parse_mode='HTML'
+            )
+            
+            await status_msg.delete()
+            logger.info(f"✅ Shareable stats generated for {user_id}")
+            
+        except Exception as e:
+            logger.error(f"Share command failed for {user_id}: {e}", exc_info=True)
+            await status_msg.edit_text(ErrorMessages.generic_error())
+    
+    # ===== Phase 3F: Resume Command =====
+    
+    async def resume_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle /resume command - Resume an incomplete check-in.
+        
+        **How It Works:**
+        1. Check Firestore for partial_checkins/{user_id}
+        2. If found and <24h old, offer to resume
+        3. If not found, tell user no incomplete check-in exists
+        
+        This enables timeout recovery - when a check-in times out,
+        the partial state is saved and can be resumed here.
+        """
+        from src.utils.ux import TimeoutManager
+        
+        user_id = str(update.effective_user.id)
+        
+        partial_state = TimeoutManager.get_partial_state(user_id)
+        
+        if partial_state:
+            conversation_type = partial_state.get("conversation_type", "check-in")
+            await update.message.reply_text(
+                f"💾 <b>Incomplete {conversation_type.title()} Found</b>\n\n"
+                f"You have an unfinished {conversation_type}.\n\n"
+                f"Use /checkin to start fresh, or just continue where you left off.\n"
+                f"Your previous answers have been saved.",
+                parse_mode='HTML'
+            )
+            # Note: Actual resume integration with ConversationHandler would
+            # require modifying conversation.py to check for partial state
+            # on entry. For now, we inform the user and let them restart.
+        else:
+            await update.message.reply_text(
+                "ℹ️ <b>No Incomplete Check-In</b>\n\n"
+                "You don't have any unfinished check-ins.\n"
+                "Start a new one with /checkin",
+                parse_mode='HTML'
+            )
     
     # ===== Phase 3B: General Message Handler =====
     

@@ -25,6 +25,12 @@ python-dotenv==1.0.0          # Load .env file for local development
 httpx>=0.28.1,<0.29           # Required by google-genai>=1.61.0
 pytz==2024.1                  # Timezone handling (IST conversions)
 
+# Phase 3F: Visualization & Reports
+matplotlib>=3.8.0             # Graph generation (sleep, compliance, training, radar)
+Pillow>=10.0.0                # Image manipulation and optimization
+reportlab>=4.0                # PDF report generation
+qrcode[pil]>=7.4              # QR code generation for shareable stats
+
 # Testing
 pytest==8.0.0                 # Testing framework
 pytest-asyncio==0.23.0        # Async test support
