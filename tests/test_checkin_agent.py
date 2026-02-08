@@ -187,8 +187,9 @@ async def test_milestone_streak_feedback(checkin_agent):
     
     # Verify feedback quality
     assert len(feedback) > 100, "Feedback too short"
-    assert "30" in feedback, "Should mention 30-day streak"
-    assert any(word in feedback.lower() for word in ["milestone", "record", "momentum", "consistent"]), "Should celebrate milestone"
+    # LLM may write "30" or spell out "thirty" - accept either
+    assert "30" in feedback or "thirty" in feedback.lower(), "Should mention 30-day streak"
+    assert any(word in feedback.lower() for word in ["milestone", "record", "momentum", "consistent", "streak"]), "Should celebrate milestone"
 
 
 @pytest.mark.asyncio

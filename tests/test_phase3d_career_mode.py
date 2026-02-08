@@ -48,14 +48,19 @@ def test_get_skill_building_question_job_mode():
 
 
 def test_get_skill_building_question_employed_mode():
-    """Test skill building question in employed mode."""
+    """Test skill building question in employed mode.
+    
+    The 'promotion/raise' text is in the 'question' field, not 'description'.
+    Description contains: '(High-impact work, skill development, visibility projects)'
+    """
     result = get_skill_building_question("employed")
     
     assert "question" in result
     assert "label" in result
     assert "description" in result
     assert "🎯 Career" in result["label"]
-    assert "promotion" in result["description"] or "raise" in result["description"]
+    # promotion/raise is in the question field, not description
+    assert "promotion" in result["question"] or "raise" in result["question"]
     print("✅ Test 1.3: employed mode - PASS")
 
 

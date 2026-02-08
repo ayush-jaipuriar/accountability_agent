@@ -57,6 +57,8 @@ def mock_services():
         mock_settings.vertex_ai_location = "asia-south1"
         mock_settings.gemini_model = "gemini-2.0-flash"
         mock_settings.log_level = "INFO"
+        mock_settings.cron_secret = ""  # Disable cron auth for tests
+        mock_settings.admin_telegram_ids = "111222333"
         
         # Configure bot manager
         mock_bot.bot = MagicMock()

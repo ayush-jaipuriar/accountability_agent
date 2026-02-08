@@ -154,17 +154,35 @@ ACHIEVEMENTS: Dict[str, Achievement] = {
     ),
     
     # ==========================================
-    # SPECIAL ACHIEVEMENTS (2 total)
+    # SPECIAL ACHIEVEMENTS (4 total — Phase D added Comeback Kid + Comeback Legend)
     # ==========================================
     # These create memorable moments and unique stories
+    
+    "comeback_kid": Achievement(
+        achievement_id="comeback_kid",
+        name="Comeback Kid",
+        description="Reached 3-day streak after a reset",
+        icon="🐣",
+        criteria={"comeback_days": 3},
+        rarity="uncommon"
+    ),
     
     "comeback_king": Achievement(
         achievement_id="comeback_king",
         name="Comeback King",
-        description="Rebuilt streak to previous longest after break",
-        icon="🔄",
-        criteria={"comeback": True},
+        description="Reached 7-day streak after a reset",
+        icon="🦁",
+        criteria={"comeback_days": 7},
         rarity="rare"
+    ),
+    
+    "comeback_legend": Achievement(
+        achievement_id="comeback_legend",
+        name="Comeback Legend",
+        description="Exceeded previous best streak after a reset",
+        icon="👑",
+        criteria={"comeback_exceed": True},
+        rarity="epic"
     ),
     
     "shield_master": Achievement(
@@ -371,7 +389,7 @@ class AchievementService:
         # Zero Breaks Month: 30 consecutive days with zero porn
         if len(recent_checkins) >= 30:
             last_30 = recent_checkins[-30:]
-            if all(c.tier1.zero_porn.completed for c in last_30):
+            if all(c.tier1_non_negotiables.zero_porn for c in last_30):
                 if "zero_breaks_month" not in user.achievements:
                     unlocked.append("zero_breaks_month")
                     logger.info(
@@ -407,21 +425,45 @@ class AchievementService:
         """
         unlocked = []
         
-        # Comeback King: User rebuilt streak to previous longest after a break
-        # Only trigger if:
-        # 1. Current streak ≥ previous longest streak
-        # 2. Previous longest was meaningful (>7 days)
-        # 3. Not already unlocked
-        #
-        # Scenario: User had 60-day streak, broke it, now back to 60 days
-        if (user.streaks.current_streak >= user.streaks.longest_streak and 
-            user.streaks.longest_streak > 7):
-            if "comeback_king" not in user.achievements:
-                unlocked.append("comeback_king")
-                logger.info(
-                    f"✅ Special milestone: User {user.user_id} unlocked comeback_king "
-                    f"(rebuilt to {user.streaks.current_streak} days)"
-                )
+        # Phase D: Read recovery tracking fields (backward-compatible with getattr)
+        streak_before_reset = getattr(user.streaks, 'streak_before_reset', 0) or 0
+        last_reset_date = getattr(user.streaks, 'last_reset_date', None)
+        has_recent_reset = last_reset_date is not None and streak_before_reset > 0
+        
+        # Comeback Kid: Reached 3 days after a reset (Phase D)
+        # Rewards the user for proving the reset was temporary
+        if (has_recent_reset and 
+            user.streaks.current_streak >= 3 and
+            "comeback_kid" not in user.achievements):
+            unlocked.append("comeback_kid")
+            logger.info(
+                f"✅ Special milestone: User {user.user_id} unlocked comeback_kid "
+                f"(3 days after reset from {streak_before_reset})"
+            )
+        
+        # Comeback King: Reached 7 days after a reset (Phase D enhancement)
+        # Previously required rebuilding to longest_streak. Now triggers at 7 days
+        # post-reset, which is more achievable and encouraging.
+        if (has_recent_reset and
+            user.streaks.current_streak >= 7 and
+            "comeback_king" not in user.achievements):
+            unlocked.append("comeback_king")
+            logger.info(
+                f"✅ Special milestone: User {user.user_id} unlocked comeback_king "
+                f"(7 days after reset from {streak_before_reset})"
+            )
+        
+        # Comeback Legend: Exceeded previous best streak after a reset (Phase D)
+        # The ultimate vindication — proving the reset made you stronger
+        if (has_recent_reset and
+            user.streaks.current_streak > streak_before_reset and
+            streak_before_reset >= 3 and
+            "comeback_legend" not in user.achievements):
+            unlocked.append("comeback_legend")
+            logger.info(
+                f"✅ Special milestone: User {user.user_id} unlocked comeback_legend "
+                f"(exceeded {streak_before_reset} days with {user.streaks.current_streak})"
+            )
         
         # Shield Master: User has used all 3 shields in a month
         # This rewards strategic shield usage, not hoarding
@@ -439,26 +481,18 @@ class AchievementService:
         """
         Check if all Tier 1 items are complete for a check-in.
         
-        Tier 1 Items (5 total):
-        1. Sleep (7+ hours)
-        2. Training (workout or rest day)
-        3. Deep Work (2+ hours)
-        4. Zero Porn
-        5. Boundaries (no toxic interactions)
+        Uses date-aware logic from compliance.py to handle Phase 3D backward
+        compatibility. Check-ins from before Phase 3D only had 5 items, so
+        skill_building is excluded from the check for those dates.
         
         Args:
             checkin: Daily check-in to evaluate
         
         Returns:
-            True if all 5 Tier 1 items completed, False otherwise
+            True if all applicable Tier 1 items completed, False otherwise
         """
-        return (
-            checkin.tier1.sleep.completed and
-            checkin.tier1.training.completed and
-            checkin.tier1.deep_work.completed and
-            checkin.tier1.zero_porn.completed and
-            checkin.tier1.boundaries.completed
-        )
+        from src.utils.compliance import is_all_tier1_complete
+        return is_all_tier1_complete(checkin.tier1_non_negotiables, checkin.date)
     
     def unlock_achievement(self, user_id: str, achievement_id: str) -> None:
         """
@@ -563,14 +597,23 @@ class AchievementService:
                 message += f"30 days of complete Tier 1 mastery! 💯\n"
             elif achievement_id == "zero_breaks_month":
                 message += f"30 days without porn - incredible discipline! 🚫\n"
+        elif achievement_id == "comeback_kid":
+            message += f"3 days back after a reset — the comeback is real! 🐣\n"
         elif achievement_id == "comeback_king":
-            message += f"You rebuilt your streak to {user.streaks.current_streak} days! 🔄\n"
+            message += f"A full week rebuilt — {user.streaks.current_streak} days and counting! 🦁\n"
+        elif achievement_id == "comeback_legend":
+            streak_before = getattr(user.streaks, 'streak_before_reset', 0) or 0
+            message += (
+                f"You surpassed your previous {streak_before}-day streak! "
+                f"Now at {user.streaks.current_streak} days! 👑\n"
+            )
         elif achievement_id == "shield_master":
             message += f"You've mastered the strategic use of shields! 🛡️\n"
         
         # Add rarity indicator (line 5)
         rarity_messages = {
             "common": "A great start! 💪",
+            "uncommon": "Nice milestone! Keep going! 🌱",
             "rare": "You're in the top 20%! 🌟",
             "epic": "Elite territory! Top 5%! 💎",
             "legendary": "LEGENDARY! You're in the 1%! 👑"

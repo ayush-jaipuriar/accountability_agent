@@ -30,6 +30,8 @@ import logging
 from src.config import settings
 from src.services.firestore_service import firestore_service
 from src.models.schemas import User, get_current_date_ist
+from src.utils.metrics import metrics
+from src.utils.rate_limiter import rate_limiter
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +90,7 @@ class TelegramBotManager:
         
         # Phase 3B: Accountability partner commands
         self.application.add_handler(CommandHandler("set_partner", self.set_partner_command))
+        self.application.add_handler(CommandHandler("partner_status", self.partner_status_command))
         self.application.add_handler(CommandHandler("unlink_partner", self.unlink_partner_command))
         
         # Phase 3C: Achievement system commands
@@ -116,12 +119,31 @@ class TelegramBotManager:
         self.application.add_handler(CommandHandler("brag", self.share_command))  # Alias
         self.application.add_handler(CommandHandler("resume", self.resume_command))
         
+        # Correction command: fix mistakes in today's check-in
+        self.application.add_handler(CommandHandler("correct", self.correct_command))
+        
+        # Phase B: Timezone change command (post-onboarding)
+        self.application.add_handler(CommandHandler("timezone", self.timezone_command))
+        
+        # Phase D: /support command — direct entry to emotional support agent
+        self.application.add_handler(CommandHandler("support", self.support_command))
+        
+        # Admin-only: monitoring status command
+        self.application.add_handler(CommandHandler("admin_status", self.admin_status_command))
+        
         # Phase 3A: Callback query handlers for inline keyboard buttons
         self.application.add_handler(CallbackQueryHandler(self.mode_selection_callback, pattern="^mode_"))
         self.application.add_handler(CallbackQueryHandler(self.timezone_confirmation_callback, pattern="^tz_"))
         
+        # Mode change callback (from /mode command inline buttons)
+        # Uses "change_mode_" prefix to avoid conflict with "mode_" (onboarding)
+        self.application.add_handler(CallbackQueryHandler(self.mode_change_callback, pattern="^change_mode_"))
+        
         # Phase 3D: Career mode callback handlers
         self.application.add_handler(CallbackQueryHandler(self.career_callback, pattern="^career_"))
+        
+        # Correction callback: toggle individual tier1 items in today's check-in
+        self.application.add_handler(CallbackQueryHandler(self.correct_toggle_callback, pattern="^correct_"))
         
         # Phase 3B: Partner request callbacks
         self.application.add_handler(CallbackQueryHandler(self.accept_partner_callback, pattern="^accept_partner:"))
@@ -266,13 +288,14 @@ class TelegramBotManager:
                 f"✅ Streak tracking with protection shields\n"
                 f"✅ Gamification & achievements\n\n"
                 f"**📋 Your Tier 1 Non-Negotiables:**\n\n"
-                f"These are your *daily foundation* - the 5 non-negotiables:\n\n"
+                f"These are your *daily foundation* - the 6 non-negotiables:\n\n"
                 f"1️⃣ **💤 Sleep:** 7+ hours of quality sleep\n"
                 f"2️⃣ **💪 Training:** Workout or scheduled rest day\n"
                 f"3️⃣ **🧠 Deep Work:** 2+ hours of focused work\n"
-                f"4️⃣ **🚫 Zero Porn:** Absolute rule, no exceptions\n"
-                f"5️⃣ **🛡️ Boundaries:** No toxic interactions\n\n"
-                f"Every day, I'll ask you about these 5 items + a few questions "
+                f"4️⃣ **📚 Skill Building:** 2+ hours career-focused learning\n"
+                f"5️⃣ **🚫 Zero Porn:** Absolute rule, no exceptions\n"
+                f"6️⃣ **🛡️ Boundaries:** No toxic interactions\n\n"
+                f"Every day, I'll ask you about these 6 items + a few questions "
                 f"to calculate your compliance score.\n\n"
                 f"Let's personalize your experience..."
             )
@@ -366,20 +389,20 @@ class TelegramBotManager:
             f"You can change this anytime with /mode"
         )
         
-        # Step 3: Timezone Confirmation
+        # Step 3: Timezone Selection (2-level picker: confirm IST or pick region → city)
         timezone_message = (
-            f"🌍 **Timezone Confirmation**\n\n"
-            f"I've set your timezone to **Asia/Kolkata (IST)**.\n\n"
+            f"🌍 **Timezone Setup**\n\n"
+            f"I've defaulted your timezone to **Asia/Kolkata (IST)**.\n\n"
             f"Your daily reminders will be sent at:\n"
-            f"• 1st reminder: 9:00 PM IST\n"
-            f"• 2nd reminder: 9:30 PM IST\n"
-            f"• 3rd reminder: 10:00 PM IST\n\n"
-            f"Is this correct?"
+            f"• 1st reminder: 9:00 PM\n"
+            f"• 2nd reminder: 9:30 PM\n"
+            f"• 3rd reminder: 10:00 PM\n\n"
+            f"Is IST your timezone?"
         )
         
         keyboard = [
             [InlineKeyboardButton("✅ Yes, IST is correct", callback_data="tz_confirm")],
-            [InlineKeyboardButton("🌎 No, I'm in another timezone", callback_data="tz_change")]
+            [InlineKeyboardButton("🌎 No, change my timezone", callback_data="tz_change")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -397,74 +420,282 @@ class TelegramBotManager:
         context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         """
-        Handle timezone confirmation during onboarding (Phase 3A).
-        
-        Final step: Confirms timezone and prompts first check-in.
-        
+        Handle timezone selection during onboarding (Phase B: Custom Timezone).
+
+        This implements a 2-level picker flow:
+        1. User confirms IST or clicks "Change" → show Region picker
+        2. User picks a region (Americas/Europe/Asia) → show City picker
+        3. User picks a city → timezone is saved, onboarding continues
+
+        Callback data patterns:
+        - "tz_confirm"                → IST confirmed
+        - "tz_change"                 → Show region picker
+        - "tz_region_<region>"        → Show cities in that region
+        - "tz_set_<IANA timezone>"    → Set the selected timezone
+        - "tz_back"                   → Go back to region picker
+
         Args:
             update: Callback query update
             context: Bot context
         """
+        from src.utils.timezone_utils import TIMEZONE_CATALOG, get_timezone_display_name
+
         query = update.callback_query
         await query.answer()
-        
+
         user = update.effective_user
         user_id = str(user.id)
-        
+
         if query.data == "tz_confirm":
-            # Timezone confirmed
+            is_post_onboarding = (
+                context.user_data is not None
+                and context.user_data.get("tz_change_mode") == "post_onboarding"
+            )
+            if is_post_onboarding:
+                # From /timezone command — just confirm current timezone
+                context.user_data.pop("tz_change_mode", None)
+                await query.edit_message_text("✅ Timezone unchanged. Your current timezone is still active.")
+            else:
+                # Onboarding flow — full setup
+                await self._finalize_timezone_onboarding(query, context, user, user_id, "Asia/Kolkata")
+
+        elif query.data == "tz_change":
+            # Show region picker (level 1)
+            keyboard = []
+            for region_key, region_data in TIMEZONE_CATALOG.items():
+                keyboard.append([
+                    InlineKeyboardButton(
+                        region_data["label"],
+                        callback_data=f"tz_region_{region_key}"
+                    )
+                ])
+            keyboard.append([InlineKeyboardButton("🇮🇳 Keep IST", callback_data="tz_confirm")])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
             await query.edit_message_text(
-                f"✅ **Timezone Confirmed!**\n\n"
-                f"Perfect. You're all set for reminders at 9 PM IST daily."
+                "🌍 **Select Your Region:**\n\n"
+                "Pick the region closest to you, then you'll choose your city.",
+                reply_markup=reply_markup
             )
-            
-            # Step 4: Streak Mechanics Explanation
-            streak_message = (
-                f"🔥 **How Streaks Work:**\n\n"
-                f"• **Check in daily** to build your streak\n"
-                f"• **48-hour grace period:** Miss a day? You have 48 hours to recover\n"
-                f"• **Streak shields:** You get 3 shields per month to protect your streak\n"
-                f"• **Achievements:** Unlock badges at 7, 30, 90, 180, 365 days\n\n"
-                f"Your longest streak becomes your permanent record - it never decreases!"
-            )
-            
-            await context.bot.send_message(
-                chat_id=user.id,
-                text=streak_message
-            )
-            
-            # Step 5: First Check-In Prompt
-            first_checkin_message = (
-                f"🎯 **You're Ready to Start!**\n\n"
-                f"Welcome to your accountability journey. I'll remind you daily at 9 PM,  "
-                f"but you can check in anytime.\n\n"
-                f"**Your first check-in is available now!**\n\n"
-                f"Use /checkin to complete your first check-in and start building your streak.\n\n"
-                f"**Quick Commands:**\n"
-                f"/checkin - Start daily check-in\n"
-                f"/status - View your stats\n"
-                f"/help - Show all commands\n\n"
-                f"Let's build something great together! 💪"
-            )
-            
-            await context.bot.send_message(
-                chat_id=user.id,
-                text=first_checkin_message
-            )
-            
-        else:  # tz_change
-            # User wants to change timezone (Phase 3 future enhancement)
+
+        elif query.data.startswith("tz_region_"):
+            # Show city picker for the chosen region (level 2)
+            region_key = query.data.replace("tz_region_", "")
+
+            if region_key not in TIMEZONE_CATALOG:
+                await query.edit_message_text("Invalid region. Please use /timezone to try again.")
+                return
+
+            region = TIMEZONE_CATALOG[region_key]
+            keyboard = []
+            for tz_info in region["timezones"]:
+                keyboard.append([
+                    InlineKeyboardButton(
+                        f"{tz_info['label']} ({tz_info['offset']})",
+                        callback_data=f"tz_set_{tz_info['id']}"
+                    )
+                ])
+            keyboard.append([InlineKeyboardButton("⬅️ Back to regions", callback_data="tz_back")])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
             await query.edit_message_text(
-                f"🌍 **Custom Timezone Support**\n\n"
-                f"Custom timezone support is coming soon! For now, your reminders "
-                f"will be sent at 9 PM IST.\n\n"
-                f"You can still check in anytime using /checkin - your check-in will "
-                f"count for the correct day based on your actual timezone.\n\n"
-                f"Ready to start? Use /checkin"
+                f"🏙️ **{region['label']} — Choose Your City:**\n\n"
+                f"Select the timezone closest to you:",
+                reply_markup=reply_markup
             )
-        
-        logger.info(f"✅ Onboarding complete for user {user_id}")
-    
+
+        elif query.data == "tz_back":
+            # Go back to region picker
+            keyboard = []
+            for region_key, region_data in TIMEZONE_CATALOG.items():
+                keyboard.append([
+                    InlineKeyboardButton(
+                        region_data["label"],
+                        callback_data=f"tz_region_{region_key}"
+                    )
+                ])
+            keyboard.append([InlineKeyboardButton("🇮🇳 Keep IST", callback_data="tz_confirm")])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await query.edit_message_text(
+                "🌍 **Select Your Region:**\n\n"
+                "Pick the region closest to you, then you'll choose your city.",
+                reply_markup=reply_markup
+            )
+
+        elif query.data.startswith("tz_set_"):
+            # Set the selected timezone
+            selected_tz = query.data.replace("tz_set_", "")
+            is_post_onboarding = (
+                context.user_data is not None
+                and context.user_data.get("tz_change_mode") == "post_onboarding"
+            )
+
+            if is_post_onboarding:
+                # Post-onboarding: just update timezone and confirm
+                await self._update_timezone_post_onboarding(query, user_id, selected_tz)
+                context.user_data.pop("tz_change_mode", None)
+            else:
+                # Onboarding: full flow with streak explanation + first check-in prompt
+                await self._finalize_timezone_onboarding(query, context, user, user_id, selected_tz)
+
+        elif query.data == "tz_cancel":
+            # User cancelled the timezone change (post-onboarding only)
+            if context.user_data is not None:
+                context.user_data.pop("tz_change_mode", None)
+            await query.edit_message_text("✅ Timezone unchanged. Your current timezone is still active.")
+
+        else:
+            logger.warning(f"Unknown timezone callback data: {query.data}")
+
+    async def _update_timezone_post_onboarding(
+        self,
+        query,
+        user_id: str,
+        timezone: str
+    ) -> None:
+        """
+        Handle timezone change from /timezone command (post-onboarding).
+
+        Unlike onboarding, this simply updates the user's timezone in Firestore
+        and confirms the change. No streak explanation or first check-in prompt.
+        """
+        from src.utils.timezone_utils import get_timezone_display_name
+
+        firestore_service.update_user(user_id, {"timezone": timezone})
+        tz_display = get_timezone_display_name(timezone)
+
+        await query.edit_message_text(
+            f"✅ **Timezone Updated!**\n\n"
+            f"Your timezone is now: **{tz_display}** (`{timezone}`)\n\n"
+            f"All reminders and date calculations will use this timezone.\n"
+            f"Your daily reminders will be sent at 9 PM in your new local time."
+        )
+        logger.info(f"🌍 User {user_id} changed timezone to {timezone}")
+
+    async def _finalize_timezone_onboarding(
+        self,
+        query,
+        context: ContextTypes.DEFAULT_TYPE,
+        user,
+        user_id: str,
+        timezone: str
+    ) -> None:
+        """
+        Complete the timezone step of onboarding: save tz, show streak info, prompt first check-in.
+
+        This is called once the user has either confirmed IST or picked a custom timezone.
+        It updates the user's Firestore document and sends the remaining onboarding messages.
+
+        Args:
+            query: The callback query to edit
+            context: Bot context for sending follow-up messages
+            user: The effective_user from the update
+            user_id: String user ID
+            timezone: IANA timezone string to save
+        """
+        from src.utils.timezone_utils import get_timezone_display_name
+
+        # Update timezone in Firestore
+        firestore_service.update_user(user_id, {"timezone": timezone})
+
+        tz_display = get_timezone_display_name(timezone)
+
+        await query.edit_message_text(
+            f"✅ **Timezone Set: {tz_display}**\n\n"
+            f"Your daily reminders will be sent at 9 PM in your local time."
+        )
+
+        # Streak Mechanics Explanation
+        streak_message = (
+            f"🔥 **How Streaks Work:**\n\n"
+            f"• **Check in daily** to build your streak\n"
+            f"• **48-hour grace period:** Miss a day? You have 48 hours to recover\n"
+            f"• **Streak shields:** You get 3 shields per month to protect your streak\n"
+            f"• **Achievements:** Unlock badges at 7, 30, 90, 180, 365 days\n\n"
+            f"Your longest streak becomes your permanent record — it never decreases!"
+        )
+
+        await context.bot.send_message(
+            chat_id=user.id,
+            text=streak_message
+        )
+
+        # First Check-In Prompt
+        first_checkin_message = (
+            f"🎯 **You're Ready to Start!**\n\n"
+            f"Welcome to your accountability journey. I'll remind you daily at 9 PM "
+            f"in your local time, but you can check in anytime.\n\n"
+            f"**Your first check-in is available now!**\n\n"
+            f"Use /checkin to complete your first check-in and start building your streak.\n\n"
+            f"**Quick Commands:**\n"
+            f"/checkin - Start daily check-in\n"
+            f"/status - View your stats\n"
+            f"/help - Show all commands\n\n"
+            f"Let's build something great together!"
+        )
+
+        await context.bot.send_message(
+            chat_id=user.id,
+            text=first_checkin_message
+        )
+
+        logger.info(f"✅ Onboarding complete for user {user_id} (timezone: {timezone})")
+
+    async def timezone_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        /timezone — Let existing users change their timezone post-onboarding.
+
+        Presents the same 2-level picker (Region → City) used during onboarding,
+        but updates the existing user record instead of creating a new one.
+
+        The callback reuses the same "tz_" prefix handlers, so the
+        timezone_confirmation_callback method handles the selection.
+        We store a flag in context.user_data to distinguish from onboarding flow.
+        """
+        from src.utils.timezone_utils import TIMEZONE_CATALOG, get_timezone_display_name
+
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+
+        if not user:
+            await update.message.reply_text(
+                "Please run /start first to create your profile."
+            )
+            return
+
+        current_tz = getattr(user, 'timezone', 'Asia/Kolkata') or 'Asia/Kolkata'
+        tz_display = get_timezone_display_name(current_tz)
+
+        # Mark context so callback knows this is post-onboarding
+        if context.user_data is not None:
+            context.user_data["tz_change_mode"] = "post_onboarding"
+
+        # Show current timezone + region picker
+        keyboard = []
+        for region_key, region_data in TIMEZONE_CATALOG.items():
+            keyboard.append([
+                InlineKeyboardButton(
+                    region_data["label"],
+                    callback_data=f"tz_region_{region_key}"
+                )
+            ])
+        keyboard.append([InlineKeyboardButton("🚫 Cancel (keep current)", callback_data="tz_cancel")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await update.message.reply_text(
+            f"🌍 **Change Timezone**\n\n"
+            f"Current timezone: **{tz_display}** (`{current_tz}`)\n\n"
+            f"Select your new region:",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
+        logger.info(f"🌍 User {user_id} initiated timezone change (current: {current_tz})")
+
     async def help_command(
         self,
         update: Update,
@@ -512,8 +743,10 @@ class TelegramBotManager:
         else:
             avg_compliance = 0.0
         
-        # Check if checked in today
-        today = get_current_date_ist()
+        # Check if checked in today (Phase B: use user's timezone)
+        user_tz = getattr(user, 'timezone', 'Asia/Kolkata') or 'Asia/Kolkata'
+        from src.utils.timezone_utils import get_current_date
+        today = get_current_date(user_tz)
         checked_in_today = firestore_service.checkin_exists(user_id, today)
         
         # Format streak emoji
@@ -560,9 +793,19 @@ class TelegramBotManager:
         context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         """
-        Handle /mode command.
+        Handle /mode command -- view or change constitution mode.
         
-        Shows current mode and allows switching.
+        Usage:
+        - /mode            → Shows current mode + inline buttons to switch
+        - /mode optimization → Directly switches to optimization mode
+        - /mode maintenance  → Directly switches to maintenance mode
+        - /mode survival     → Directly switches to survival mode
+        
+        Why inline buttons AND text args?
+        ---------------------------------
+        Text args are faster for power users who know what they want.
+        Inline buttons are friendlier for casual users who need to see options.
+        Supporting both is a standard UX pattern in Telegram bots.
         """
         user_id = str(update.effective_user.id)
         user = firestore_service.get_user(user_id)
@@ -573,10 +816,58 @@ class TelegramBotManager:
             )
             return
         
+        valid_modes = ['optimization', 'maintenance', 'survival']
+        
+        # Check if user provided a mode argument (e.g., /mode optimization)
+        if context.args and len(context.args) > 0:
+            requested_mode = context.args[0].lower()
+            
+            if requested_mode in valid_modes:
+                if requested_mode == user.constitution_mode:
+                    await update.message.reply_text(
+                        f"You're already in **{requested_mode.title()}** mode! ✅",
+                        parse_mode='Markdown'
+                    )
+                    return
+                
+                # Switch mode
+                firestore_service.update_user_mode(user_id, requested_mode)
+                
+                mode_emojis = {
+                    "optimization": "🚀",
+                    "maintenance": "⚖️",
+                    "survival": "🛡️"
+                }
+                
+                await update.message.reply_text(
+                    f"✅ **Mode Changed!**\n\n"
+                    f"{mode_emojis[requested_mode]} **{requested_mode.title()} Mode** is now active.\n\n"
+                    f"This affects your check-in expectations and pattern detection thresholds.\n"
+                    f"Use /mode anytime to view or change.",
+                    parse_mode='Markdown'
+                )
+                logger.info(f"✅ User {user_id} changed mode to {requested_mode}")
+                return
+            else:
+                await update.message.reply_text(
+                    f"❌ Unknown mode: '{requested_mode}'\n\n"
+                    f"Valid modes: optimization, maintenance, survival\n"
+                    f"Example: /mode optimization"
+                )
+                return
+        
+        # No args provided: show info + inline keyboard buttons
+        mode_emojis = {
+            "optimization": "🚀",
+            "maintenance": "⚖️",
+            "survival": "🛡️"
+        }
+        current_emoji = mode_emojis.get(user.constitution_mode, "🎯")
+        
         mode_info = (
             f"**🎯 Constitution Modes**\n\n"
-            f"**Current Mode:** {user.constitution_mode.title()} ✅\n\n"
-            f"**📈 Optimization Mode:**\n"
+            f"**Current Mode:** {current_emoji} {user.constitution_mode.title()} ✅\n\n"
+            f"**🚀 Optimization Mode:**\n"
             f"• All systems firing - aggressive growth\n"
             f"• 6x/week training, 3+ hours deep work\n"
             f"• Target: 90%+ compliance\n\n"
@@ -588,14 +879,66 @@ class TelegramBotManager:
             f"• Crisis mode - protect bare minimums\n"
             f"• 3x/week training, 1+ hour deep work\n"
             f"• Target: 60%+ compliance\n\n"
-            f"To change mode, use:\n"
-            f"/mode optimization\n"
-            f"/mode maintenance\n"
-            f"/mode survival"
+            f"Tap a button below to switch, or type:\n"
+            f"/mode optimization | /mode maintenance | /mode survival"
         )
         
-        await update.message.reply_text(mode_info, parse_mode='Markdown')
+        # Build inline keyboard (exclude current mode)
+        keyboard = []
+        for mode in valid_modes:
+            if mode != user.constitution_mode:
+                keyboard.append([
+                    InlineKeyboardButton(
+                        f"{mode_emojis[mode]} Switch to {mode.title()}",
+                        callback_data=f"change_mode_{mode}"
+                    )
+                ])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(mode_info, reply_markup=reply_markup, parse_mode='Markdown')
         logger.info(f"✅ /mode command from {user_id}")
+    
+    async def mode_change_callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle mode change via inline button press (from /mode command).
+        
+        Callback data format: "change_mode_optimization", "change_mode_maintenance", etc.
+        Uses "change_mode_" prefix to avoid conflict with "mode_" prefix used
+        during onboarding (mode_selection_callback).
+        """
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = str(update.effective_user.id)
+        new_mode = query.data.replace("change_mode_", "")
+        
+        valid_modes = ['optimization', 'maintenance', 'survival']
+        if new_mode not in valid_modes:
+            await query.edit_message_text("❌ Invalid mode selection.")
+            return
+        
+        # Update mode in Firestore
+        firestore_service.update_user_mode(user_id, new_mode)
+        
+        mode_emojis = {
+            "optimization": "🚀",
+            "maintenance": "⚖️",
+            "survival": "🛡️"
+        }
+        
+        await query.edit_message_text(
+            f"✅ **Mode Changed!**\n\n"
+            f"{mode_emojis[new_mode]} **{new_mode.title()} Mode** is now active.\n\n"
+            f"This affects your check-in expectations and pattern detection thresholds.\n"
+            f"Use /mode anytime to view or change.",
+            parse_mode='Markdown'
+        )
+        
+        logger.info(f"✅ User {user_id} changed mode to {new_mode} via inline button")
     
     # ===== Phase 3D: Career Mode Commands =====
     
@@ -802,7 +1145,9 @@ class TelegramBotManager:
         from src.utils.timezone_utils import get_checkin_date
         from src.utils.streak import calculate_days_without_checkin
         
-        checkin_date = get_checkin_date()
+        # Phase B: Use user's timezone for 3 AM cutoff calculation
+        user_tz = getattr(user, 'timezone', 'Asia/Kolkata') or 'Asia/Kolkata'
+        checkin_date = get_checkin_date(tz=user_tz)
         checked_in_today = firestore_service.checkin_exists(user_id, checkin_date)
         
         if checked_in_today:
@@ -1042,6 +1387,115 @@ class TelegramBotManager:
         
         logger.info(f"❌ Partnership declined: {requester_user_id} ← {decliner.user_id}")
     
+    async def partner_status_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        /partner_status — View your accountability partner's dashboard (Phase C).
+
+        This is the core of Partner Mutual Visibility. It shows aggregate
+        partner stats while respecting privacy (no individual Tier 1 items).
+
+        **What is shown (aggregate only):**
+        - Partner's current/longest streak
+        - Whether partner checked in today
+        - Today's compliance % (if checked in)
+        - Weekly check-in count and avg compliance
+        - Motivational comparison footer
+
+        **What is NOT shown (privacy):**
+        - Individual Tier 1 items (sleep, training, etc.)
+        - Challenge text / rating reason
+        - Emotional support conversations
+
+        **Rate limiting:** Standard tier (10s cooldown, 30/hour)
+        """
+        if not await self._check_rate_limit(update, "partner_status"):
+            return
+
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+
+        if not user:
+            await update.message.reply_text(
+                "❌ User not found. Please use /start first."
+            )
+            return
+
+        if not user.accountability_partner_id:
+            await update.message.reply_text(
+                "❌ **No Partner Linked**\n\n"
+                "You don't have an accountability partner yet.\n\n"
+                "Link one with: /set_partner @username\n\n"
+                "Having a partner increases your check-in consistency by 40%!",
+                parse_mode='Markdown'
+            )
+            return
+
+        # Fetch partner data
+        partner = firestore_service.get_user(user.accountability_partner_id)
+        if not partner:
+            await update.message.reply_text(
+                "❌ Your partner's account could not be found.\n"
+                "They may have deleted their profile.\n\n"
+                "Use /unlink_partner to remove, then /set_partner to link a new one."
+            )
+            return
+
+        # Get partner's timezone for date calculation
+        partner_tz = getattr(partner, 'timezone', 'Asia/Kolkata') or 'Asia/Kolkata'
+
+        from src.utils.timezone_utils import get_current_date
+
+        # Partner's today check-in status
+        partner_today = get_current_date(partner_tz)
+        partner_checkin_today = firestore_service.get_checkin(
+            partner.user_id, partner_today
+        )
+        partner_checked_in = partner_checkin_today is not None
+        partner_today_compliance = (
+            partner_checkin_today.compliance_score
+            if partner_checkin_today else None
+        )
+
+        # Partner's weekly stats
+        partner_weekly = firestore_service.get_recent_checkins(partner.user_id, days=7)
+        partner_weekly_count = len(partner_weekly)
+        partner_weekly_avg = (
+            sum(c.compliance_score for c in partner_weekly) / partner_weekly_count
+            if partner_weekly_count > 0 else 0.0
+        )
+
+        # User's weekly stats (for comparison footer)
+        user_weekly = firestore_service.get_recent_checkins(user_id, days=7)
+        user_weekly_avg = (
+            sum(c.compliance_score for c in user_weekly) / len(user_weekly)
+            if user_weekly else 0.0
+        )
+
+        # Format the dashboard
+        from src.utils.ux import format_partner_dashboard
+        dashboard = format_partner_dashboard(
+            partner_name=partner.name,
+            partner_streak_current=partner.streaks.current_streak,
+            partner_streak_longest=partner.streaks.longest_streak,
+            partner_checked_in_today=partner_checked_in,
+            partner_today_compliance=partner_today_compliance,
+            partner_weekly_checkins=partner_weekly_count,
+            partner_weekly_possible=7,
+            partner_weekly_avg_compliance=partner_weekly_avg,
+            user_streak_current=user.streaks.current_streak,
+            user_weekly_avg_compliance=user_weekly_avg,
+        )
+
+        await update.message.reply_text(dashboard, parse_mode='HTML')
+        logger.info(
+            f"👥 /partner_status from {user_id} → partner {partner.user_id} "
+            f"(checked_in={partner_checked_in})"
+        )
+
     async def unlink_partner_command(
         self,
         update: Update,
@@ -1229,9 +1683,10 @@ class TelegramBotManager:
         Supports: /export csv, /export json, /export pdf
         
         **How It Works:**
-        1. Parse format from command arguments
-        2. Call export service to generate file in memory
-        3. Send file via Telegram's document upload API
+        1. Rate limit check (expensive tier: 30min cooldown, 2/hour)
+        2. Parse format from command arguments
+        3. Call export service to generate file in memory
+        4. Send file via Telegram's document upload API
         
         **Telegram File Limits:**
         - Documents: up to 50MB
@@ -1239,6 +1694,10 @@ class TelegramBotManager:
         """
         from src.services.export_service import export_user_data
         from src.utils.ux import ErrorMessages
+        
+        # Rate limit check — /export is expensive (especially PDF)
+        if not await self._check_rate_limit(update, "export"):
+            return
         
         user_id = str(update.effective_user.id)
         
@@ -1308,12 +1767,17 @@ class TelegramBotManager:
         available anytime via command.
         
         **Process:**
-        1. Show "generating" message (reports take 5-15 seconds)
-        2. Generate 4 graphs + AI insights
-        3. Send text summary + 4 graph images
+        1. Rate limit check (expensive tier: 30min cooldown, 2/hour)
+        2. Show "generating" message (reports take 5-15 seconds)
+        3. Generate 4 graphs + AI insights
+        4. Send text summary + 4 graph images
         """
         from src.agents.reporting_agent import generate_and_send_weekly_report
         from src.utils.ux import ErrorMessages
+        
+        # Rate limit check — /report is expensive (AI + 4 graphs)
+        if not await self._check_rate_limit(update, "report"):
+            return
         
         user_id = str(update.effective_user.id)
         
@@ -1366,6 +1830,10 @@ class TelegramBotManager:
         """
         from src.services.social_service import calculate_leaderboard, format_leaderboard_message
         from src.utils.ux import ErrorMessages
+        
+        # Rate limit check — standard tier
+        if not await self._check_rate_limit(update, "leaderboard"):
+            return
         
         user_id = str(update.effective_user.id)
         
@@ -1524,6 +1992,505 @@ class TelegramBotManager:
                 parse_mode='HTML'
             )
     
+    # ===== Check-In Correction Command =====
+    
+    async def correct_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle /correct command -- fix mistakes in today's check-in.
+        
+        WHY THIS EXISTS:
+        ----------------
+        Users sometimes fat-finger a button during the fast-paced Tier 1 
+        questions (e.g., accidentally pressing "NO" for Sleep when they meant
+        "YES"). Without a correction mechanism, one wrong tap permanently
+        affects compliance scores, streaks, patterns, and achievements.
+        
+        CONSTRAINTS:
+        - Only today's check-in can be corrected
+        - Must be within 2 hours of the original check-in
+        - Maximum 1 correction per check-in (to prevent gaming)
+        
+        FLOW:
+        1. Load today's check-in from Firestore
+        2. Verify time constraints
+        3. Display current Tier 1 answers with toggle buttons
+        4. User taps items to toggle (YES<->NO)
+        5. When done, user taps "Save Correction"
+        6. Compliance score is recalculated and saved
+        """
+        user_id = str(update.effective_user.id)
+        
+        user = firestore_service.get_user(user_id)
+        if not user:
+            await update.message.reply_text("❌ User not found. Please use /start first.")
+            return
+        
+        # Get today's date (Phase B: use user's timezone)
+        from src.utils.timezone_utils import get_current_date
+        user_tz = getattr(user, 'timezone', 'Asia/Kolkata') or 'Asia/Kolkata'
+        today = get_current_date(user_tz)
+        
+        # Load today's check-in
+        checkin = firestore_service.get_checkin(user_id, today)
+        if not checkin:
+            await update.message.reply_text(
+                "❌ No check-in found for today.\n\n"
+                "You can only correct today's check-in after completing it.\n"
+                "Use /checkin to start your daily check-in."
+            )
+            return
+        
+        # Check if already corrected
+        if checkin.corrected_at is not None:
+            await update.message.reply_text(
+                "❌ You've already corrected today's check-in.\n\n"
+                "Only 1 correction is allowed per check-in to prevent gaming."
+            )
+            return
+        
+        # Check time constraint: within 2 hours of original check-in
+        from datetime import datetime, timedelta
+        now = datetime.utcnow()
+        if checkin.completed_at:
+            time_since = now - checkin.completed_at
+            if time_since > timedelta(hours=2):
+                hours_ago = time_since.total_seconds() / 3600
+                await update.message.reply_text(
+                    f"❌ Correction window has expired.\n\n"
+                    f"Your check-in was {hours_ago:.1f} hours ago. "
+                    f"Corrections must be made within 2 hours of check-in.\n\n"
+                    f"This prevents gaming the system -- own your answers and use "
+                    f"tomorrow as a fresh start!"
+                )
+                return
+        
+        # Build the correction interface
+        tier1 = checkin.tier1_non_negotiables
+        items = {
+            'sleep': ('💤 Sleep', tier1.sleep),
+            'training': ('💪 Training', tier1.training),
+            'deepwork': ('🧠 Deep Work', tier1.deep_work),
+            'skillbuilding': ('📚 Skill Building', tier1.skill_building),
+            'porn': ('🚫 Zero Porn', tier1.zero_porn),
+            'boundaries': ('🛡️ Boundaries', tier1.boundaries),
+        }
+        
+        # Show current answers
+        lines = ["**✏️ Correct Today's Check-In**\n"]
+        lines.append("Current answers:\n")
+        for key, (label, value) in items.items():
+            status = "✅ YES" if value else "❌ NO"
+            lines.append(f"  {label}: {status}")
+        lines.append("\nTap an item below to toggle it (YES↔NO):")
+        lines.append("Then tap **Save Correction** when done.\n")
+        
+        # Build toggle keyboard
+        keyboard = []
+        for key, (label, value) in items.items():
+            current = "✅" if value else "❌"
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"{current} {label} → Tap to toggle",
+                    callback_data=f"correct_{key}"
+                )
+            ])
+        keyboard.append([
+            InlineKeyboardButton("💾 Save Correction", callback_data="correct_save")
+        ])
+        keyboard.append([
+            InlineKeyboardButton("🚫 Cancel", callback_data="correct_cancel")
+        ])
+        
+        # Store current correction state in user context
+        context.user_data['correction_items'] = {
+            k: v for k, (_, v) in items.items()
+        }
+        context.user_data['correction_date'] = today
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            "\n".join(lines),
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+        
+        logger.info(f"✏️ User {user_id} started correction for {today}")
+    
+    async def correct_toggle_callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle correction button presses (toggle items or save/cancel).
+        
+        Callback data format:
+        - "correct_sleep" → Toggle sleep
+        - "correct_save" → Save all changes
+        - "correct_cancel" → Abort correction
+        """
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = str(update.effective_user.id)
+        action = query.data.replace("correct_", "")
+        
+        # Cancel correction
+        if action == "cancel":
+            context.user_data.pop('correction_items', None)
+            context.user_data.pop('correction_date', None)
+            await query.edit_message_text("❌ Correction cancelled. No changes saved.")
+            return
+        
+        # Save correction
+        if action == "save":
+            items = context.user_data.get('correction_items')
+            date = context.user_data.get('correction_date')
+            
+            if not items or not date:
+                await query.edit_message_text("❌ Correction session expired. Use /correct to try again.")
+                return
+            
+            # Build Firestore update payload
+            from src.utils.compliance import calculate_compliance_score
+            from src.models.schemas import Tier1NonNegotiables
+            
+            tier1 = Tier1NonNegotiables(
+                sleep=items['sleep'],
+                training=items['training'],
+                deep_work=items['deepwork'],
+                skill_building=items['skillbuilding'],
+                zero_porn=items['porn'],
+                boundaries=items['boundaries']
+            )
+            
+            new_compliance = calculate_compliance_score(tier1)
+            
+            firestore_update = {
+                "tier1_non_negotiables": tier1.model_dump(),
+                "compliance_score": new_compliance,
+            }
+            
+            success = firestore_service.update_checkin(user_id, date, firestore_update)
+            
+            if success:
+                # Clean up context
+                context.user_data.pop('correction_items', None)
+                context.user_data.pop('correction_date', None)
+                
+                await query.edit_message_text(
+                    f"✅ **Check-In Corrected!**\n\n"
+                    f"Updated compliance: {new_compliance:.0f}%\n\n"
+                    f"Your stats, patterns, and achievements will reflect the correction.\n"
+                    f"Note: Only 1 correction per check-in is allowed.",
+                    parse_mode='Markdown'
+                )
+                logger.info(f"✅ User {user_id} corrected check-in for {date}: compliance={new_compliance}%")
+            else:
+                await query.edit_message_text(
+                    "❌ Failed to save correction. Please try again or contact support."
+                )
+            return
+        
+        # Toggle an item
+        items = context.user_data.get('correction_items')
+        if not items or action not in items:
+            await query.edit_message_text("❌ Correction session expired. Use /correct to try again.")
+            return
+        
+        # Flip the boolean
+        items[action] = not items[action]
+        context.user_data['correction_items'] = items
+        
+        # Rebuild the message and keyboard
+        item_labels = {
+            'sleep': '💤 Sleep',
+            'training': '💪 Training',
+            'deepwork': '🧠 Deep Work',
+            'skillbuilding': '📚 Skill Building',
+            'porn': '🚫 Zero Porn',
+            'boundaries': '🛡️ Boundaries',
+        }
+        
+        lines = ["**✏️ Correct Today's Check-In**\n"]
+        lines.append("Updated answers:\n")
+        for key, label in item_labels.items():
+            status = "✅ YES" if items[key] else "❌ NO"
+            lines.append(f"  {label}: {status}")
+        lines.append("\nTap an item to toggle (YES↔NO):")
+        lines.append("Then tap **Save Correction** when done.\n")
+        
+        keyboard = []
+        for key, label in item_labels.items():
+            current = "✅" if items[key] else "❌"
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"{current} {label} → Tap to toggle",
+                    callback_data=f"correct_{key}"
+                )
+            ])
+        keyboard.append([
+            InlineKeyboardButton("💾 Save Correction", callback_data="correct_save")
+        ])
+        keyboard.append([
+            InlineKeyboardButton("🚫 Cancel", callback_data="correct_cancel")
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            "\n".join(lines),
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    
+    # ===== Rate Limiting Helper =====
+    
+    async def _check_rate_limit(
+        self,
+        update: Update,
+        command: str
+    ) -> bool:
+        """
+        Check rate limit for a command. If denied, sends user-friendly message.
+        
+        Rate limiting protects expensive resources (AI API, graph generation)
+        from abuse. Each command is assigned a tier (expensive, ai_powered,
+        standard, or free) with corresponding cooldowns and hourly limits.
+        
+        Args:
+            update: Telegram Update object
+            command: Command name without slash (e.g., "report")
+            
+        Returns:
+            bool: True if allowed, False if rate-limited (message already sent)
+        """
+        user_id = str(update.effective_user.id)
+        allowed, message = rate_limiter.check(user_id, command)
+        
+        if not allowed:
+            await update.message.reply_text(message)
+            metrics.increment("rate_limit_hits")
+            return False
+        
+        # Track the command in metrics
+        metrics.increment("commands_total")
+        metrics.increment(f"commands_{command}")
+        return True
+    
+    # ===== Admin: Monitoring Status Command =====
+    
+    async def admin_status_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle /admin_status command — show live application metrics.
+        
+        Admin-only: Checks if the sender's Telegram ID is in the
+        admin_telegram_ids config. Non-admins get a generic "unknown command"
+        response (security through obscurity — don't reveal the command exists).
+        
+        Shows:
+        - Uptime
+        - Check-in counts (full + quick)
+        - Command counts
+        - AI request counts
+        - Error breakdown by category
+        - Latency percentiles (webhook, AI, Firestore)
+        """
+        user_id = str(update.effective_user.id)
+        
+        # Check admin permission
+        admin_ids = [aid.strip() for aid in settings.admin_telegram_ids.split(",") if aid.strip()]
+        if user_id not in admin_ids:
+            # Don't reveal the command exists to non-admins
+            await update.message.reply_text(
+                "❓ Unknown command. Use /help to see available commands."
+            )
+            return
+        
+        # Generate and send the admin status report
+        status_message = metrics.format_admin_status()
+        await update.message.reply_text(status_message, parse_mode='HTML')
+        logger.info(f"🔧 Admin status requested by {user_id}")
+    
+    # ===== Phase D: /support Command — Emotional Support Entry Point =====
+    
+    async def support_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle /support command — direct entry to emotional support agent.
+        
+        **What This Does:**
+        This command creates a direct bridge from "I need help" to the 
+        Emotional Support Agent. Previously, emotional support was only 
+        available when the supervisor classified a free-text message as 
+        "emotional" intent. Now users can explicitly request it.
+        
+        **Context-Aware Support:**
+        If the user received an intervention in the last 24 hours, the 
+        emotional agent is given context about what pattern was detected.
+        This makes the support feel connected rather than generic.
+        
+        For example, if the user got a sleep degradation intervention and 
+        then types /support, the agent might say: "I see you've been 
+        struggling with sleep. Let's talk about what's driving that."
+        
+        **Flow:**
+        1. Check rate limit (ai_powered tier — uses Gemini API)
+        2. Look up recent interventions (24h) for context
+        3. If user provided text after /support, use that as the message
+        4. If standalone /support, show welcome prompt and wait
+        5. Route to emotional support agent with context
+        
+        **Rate Limiting:** ai_powered tier (2 min cooldown, 20/hour)
+        """
+        user_id = str(update.effective_user.id)
+        
+        # Rate limit check (ai_powered tier — uses Gemini API)
+        if not await self._check_rate_limit(user_id, "support", update):
+            return
+        
+        # Check if user provided text after /support (e.g., "/support I'm feeling down")
+        user_message = ""
+        if context.args:
+            user_message = " ".join(context.args)
+        
+        if not user_message:
+            # No message provided — show welcome prompt
+            # Check for recent interventions to personalize the prompt
+            recent_interventions = []
+            try:
+                recent_interventions = firestore_service.get_recent_interventions(
+                    user_id, days=1  # Last 24 hours
+                )
+            except Exception as e:
+                logger.warning(f"Failed to fetch recent interventions for context: {e}")
+            
+            if recent_interventions:
+                # Context-aware prompt: reference the recent intervention
+                latest = recent_interventions[0]
+                pattern_type = latest.get('pattern_type', 'a pattern')
+                pattern_display = pattern_type.replace('_', ' ')
+                
+                prompt_message = (
+                    "💙 <b>I'm here.</b>\n\n"
+                    f"I noticed you recently received an alert about <b>{pattern_display}</b>.\n\n"
+                    "Want to talk about what's going on? You can tell me about:\n"
+                    "• What you're struggling with right now\n"
+                    "• What triggered a slip or pattern\n"
+                    "• How you're feeling emotionally\n"
+                    "• Anything on your mind\n\n"
+                    "Just type naturally — I'll listen and help you work through it."
+                )
+            else:
+                # Standalone prompt (no recent intervention)
+                prompt_message = (
+                    "💙 <b>I'm here.</b>\n\n"
+                    "What's going on? You can tell me about:\n"
+                    "• What you're struggling with right now\n"
+                    "• What triggered a slip or pattern\n"
+                    "• How you're feeling emotionally\n"
+                    "• Anything on your mind\n\n"
+                    "Just type naturally — I'll listen and help you work through it."
+                )
+            
+            await update.message.reply_text(prompt_message, parse_mode='HTML')
+            
+            # Store context so the general message handler knows to route to emotional agent
+            context.user_data['support_mode'] = True
+            context.user_data['support_intervention_context'] = (
+                recent_interventions[0] if recent_interventions else None
+            )
+            
+            logger.info(f"💙 /support prompt sent to {user_id} (context: {bool(recent_interventions)})")
+            return
+        
+        # User provided a message — route directly to emotional support agent
+        await self._process_support_message(update, context, user_id, user_message)
+    
+    async def _process_support_message(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        user_id: str,
+        user_message: str,
+        intervention_context: dict = None
+    ) -> None:
+        """
+        Process a support message through the emotional support agent.
+        
+        **How Context-Aware Support Works:**
+        When `intervention_context` is provided, we prepend context to the 
+        user's message so the emotional agent understands the situation:
+        
+        Without context: "I'm struggling" → generic CBT response
+        With context: "[Context: Recent sleep degradation intervention] I'm struggling"
+                       → sleep-specific CBT response referencing the pattern
+        
+        Args:
+            update: Telegram update object
+            context: Bot context
+            user_id: User's Telegram ID
+            user_message: What the user said
+            intervention_context: Recent intervention data (if any)
+        """
+        try:
+            from src.agents.emotional_agent import get_emotional_agent
+            from src.agents.state import create_initial_state
+            
+            # Build context-enriched message for the emotional agent
+            enriched_message = user_message
+            if intervention_context:
+                pattern_type = intervention_context.get('pattern_type', 'unknown')
+                enriched_message = (
+                    f"[Context: User recently received an intervention for {pattern_type}. "
+                    f"They may be struggling with this specific issue.]\n\n"
+                    f"{user_message}"
+                )
+            
+            # Create state for emotional agent
+            state = create_initial_state(
+                user_id=user_id,
+                message=enriched_message,
+                intent="emotional"
+            )
+            
+            # Process through emotional agent
+            emotional_agent = get_emotional_agent()
+            state = await emotional_agent.process(state)
+            
+            response = state.get("response", "I'm here to help. Could you tell me more?")
+            await update.message.reply_text(response)
+            
+            logger.info(f"✅ Emotional support provided via /support to {user_id}")
+            
+            # Record metric
+            from src.utils.metrics import metrics
+            metrics.increment("support_sessions")
+            
+        except Exception as e:
+            logger.error(f"❌ Support command failed: {e}", exc_info=True)
+            
+            # Fallback response (always provide something)
+            await update.message.reply_text(
+                "I hear that you're going through something difficult. "
+                "While I want to help, this is a moment where talking to a real person "
+                "might be more valuable.\n\n"
+                "Consider:\n"
+                "• Texting a friend\n"
+                "• Calling someone you trust\n"
+                "• If urgent: Crisis hotline (988 in US)\n\n"
+                "Your constitution reminds you: difficult moments pass, "
+                "your long-term goals remain."
+            )
+    
     # ===== Phase 3B: General Message Handler =====
     
     async def handle_general_message(
@@ -1559,6 +2526,23 @@ class TelegramBotManager:
         message_text = update.message.text
         
         logger.info(f"📩 General message from {user_id}: '{message_text[:50]}...'")
+        
+        # Phase D: Check if user is in support mode (sent /support, now sending follow-up)
+        if context.user_data.get('support_mode'):
+            # Clear support mode (one-shot: consume the context)
+            intervention_ctx = context.user_data.pop('support_intervention_context', None)
+            context.user_data.pop('support_mode', None)
+            
+            # Route directly to emotional support agent with context
+            await self._process_support_message(
+                update, context, user_id, message_text,
+                intervention_context=intervention_ctx
+            )
+            return
+        
+        # Rate limit check — AI-powered tier (Gemini API calls)
+        if not await self._check_rate_limit(update, "query"):
+            return
         
         try:
             # Import agents (avoid circular imports)

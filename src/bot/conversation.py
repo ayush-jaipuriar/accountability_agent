@@ -42,7 +42,7 @@ from src.models.schemas import (
     Tier1NonNegotiables,
     CheckInResponses
 )
-from src.utils.timezone_utils import get_current_date_ist, get_checkin_date
+from src.utils.timezone_utils import get_current_date_ist, get_checkin_date, get_current_date
 from src.utils.compliance import calculate_compliance_score, format_compliance_message
 from src.utils.streak import update_streak_data, format_streak_message
 from src.agents.checkin_agent import get_checkin_agent
@@ -196,8 +196,11 @@ async def start_checkin(
         logger.info(f"❌ User {user_id} hit quick check-in limit (2/week)")
         return ConversationHandler.END
     
-    # Check if already checked in today (Phase 3A: Use 3 AM cutoff logic)
-    checkin_date = get_checkin_date()  # Before 3 AM = previous day, after = current day
+    # Phase B: Read user's timezone (defaults to IST for backward compat)
+    user_tz = getattr(user, 'timezone', 'Asia/Kolkata') or 'Asia/Kolkata'
+    
+    # Check if already checked in today (Phase 3A: Use 3 AM cutoff logic, now timezone-aware)
+    checkin_date = get_checkin_date(tz=user_tz)  # Before 3 AM local = previous day, after = current day
     if firestore_service.checkin_exists(user_id, checkin_date):
         await update.message.reply_text(
             f"✅ You've already completed your check-in for {checkin_date}!\n\n"
@@ -213,6 +216,7 @@ async def start_checkin(
     context.user_data['checkin_start_time'] = datetime.utcnow()
     context.user_data['date'] = checkin_date  # Phase 3A: Use 3 AM cutoff
     context.user_data['mode'] = user.constitution_mode
+    context.user_data['timezone'] = user_tz  # Phase B: Store for rest of conversation
     
     # Phase 3E: Set quick check-in flag if /quickcheckin was used
     if is_quick_checkin:
@@ -335,10 +339,16 @@ async def handle_tier1_response(
     context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     """
-    Handle button presses for Tier 1 responses.
+    Handle button presses for Tier 1 responses, including Undo.
     
     Stores responses in context.user_data and tracks which items are answered.
-    When all 5 items answered, moves to Q2.
+    When all 6 items answered, moves to Q2.
+    
+    Undo Feature:
+    - After each answer, a confirmation message with an "Undo Last" button is shown
+    - Pressing "Undo Last" removes the most recently answered item
+    - User can then re-answer that item via the original buttons
+    - Tracks answer order in context.user_data['tier1_answer_order'] (list)
     
     Returns:
         int: Q1_TIER1 (still answering) or Q2_CHALLENGES (all answered)
@@ -346,32 +356,72 @@ async def handle_tier1_response(
     query = update.callback_query
     await query.answer()  # Acknowledge button press
     
-    # Parse callback data (e.g., "sleep_yes" → sleep: True)
-    item, response = query.data.rsplit('_', 1)
-    response_bool = (response == "yes")
-    
-    # Store response
-    if 'tier1_responses' not in context.user_data:
-        context.user_data['tier1_responses'] = {}
-    
-    context.user_data['tier1_responses'][item] = response_bool
-    
     # Map item names to user-friendly labels
     item_labels = {
         'sleep': '💤 Sleep',
         'training': '💪 Training',
         'deepwork': '🧠 Deep Work',
-        'skillbuilding': '📚 Skill Building',  # Phase 3D: New item
+        'skillbuilding': '📚 Skill Building',
         'porn': '🚫 Zero Porn',
         'boundaries': '🛡️ Boundaries'
     }
     
-    # Show what was selected
+    # Initialize data structures if needed
+    if 'tier1_responses' not in context.user_data:
+        context.user_data['tier1_responses'] = {}
+    if 'tier1_answer_order' not in context.user_data:
+        context.user_data['tier1_answer_order'] = []
+    
+    # ===== Handle Undo =====
+    if query.data == "tier1_undo":
+        answer_order = context.user_data.get('tier1_answer_order', [])
+        
+        if not answer_order:
+            await query.message.reply_text("Nothing to undo yet!")
+            return Q1_TIER1
+        
+        # Remove the last answered item
+        last_item = answer_order.pop()
+        old_value = context.user_data['tier1_responses'].pop(last_item, None)
+        old_text = "YES" if old_value else "NO"
+        
+        # Remove the undo button from the confirmation message
+        await query.edit_message_reply_markup(reply_markup=None)
+        
+        remaining = 6 - len(context.user_data['tier1_responses'])
+        await query.message.reply_text(
+            f"↩️ Undone: {item_labels.get(last_item, last_item)} (was {old_text})\n"
+            f"Please re-answer it using the buttons above.\n"
+            f"({remaining} item{'s' if remaining != 1 else ''} remaining)"
+        )
+        
+        logger.info(f"↩️ User {context.user_data.get('user_id')} undid {last_item}")
+        return Q1_TIER1
+    
+    # ===== Handle Normal Tier 1 Answer =====
+    # Parse callback data (e.g., "sleep_yes" → sleep: True)
+    item, response = query.data.rsplit('_', 1)
+    response_bool = (response == "yes")
+    
+    # Store response and track order
+    context.user_data['tier1_responses'][item] = response_bool
+    
+    # Track order: if item was already in order (re-answer after undo), remove old position
+    answer_order = context.user_data['tier1_answer_order']
+    if item in answer_order:
+        answer_order.remove(item)
+    answer_order.append(item)
+    
+    # Show what was selected, with Undo button
     response_text = "✅ YES" if response_bool else "❌ NO"
     
-    # Send confirmation without removing buttons yet
+    undo_keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("↩️ Undo Last", callback_data="tier1_undo")
+    ]])
+    
     await query.message.reply_text(
-        f"{item_labels.get(item, item.title())}: {response_text}"
+        f"{item_labels.get(item, item.title())}: {response_text}",
+        reply_markup=undo_keyboard
     )
     
     # Check if all 6 items answered (Phase 3D: was 5, now 6)
@@ -379,7 +429,7 @@ async def handle_tier1_response(
     answered_items = set(context.user_data['tier1_responses'].keys())
     
     if required_items.issubset(answered_items):
-        # All answered → Remove buttons
+        # All answered → Remove buttons from original question
         await query.edit_message_reply_markup(reply_markup=None)
         
         # Phase 3E: Check if this is a quick check-in
@@ -644,20 +694,24 @@ async def finish_checkin(
             duration_seconds=duration
         )
         
-        # Store check-in
-        firestore_service.store_checkin(user_id, checkin)
-        
-        # Update streak
+        # Store check-in + update streak ATOMICALLY in a single transaction.
+        # Previously these were two separate writes. If the streak update failed
+        # after the check-in was stored, the streak would become stale and
+        # incorrectly reset on the next check-in. The transaction guarantees
+        # all-or-nothing: either both succeed or neither does.
         user = firestore_service.get_user(user_id)
         streak_updates = update_streak_data(
             current_streak=user.streaks.current_streak,
             longest_streak=user.streaks.longest_streak,
             total_checkins=user.streaks.total_checkins,
             last_checkin_date=user.streaks.last_checkin_date,
-            new_checkin_date=date
+            new_checkin_date=date,
+            # Phase D: Pass recovery tracking fields for reset detection
+            streak_before_reset=getattr(user.streaks, 'streak_before_reset', 0) or 0,
+            last_reset_date=getattr(user.streaks, 'last_reset_date', None)
         )
         
-        firestore_service.update_user_streak(user_id, streak_updates)
+        firestore_service.store_checkin_with_streak_update(user_id, checkin, streak_updates)
         
         # Extract milestone if hit (Phase 3C Day 4)
         milestone_hit = streak_updates.get('milestone_hit')
@@ -693,7 +747,12 @@ async def finish_checkin(
             feedback_parts = []
             feedback_parts.append("🎉 **Check-In Complete!**\n")
             feedback_parts.append(f"📊 Compliance: {compliance_score}%")
-            feedback_parts.append(f"🔥 Streak: {streak_updates['current_streak']} days")
+            
+            # Phase D: Show recovery message on reset, normal streak otherwise
+            if streak_updates.get('is_reset') and streak_updates.get('recovery_message'):
+                feedback_parts.append(f"\n{streak_updates['recovery_message']}")
+            else:
+                feedback_parts.append(f"🔥 Streak: {streak_updates['current_streak']} days")
             
             if is_new_record:
                 feedback_parts.append("🏆 **NEW PERSONAL RECORD!**")
@@ -724,7 +783,12 @@ async def finish_checkin(
             feedback_parts = []
             feedback_parts.append("🎉 **Check-In Complete!**\n")
             feedback_parts.append(f"📊 Compliance: {compliance_score}%")
-            feedback_parts.append(f"🔥 Streak: {streak_updates['current_streak']} days")
+            
+            # Phase D: Show recovery message on reset, normal streak otherwise
+            if streak_updates.get('is_reset') and streak_updates.get('recovery_message'):
+                feedback_parts.append(f"\n{streak_updates['recovery_message']}")
+            else:
+                feedback_parts.append(f"🔥 Streak: {streak_updates['current_streak']} days")
             
             if compliance_score == 100:
                 feedback_parts.append(
@@ -828,6 +892,26 @@ async def finish_checkin(
         
         # ===== End Milestone Celebrations =====
         
+        # ===== PHASE D: Recovery Milestone Celebrations =====
+        # If the user is in a post-reset recovery period, show recovery milestones
+        # (Day 3, 7, 14, or exceeding old streak). These are SEPARATE from the
+        # reset message (which shows on Day 1) and the normal milestones.
+        recovery_msg = streak_updates.get('recovery_message')
+        if recovery_msg and not streak_updates.get('is_reset'):
+            # Recovery milestone (not the initial reset — that's shown inline above)
+            try:
+                await update.message.reply_text(
+                    recovery_msg,
+                    parse_mode="HTML"
+                )
+                logger.info(
+                    f"🔄 Sent recovery milestone for {user_id} "
+                    f"(streak: {streak_updates['current_streak']})"
+                )
+            except Exception as e:
+                logger.error(f"⚠️ Recovery milestone message failed (non-critical): {e}")
+        # ===== End Recovery Milestones =====
+        
         logger.info(
             f"✅ Check-in completed for {user_id}: {compliance_score}% compliance, "
             f"{streak_updates['current_streak']} day streak"
@@ -915,20 +999,20 @@ async def finish_checkin_quick(
             is_quick_checkin=True  # Phase 3E: Mark as quick check-in
         )
         
-        # Store check-in
-        firestore_service.store_checkin(user_id, checkin)
-        
-        # Update streak
+        # Store check-in + update streak ATOMICALLY (same transaction fix as full check-in)
         user = firestore_service.get_user(user_id)
         streak_updates = update_streak_data(
             current_streak=user.streaks.current_streak,
             longest_streak=user.streaks.longest_streak,
             total_checkins=user.streaks.total_checkins,
             last_checkin_date=user.streaks.last_checkin_date,
-            new_checkin_date=date
+            new_checkin_date=date,
+            # Phase D: Pass recovery tracking fields for reset detection
+            streak_before_reset=getattr(user.streaks, 'streak_before_reset', 0) or 0,
+            last_reset_date=getattr(user.streaks, 'last_reset_date', None)
         )
         
-        firestore_service.update_user_streak(user_id, streak_updates)
+        firestore_service.store_checkin_with_streak_update(user_id, checkin, streak_updates)
         
         # Phase 3E: Increment quick check-in counter
         new_count = user.quick_checkin_count + 1
@@ -982,7 +1066,13 @@ async def finish_checkin_quick(
         feedback_parts = []
         feedback_parts.append("⚡ **Quick Check-In Complete!**\n")
         feedback_parts.append(f"📊 Compliance: {compliance_score}%")
-        feedback_parts.append(f"🔥 Streak: {streak_updates['current_streak']} days")
+        
+        # Phase D: Show recovery message on reset, normal streak otherwise
+        if streak_updates.get('is_reset') and streak_updates.get('recovery_message'):
+            feedback_parts.append(f"\n{streak_updates['recovery_message']}")
+        else:
+            feedback_parts.append(f"🔥 Streak: {streak_updates['current_streak']} days")
+        
         feedback_parts.append(f"\n{ai_feedback}")
         feedback_parts.append(f"\n━━━━━━━━━━━━━━━━━━━━")
         feedback_parts.append(f"\n**Quick Check-Ins This Week:** {new_count}/2")

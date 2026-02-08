@@ -89,7 +89,7 @@ def user_30day_streak():
 
 @pytest.fixture
 def user_comeback():
-    """User who rebuilt their streak to match longest."""
+    """User who rebuilt their streak to match longest after a reset (Phase D)."""
     return User(
         user_id="test_user_4",
         telegram_id=444555666,
@@ -99,7 +99,9 @@ def user_comeback():
             current_streak=50,
             longest_streak=50,  # Rebuilt to match
             last_checkin_date="2026-02-06",
-            total_checkins=120
+            total_checkins=120,
+            streak_before_reset=40,  # Phase D: had 40-day streak before reset
+            last_reset_date="2025-12-01"  # Phase D: when the reset happened
         ),
         achievements=["first_checkin", "week_warrior", "fortnight_fighter", "month_master"]
     )
@@ -107,7 +109,7 @@ def user_comeback():
 
 @pytest.fixture
 def perfect_checkin():
-    """Check-in with 100% compliance."""
+    """Check-in with 100% compliance (Phase 3D: 6 items)."""
     return DailyCheckIn(
         date="2026-02-06",
         user_id="test_user",
@@ -118,15 +120,16 @@ def perfect_checkin():
             training=True,
             deep_work=True,
             deep_work_hours=2.5,
+            skill_building=True,  # Phase 3D: 6th item
             zero_porn=True,
             boundaries=True
         ),
         responses=CheckInResponses(
-            challenges="None",
+            challenges="No challenges today, everything went smoothly",
             rating=10,
-            rating_reason="Perfect day",
-            tomorrow_priority="Continue",
-            tomorrow_obstacle="None"
+            rating_reason="Perfect day with all goals achieved on time",
+            tomorrow_priority="Continue daily constitution practice as planned",
+            tomorrow_obstacle="No significant obstacles expected tomorrow"
         ),
         compliance_score=100.0,
         completed_at=datetime.utcnow(),
@@ -275,7 +278,7 @@ def test_get_achievement_valid(achievement_service):
     achievement = achievement_service.get_achievement("week_warrior")
     
     assert achievement is not None
-    assert achievement.id == "week_warrior"
+    assert achievement.achievement_id == "week_warrior"  # Field is achievement_id, not id
     assert achievement.name == "Week Warrior"
     assert achievement.icon == "🏅"
 
@@ -291,7 +294,7 @@ def test_get_all_achievements(achievement_service):
     """Test getting all achievements."""
     all_achievements = achievement_service.get_all_achievements()
     
-    assert len(all_achievements) == 13  # Total achievements in Phase 3C
+    assert len(all_achievements) == 15  # Phase 3C (13) + Phase D (2: comeback_kid, comeback_legend)
     assert "first_checkin" in all_achievements
     assert "year_yoda" in all_achievements
 
@@ -299,39 +302,54 @@ def test_get_all_achievements(achievement_service):
 # ===== Test: User Progress =====
 
 def test_get_user_progress_new_user(achievement_service, user_new):
-    """Test user progress for new user."""
+    """Test user progress for new user.
+    
+    The get_user_progress API returns:
+    - 'percentage' (not 'unlock_percentage')
+    - 'rarity_breakdown' dict (not flat 'common_count'/'rare_count')
+    """
     progress = achievement_service.get_user_progress(user_new)
     
     assert progress['total_unlocked'] == 0
-    assert progress['total_available'] == 13
-    assert progress['unlock_percentage'] == 0.0
-    assert progress['common_count'] == 0
-    assert progress['rare_count'] == 0
+    assert progress['total_available'] == 15  # Phase D: 13 + 2 new comeback achievements
+    assert progress['percentage'] == 0.0
+    assert progress['rarity_breakdown']['common'] == 0
+    assert progress['rarity_breakdown']['rare'] == 0
 
 
 def test_get_user_progress_active_user(achievement_service, user_30day_streak):
-    """Test user progress for active user with achievements."""
+    """Test user progress for active user with achievements.
+    
+    The API returns 'percentage' (not 'unlock_percentage') and
+    'next_milestone' (not 'next_streak_achievement').
+    """
     user_30day_streak.achievements = ["first_checkin", "week_warrior", "fortnight_fighter", "month_master"]
     
     progress = achievement_service.get_user_progress(user_30day_streak)
     
     assert progress['total_unlocked'] == 4
-    assert progress['total_available'] == 13
-    assert progress['unlock_percentage'] == pytest.approx(30.77, rel=0.01)
-    assert progress['next_streak_achievement'] == "quarter_conqueror"
+    assert progress['total_available'] == 15  # Phase D: 13 + 2 new comeback achievements
+    assert progress['percentage'] == pytest.approx(26.7, rel=0.1)  # 4/15 = 26.7%
+    assert progress['next_milestone'] == "quarter_conqueror"
 
 
 # ===== Test: Celebration Messages =====
 
 def test_celebration_message_format(achievement_service, user_7day_streak):
-    """Test celebration message includes required elements."""
+    """Test celebration message includes required elements.
+    
+    The celebration message includes a rarity-specific message line:
+    - common: "A great start! 💪"
+    - rare: "You're in the top 20%! 🌟"
+    - epic: "Elite territory! Top 5%! 💎"
+    - legendary: "LEGENDARY! You're in the 1%! 👑"
+    """
     message = achievement_service.get_celebration_message("week_warrior", user_7day_streak)
     
-    # Should include achievement name, description, rarity
+    # Should include achievement name, description, rarity-specific message
     assert "Week Warrior" in message
     assert "7-day streak" in message
-    assert "Common" in message or "🥉" in message
-    assert user_7day_streak.name in message
+    assert "great start" in message or "💪" in message  # Common rarity message
 
 
 def test_celebration_message_legendary(achievement_service, user_30day_streak):

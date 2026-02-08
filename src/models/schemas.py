@@ -71,6 +71,9 @@ class UserStreaks(BaseModel):
     longest_streak: int = Field(default=0, ge=0)  # All-time best streak
     last_checkin_date: Optional[str] = None       # Last check-in date (YYYY-MM-DD format)
     total_checkins: int = Field(default=0, ge=0)  # Lifetime total check-ins
+    # Phase D: Streak Recovery Tracking
+    streak_before_reset: int = Field(default=0, ge=0)  # Streak value right before last reset
+    last_reset_date: Optional[str] = None              # Date of last streak reset (YYYY-MM-DD)
 
 
 class User(BaseModel):
@@ -333,9 +336,12 @@ class DailyCheckIn(BaseModel):
     # Phase 3E: Quick check-in tracking
     is_quick_checkin: bool = False  # Was this a quick check-in (Tier 1 only)?
     
+    # Correction tracking: set when /correct command updates this check-in
+    corrected_at: Optional[datetime] = None  # Timestamp of correction (None = not corrected)
+    
     def to_firestore(self) -> dict:
         """Convert to Firestore-compatible dictionary."""
-        return {
+        data = {
             "date": self.date,
             "user_id": self.user_id,
             "mode": self.mode,
@@ -344,8 +350,11 @@ class DailyCheckIn(BaseModel):
             "compliance_score": self.compliance_score,
             "completed_at": self.completed_at,
             "duration_seconds": self.duration_seconds,
-            "is_quick_checkin": self.is_quick_checkin
+            "is_quick_checkin": self.is_quick_checkin,
         }
+        if self.corrected_at:
+            data["corrected_at"] = self.corrected_at
+        return data
     
     @classmethod
     def from_firestore(cls, data: dict) -> "DailyCheckIn":
@@ -383,35 +392,34 @@ class Pattern(BaseModel):
 
 # ===== Helper Functions =====
 
-def get_current_date_ist() -> str:
+def get_current_date_ist(tz: str = "Asia/Kolkata") -> str:
     """
-    Get current date in IST timezone (YYYY-MM-DD format).
-    
-    Why IST?
-    - User is in India (Hyderabad)
-    - Check-ins happen at 9 PM IST
-    - Dates should align with user's perception of "today"
-    
+    Get current date in the specified timezone (YYYY-MM-DD format).
+
+    Delegates to timezone_utils.get_current_date() for the actual calculation.
+    Kept here for backward compatibility — many modules import from schemas.
+
+    Args:
+        tz: IANA timezone string (default: "Asia/Kolkata" for backward compat)
+
     Returns:
-        str: Date in YYYY-MM-DD format (e.g., "2026-01-30")
+        str: Date in YYYY-MM-DD format (e.g., "2026-02-08")
     """
-    import pytz
-    from datetime import datetime
-    
-    ist = pytz.timezone("Asia/Kolkata")
-    now_ist = datetime.now(ist)
-    return now_ist.strftime("%Y-%m-%d")
+    from src.utils.timezone_utils import get_current_date
+    return get_current_date(tz)
 
 
-def get_current_datetime_ist() -> datetime:
+def get_current_datetime_ist(tz: str = "Asia/Kolkata") -> datetime:
     """
-    Get current datetime in IST timezone.
-    
+    Get current datetime in the specified timezone.
+
+    Delegates to timezone_utils.get_current_time().
+
+    Args:
+        tz: IANA timezone string (default: "Asia/Kolkata")
+
     Returns:
-        datetime: Current time in IST
+        datetime: Current time in specified timezone
     """
-    import pytz
-    from datetime import datetime
-    
-    ist = pytz.timezone("Asia/Kolkata")
-    return datetime.now(ist)
+    from src.utils.timezone_utils import get_current_time
+    return get_current_time(tz)

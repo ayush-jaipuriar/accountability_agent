@@ -222,6 +222,42 @@ class FirestoreService:
             logger.error(f"❌ Failed to update career mode: {e}")
             return False
     
+    def update_user(self, user_id: str, updates: dict) -> bool:
+        """
+        Generic update for user fields in Firestore.
+        
+        Use this for ad-hoc field updates that don't have a dedicated method.
+        For specific updates, prefer dedicated methods (update_user_streak,
+        update_user_mode, etc.) which include validation and logging.
+        
+        How Firestore update() works:
+        - Only modifies the specified fields (doesn't overwrite entire doc)
+        - Uses dot-notation for nested fields (e.g., "streaks.current_streak")
+        - Atomic per-field updates
+        
+        Args:
+            user_id: User's unique ID
+            updates: Dictionary of field names to new values
+            
+        Returns:
+            bool: True if update successful, False on error
+            
+        Example:
+            >>> firestore_service.update_user("123456", {
+            ...     "quick_checkin_count": 0,
+            ...     "quick_checkin_used_dates": []
+            ... })
+        """
+        try:
+            user_ref = self.db.collection('users').document(user_id)
+            updates["updated_at"] = datetime.utcnow()
+            user_ref.update(updates)
+            logger.info(f"✅ Updated user {user_id}: {list(updates.keys())}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Failed to update user {user_id}: {e}")
+            return False
+    
     # ===== Check-In Operations =====
     
     def store_checkin(self, user_id: str, checkin: DailyCheckIn) -> None:
@@ -409,6 +445,115 @@ class FirestoreService:
             logger.error(f"❌ Failed to fetch all check-ins: {e}")
             raise
     
+    def update_checkin(self, user_id: str, date: str, updates: dict) -> bool:
+        """
+        Update specific fields of an existing check-in document.
+        
+        Used by the /correct command to fix mistakes in today's check-in.
+        
+        Args:
+            user_id: User's unique ID
+            date: Check-in date (YYYY-MM-DD)
+            updates: Dictionary of fields to update
+            
+        Returns:
+            bool: True if update successful
+        """
+        try:
+            checkin_ref = (
+                self.db.collection('daily_checkins')
+                .document(user_id)
+                .collection('checkins')
+                .document(date)
+            )
+            
+            updates["corrected_at"] = datetime.utcnow()
+            checkin_ref.update(updates)
+            
+            logger.info(f"✅ Updated check-in for {user_id} on {date}: {list(updates.keys())}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to update check-in: {e}")
+            return False
+    
+    def store_checkin_with_streak_update(
+        self,
+        user_id: str,
+        checkin: DailyCheckIn,
+        streak_updates: dict
+    ) -> None:
+        """
+        Atomically store check-in AND update streak in a single Firestore transaction.
+        
+        WHY A TRANSACTION?
+        ------------------
+        Previously, store_checkin() and update_user_streak() were two separate writes.
+        If the second write failed (e.g., Firestore timeout), the check-in would exist
+        in the database but the streak would NOT be updated. On the next check-in,
+        the streak logic would see a stale last_checkin_date, detect a multi-day gap,
+        and incorrectly RESET the streak -- even though the user actually checked in.
+        
+        A Firestore transaction guarantees all-or-nothing: either BOTH the check-in
+        record and streak update succeed, or NEITHER does. This prevents data corruption.
+        
+        HOW FIRESTORE TRANSACTIONS WORK:
+        ---------------------------------
+        1. Transaction reads current state (snapshot isolation)
+        2. Transaction performs writes
+        3. If any read data changed since step 1, Firestore retries automatically
+        4. After max retries (default 5), raises an exception
+        5. All writes in a transaction are applied atomically
+        
+        Args:
+            user_id: User's unique ID
+            checkin: Complete check-in data to store
+            streak_updates: Dictionary with streak field updates (from update_streak_data())
+            
+        Raises:
+            Exception: If transaction fails after retries (caller should handle)
+        """
+        transaction = self.db.transaction()
+        
+        @firestore.transactional
+        def _transactional_checkin(transaction, user_id, checkin, streak_updates):
+            # Reference to the check-in document
+            checkin_ref = (
+                self.db.collection('daily_checkins')
+                .document(user_id)
+                .collection('checkins')
+                .document(checkin.date)
+            )
+            
+            # Reference to the user document
+            user_ref = self.db.collection('users').document(user_id)
+            
+            # Write 1: Store the check-in
+            transaction.set(checkin_ref, checkin.to_firestore())
+            
+            # Write 2: Update the streak (remove transient keys that are not Firestore fields)
+            _transient_keys = {'milestone_hit', 'is_reset', 'recovery_message', 'recovery_fact'}
+            streak_data_for_firestore = {
+                k: v for k, v in streak_updates.items() 
+                if k not in _transient_keys
+            }
+            transaction.update(user_ref, {
+                "streaks": streak_data_for_firestore,
+                "updated_at": datetime.utcnow()
+            })
+        
+        try:
+            _transactional_checkin(transaction, user_id, checkin, streak_updates)
+            logger.info(
+                f"✅ Transactional check-in + streak update for {user_id} on {checkin.date} "
+                f"(Compliance: {checkin.compliance_score}%, Streak: {streak_updates.get('current_streak')})"
+            )
+        except Exception as e:
+            logger.error(
+                f"❌ Transaction failed for {user_id} check-in on {checkin.date}: {e}"
+            )
+            raise
+    
     # ===== User Management =====
     
     def get_all_users(self) -> List[User]:
@@ -449,6 +594,39 @@ class FirestoreService:
             logger.error(f"❌ Failed to fetch active users: {e}")
             raise
     
+    def get_users_by_timezones(self, timezone_ids: list[str]) -> List[User]:
+        """
+        Get all users whose timezone matches one of the given IANA timezone IDs.
+        
+        Used by the bucket-based reminder system: find all users in timezones
+        that are currently at 9 PM (or 9:30, or 10 PM) and send reminders.
+        
+        Args:
+            timezone_ids: List of IANA timezone strings (e.g., ["Asia/Kolkata", "Asia/Dubai"])
+            
+        Returns:
+            List of User objects in matching timezones
+        """
+        try:
+            if not timezone_ids:
+                return []
+            
+            all_users = self.get_active_users()
+            matching = [
+                u for u in all_users
+                if getattr(u, 'timezone', 'Asia/Kolkata') in timezone_ids
+            ]
+            
+            logger.info(
+                f"✅ Found {len(matching)} users in timezones {timezone_ids} "
+                f"(out of {len(all_users)} total)"
+            )
+            return matching
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to fetch users by timezone: {e}")
+            return []
+
     # ===== Intervention Logging (Phase 2) =====
     
     def log_intervention(
@@ -679,6 +857,14 @@ class FirestoreService:
         """
         Use one streak shield to protect streak from breaking.
         
+        CRITICAL FIX (Feb 2026): Shield usage now also updates last_checkin_date
+        to the current date. Without this, the streak logic in streak.py sees a
+        2+ day gap on the next check-in and resets the streak -- making the shield
+        useless (shield consumed but streak still breaks).
+        
+        By advancing last_checkin_date to today, the next real check-in will see
+        only a 1-day gap and correctly increment the streak.
+        
         Returns True if shield was available and used, False if no shields left.
         
         Args:
@@ -701,15 +887,25 @@ class FirestoreService:
             user.streak_shields.used += 1
             user.streak_shields.available = user.streak_shields.total - user.streak_shields.used
             
-            # Update Firestore
+            # Get today's date for bridging the gap (Phase B: timezone-aware)
+            from src.utils.timezone_utils import get_checkin_date
+            user_tz = getattr(user, 'timezone', 'Asia/Kolkata') or 'Asia/Kolkata'
+            shielded_date = get_checkin_date(tz=user_tz)
+            
+            # Update Firestore: shield count AND last_checkin_date
+            # The last_checkin_date update is what actually protects the streak.
+            # Without it, streak.py:should_increment_streak() sees a multi-day gap
+            # and resets the streak on the next check-in.
             user_ref = self.db.collection('users').document(user_id)
             user_ref.update({
                 "streak_shields": user.streak_shields.model_dump(),
+                "streaks.last_checkin_date": shielded_date,
                 "updated_at": datetime.utcnow()
             })
             
             logger.info(
                 f"✅ Used streak shield for {user_id}. "
+                f"last_checkin_date advanced to {shielded_date}. "
                 f"Remaining: {user.streak_shields.available}/{user.streak_shields.total}"
             )
             return True
@@ -735,7 +931,9 @@ class FirestoreService:
             # Reset shields
             user.streak_shields.used = 0
             user.streak_shields.available = user.streak_shields.total
-            user.streak_shields.last_reset = get_current_date_ist()
+            user_tz = getattr(user, 'timezone', 'Asia/Kolkata') or 'Asia/Kolkata'
+            from src.utils.timezone_utils import get_current_date
+            user.streak_shields.last_reset = get_current_date(user_tz)
             
             # Update Firestore
             user_ref = self.db.collection('users').document(user_id)

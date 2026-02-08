@@ -20,23 +20,76 @@ Key Concepts:
 from fastapi import FastAPI, Request, HTTPException
 from telegram import Update
 import logging
+import json
 import sys
+import time
 from datetime import datetime
 
 from src.config import settings
 from src.bot.telegram_bot import bot_manager
 from src.bot.conversation import create_checkin_conversation_handler
 from src.services.firestore_service import firestore_service
+from src.utils.metrics import metrics
+from src.utils.rate_limiter import rate_limiter
 
 # ===== Logging Configuration =====
+# 
+# Two modes:
+# 1. JSON logging (production): Structured JSON that Cloud Logging automatically
+#    parses into searchable, filterable log entries. Each log line is a JSON object
+#    with severity, message, module, and custom fields (user_id, latency, etc.).
+#    Cloud Monitoring can create log-based metrics from these structured fields.
+#
+# 2. Plain text logging (development): Human-readable format for local debugging.
+#    Easier to scan visually but not machine-parseable.
+
+class JSONFormatter(logging.Formatter):
+    """
+    JSON log formatter for Google Cloud Logging compatibility.
+    
+    Cloud Logging expects a 'severity' field (not 'level') and parses
+    any valid JSON line into structured log entry fields. This means
+    custom fields like 'user_id' and 'latency_ms' become searchable
+    in the Logs Explorer without any configuration.
+    """
+    def format(self, record):
+        log_entry = {
+            "severity": record.levelname,
+            "message": record.getMessage(),
+            "module": record.module,
+            "function": record.funcName,
+            "timestamp": self.formatTime(record, self.datefmt),
+        }
+        # Include exception info if present
+        if record.exc_info and record.exc_info[0]:
+            log_entry["exception"] = self.formatException(record.exc_info)
+        # Include custom fields attached to log records
+        for field in ("user_id", "command", "latency_ms", "error_category"):
+            if hasattr(record, field):
+                log_entry[field] = getattr(record, field)
+        return json.dumps(log_entry)
+
+# Apply formatter based on config
+log_handler = logging.StreamHandler(sys.stdout)
+if settings.json_logging:
+    log_handler.setFormatter(JSONFormatter())
+else:
+    log_handler.setFormatter(logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    ))
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    stream=sys.stdout
+    handlers=[log_handler],
 )
 
 logger = logging.getLogger(__name__)
+
+# ===== Initialize Rate Limiter with Admin IDs =====
+# Parse comma-separated admin IDs from config
+if settings.admin_telegram_ids:
+    _admin_ids = [aid.strip() for aid in settings.admin_telegram_ids.split(",") if aid.strip()]
+    rate_limiter.set_admin_ids(_admin_ids)
 
 
 # ===== FastAPI Application =====
@@ -48,6 +101,51 @@ app = FastAPI(
     docs_url="/docs" if settings.environment == "development" else None,  # Disable docs in production
     redoc_url="/redoc" if settings.environment == "development" else None
 )
+
+
+# ===== Cron Endpoint Authentication =====
+
+def verify_cron_request(request: Request) -> None:
+    """
+    Verify that a cron/trigger request comes from Cloud Scheduler.
+    
+    WHY THIS MATTERS:
+    -----------------
+    Without authentication, anyone who discovers the cron endpoint URLs can:
+    - Trigger mass reminders to all users (spam)
+    - Force pattern scans (waste API credits)
+    - Generate reports for all users (abuse resources)
+    
+    HOW IT WORKS:
+    -------------
+    Cloud Scheduler is configured to send a secret header (X-Cron-Secret) with
+    each request. This function compares it to the expected secret from config.
+    If they don't match (or the header is missing), the request is rejected.
+    
+    When cron_secret is empty (development), authentication is skipped.
+    
+    Args:
+        request: FastAPI Request object
+        
+    Raises:
+        HTTPException(403): If authentication fails
+    """
+    expected_secret = settings.cron_secret
+    
+    # Skip auth if no secret configured (development mode)
+    if not expected_secret:
+        logger.debug("⚠️ Cron auth skipped (no CRON_SECRET configured)")
+        return
+    
+    provided_secret = request.headers.get("X-Cron-Secret", "")
+    
+    if provided_secret != expected_secret:
+        logger.warning(
+            f"🚨 Unauthorized cron request blocked. "
+            f"Source: {request.client.host if request.client else 'unknown'}, "
+            f"Path: {request.url.path}"
+        )
+        raise HTTPException(status_code=403, detail="Unauthorized: Invalid cron secret")
 
 
 # ===== Startup Event =====
@@ -148,14 +246,23 @@ async def health_check():
     # Overall health
     healthy = firestore_ok
     
+    # Gather lightweight metrics for health response
+    uptime = metrics.get_uptime()
+    
     if healthy:
         return {
             "status": "healthy",
             "service": "constitution-agent",
             "version": "1.0.0",
             "environment": settings.environment,
+            "uptime": uptime["uptime_human"],
             "checks": {
                 "firestore": "ok"
+            },
+            "metrics_summary": {
+                "checkins_total": metrics.get_counter("checkins_total"),
+                "commands_total": metrics.get_counter("commands_total"),
+                "errors_total": metrics.get_error_count(),
             }
         }
     else:
@@ -168,6 +275,30 @@ async def health_check():
                 }
             }
         )
+
+
+@app.get("/admin/metrics")
+async def admin_metrics(request: Request):
+    """
+    Full metrics endpoint for monitoring and debugging.
+    
+    Returns detailed counters, latency percentiles, error breakdown,
+    and recent error log. Intended for admin use and monitoring systems.
+    
+    Authentication: Requires admin_telegram_id as query parameter.
+    In production, this should be behind a VPN or IAP.
+    
+    Returns:
+        dict: Full metrics summary
+    """
+    # Simple auth: check query param against admin IDs
+    admin_id = request.query_params.get("admin_id", "")
+    admin_ids = [aid.strip() for aid in settings.admin_telegram_ids.split(",") if aid.strip()]
+    
+    if not admin_ids or admin_id not in admin_ids:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    return metrics.get_summary()
 
 
 # ===== Telegram Webhook Endpoint =====
@@ -194,6 +325,8 @@ async def telegram_webhook(request: Request):
     Returns:
         dict: {"ok": True} to acknowledge receipt
     """
+    start_time = time.monotonic()
+    
     try:
         # Get update data from request body
         update_data = await request.json()
@@ -206,9 +339,19 @@ async def telegram_webhook(request: Request):
         # Process update with bot
         await bot_manager.application.process_update(update)
         
+        # Record webhook latency
+        elapsed_ms = (time.monotonic() - start_time) * 1000
+        metrics.record_latency("webhook_latency", elapsed_ms)
+        metrics.increment("webhooks_total")
+        
         return {"ok": True}
         
     except Exception as e:
+        # Record error in metrics
+        elapsed_ms = (time.monotonic() - start_time) * 1000
+        metrics.record_latency("webhook_latency", elapsed_ms)
+        metrics.record_error("webhook", str(e))
+        
         logger.error(f"❌ Error processing webhook: {e}", exc_info=True)
         
         # Still return 200 OK to Telegram (don't retry failed updates)
@@ -267,13 +410,11 @@ async def pattern_scan_trigger(request: Request):
     from src.agents.pattern_detection import get_pattern_detection_agent
     from src.agents.intervention import get_intervention_agent
     
-    # Verify request is from Cloud Scheduler (optional but recommended)
+    # Authenticate cron request (blocks unauthorized access)
+    verify_cron_request(request)
+    
     scheduler_header = request.headers.get("X-CloudScheduler-JobName")
     logger.info(f"📡 Pattern scan triggered by: {scheduler_header or 'manual/unknown'}")
-    
-    # Security: In production, enforce Cloud Scheduler authentication
-    # if settings.environment == "production" and scheduler_header != "pattern-scan-job":
-    #     raise HTTPException(403, "Unauthorized: Not from Cloud Scheduler")
     
     try:
         # Get pattern detection and intervention agents
@@ -354,15 +495,20 @@ async def pattern_scan_trigger(request: Request):
                                             days_missing = pattern.data["days_missing"]
                                             last_checkin = pattern.data.get("last_checkin_date", "unknown")
                                             
+                                            # Phase C: Enhanced ghosting alert with partner context
+                                            partner_streak = partner.streaks.current_streak
                                             partner_msg = (
                                                 f"🚨 **Accountability Partner Alert**\n\n"
                                                 f"Your partner **{user.name}** hasn't checked in for **{days_missing} days**.\n\n"
-                                                f"Last check-in: {last_checkin}\n\n"
+                                                f"📊 Their streak before ghosting: {user.streaks.current_streak} days\n"
+                                                f"📅 Last check-in: {last_checkin}\n\n"
                                                 f"This is serious. Consider reaching out to check on them:\n"
                                                 f"• Text them directly\n"
                                                 f"• Call if you have their number\n"
                                                 f"• Make sure they're okay\n\n"
-                                                f"Sometimes people need a friend more than a bot."
+                                                f"Sometimes people need a friend more than a bot.\n\n"
+                                                f"🔥 Your own streak: {partner_streak} days — keep showing up!\n"
+                                                f"Use /partner_status to see full partner dashboard."
                                             )
                                             
                                             await bot_manager.send_message(
@@ -427,6 +573,8 @@ async def reminder_first(request: Request):
     Returns:
         dict: Reminder results (users reminded)
     """
+    verify_cron_request(request)
+    
     from src.utils.timezone_utils import get_current_date_ist
     
     scheduler_header = request.headers.get("X-CloudScheduler-JobName")
@@ -505,6 +653,8 @@ async def reminder_second(request: Request):
     Returns:
         dict: Reminder results (users reminded)
     """
+    verify_cron_request(request)
+    
     from src.utils.timezone_utils import get_current_date_ist
     
     scheduler_header = request.headers.get("X-CloudScheduler-JobName")
@@ -582,6 +732,8 @@ async def reminder_third(request: Request):
     Returns:
         dict: Reminder results (users reminded)
     """
+    verify_cron_request(request)
+    
     from src.utils.timezone_utils import get_current_date_ist
     
     scheduler_header = request.headers.get("X-CloudScheduler-JobName")
@@ -660,6 +812,173 @@ async def reminder_third(request: Request):
         raise HTTPException(500, f"Third reminder failed: {str(e)}")
 
 
+# ===== Phase B: Timezone-Aware Unified Reminder =====
+
+@app.post("/cron/reminder_tz_aware")
+async def reminder_tz_aware(request: Request):
+    """
+    Timezone-aware unified reminder endpoint (Phase B).
+    
+    **Architecture:**
+    Instead of 3 fixed IST endpoints, this single endpoint is called
+    by Cloud Scheduler every 15 minutes. Each invocation:
+    
+    1. Checks which of our catalog timezones are currently at 9:00 PM,
+       9:30 PM, or 10:00 PM (within 15-minute tolerance)
+    2. Fetches users in those timezones who haven't checked in today
+    3. Sends the appropriate reminder (first/second/third) based on
+       which target time matched
+    
+    **Why 15-minute intervals?**
+    - Timezone offsets come in 15/30/45/60 minute increments
+    - 15 minutes captures all offsets without duplication
+    - Cloud Scheduler fires 96 times/day (cheap & reliable)
+    
+    **Why keep the old endpoints?**
+    - Backward compatibility during migration
+    - Fallback if the new system has issues
+    - Can be deprecated once bucket system is proven
+    
+    **Reminder tiers (in user's local time):**
+    - 21:00 → First reminder (friendly)
+    - 21:30 → Second reminder (nudge)
+    - 22:00 → Third reminder (urgent)
+    
+    Returns:
+        dict: Summary of timezones matched, users found, reminders sent
+    """
+    verify_cron_request(request)
+    
+    from src.utils.timezone_utils import (
+        get_timezones_at_local_time,
+        get_current_date,
+        get_timezone_display_name
+    )
+    
+    utc_now = datetime.utcnow().replace(tzinfo=None)
+    # Make it timezone-aware for the helper
+    import pytz
+    utc_now_aware = pytz.UTC.localize(utc_now)
+    
+    logger.info(f"🌍 Timezone-aware reminder scan at UTC {utc_now.strftime('%H:%M')}")
+    
+    # Define reminder tiers: (target_hour, target_minute, tier_name, message_generator)
+    reminder_tiers = [
+        (21, 0, "first"),
+        (21, 30, "second"),
+        (22, 0, "third"),
+    ]
+    
+    total_sent = 0
+    total_errors = 0
+    matched_info = []
+    
+    try:
+        for target_hour, target_minute, tier_name in reminder_tiers:
+            # Find timezones where local time matches this tier
+            matching_tzs = get_timezones_at_local_time(
+                utc_now_aware, target_hour, target_minute, tolerance_minutes=7
+            )
+            
+            if not matching_tzs:
+                continue
+            
+            logger.info(
+                f"⏰ {tier_name} reminder: {len(matching_tzs)} timezones at "
+                f"{target_hour}:{target_minute:02d} → {matching_tzs}"
+            )
+            
+            # Get users in these timezones
+            users = firestore_service.get_users_by_timezones(matching_tzs)
+            
+            for user in users:
+                try:
+                    user_tz = getattr(user, 'timezone', 'Asia/Kolkata') or 'Asia/Kolkata'
+                    user_today = get_current_date(user_tz)
+                    
+                    # Skip if already checked in today
+                    if firestore_service.checkin_exists(user.user_id, user_today):
+                        continue
+                    
+                    # Skip if this tier's reminder already sent today
+                    reminder_status = firestore_service.get_reminder_status(user.user_id, user_today)
+                    if reminder_status and reminder_status.get(f"{tier_name}_sent"):
+                        continue
+                    
+                    # Build message based on tier
+                    if tier_name == "first":
+                        message = (
+                            f"🔔 **Daily Check-In Time!**\n\n"
+                            f"Hey {user.name}! It's 9 PM — time for your daily check-in.\n\n"
+                            f"🔥 Current streak: {user.streaks.current_streak} days\n"
+                            f"🎯 Mode: {user.constitution_mode.title()}\n\n"
+                            f"Ready to keep the momentum going?\n\n"
+                            f"Use /checkin to start!"
+                        )
+                    elif tier_name == "second":
+                        message = (
+                            f"👋 **Still There?**\n\n"
+                            f"Hey {user.name}, your daily check-in is waiting!\n\n"
+                            f"🔥 Don't break your {user.streaks.current_streak}-day streak\n"
+                            f"⏰ Check-in closes at midnight\n\n"
+                            f"Just takes 2 minutes: /checkin"
+                        )
+                    else:  # third
+                        message = (
+                            f"⚠️ **URGENT: Check-In Closing Soon!**\n\n"
+                            f"⏰ Only 2 hours left until midnight!\n"
+                            f"🔥 Your {user.streaks.current_streak}-day streak is at risk\n\n"
+                        )
+                        if user.streak_shields.available > 0:
+                            message += (
+                                f"🛡️ You have {user.streak_shields.available} streak shield(s) available\n"
+                                f"   (Use if you absolutely can't check in tonight)\n\n"
+                            )
+                        else:
+                            message += f"🛡️ No streak shields remaining — this is critical!\n\n"
+                        message += (
+                            f"**Don't let one missed day undo {user.streaks.current_streak} days of work.**\n\n"
+                            f"Check in NOW: /checkin"
+                        )
+                    
+                    await bot_manager.bot.send_message(
+                        chat_id=user.telegram_id,
+                        text=message
+                    )
+                    
+                    firestore_service.set_reminder_sent(user.user_id, user_today, tier_name)
+                    total_sent += 1
+                    
+                    logger.info(f"✅ Sent {tier_name} reminder to {user.user_id} ({user.name}, tz={user_tz})")
+                    
+                except Exception as e:
+                    logger.error(f"❌ Failed {tier_name} reminder for {user.user_id}: {e}")
+                    total_errors += 1
+            
+            matched_info.append({
+                "tier": tier_name,
+                "target_time": f"{target_hour}:{target_minute:02d}",
+                "matched_timezones": matching_tzs,
+                "users_found": len(users)
+            })
+        
+        result = {
+            "status": "tz_aware_reminders_complete",
+            "utc_time": utc_now.strftime("%H:%M"),
+            "timestamp": datetime.utcnow().isoformat(),
+            "tiers_matched": matched_info,
+            "total_reminders_sent": total_sent,
+            "total_errors": total_errors
+        }
+        
+        logger.info(f"🌍 TZ-aware reminder complete: {total_sent} sent, {total_errors} errors")
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ TZ-aware reminder failed: {e}", exc_info=True)
+        raise HTTPException(500, f"TZ-aware reminder failed: {str(e)}")
+
+
 # ===== Phase 3E: Quick Check-In Reset =====
 
 @app.post("/cron/reset_quick_checkins")
@@ -683,6 +1002,8 @@ async def reset_quick_checkins(request: Request):
     Returns:
         dict: Reset results (users processed)
     """
+    verify_cron_request(request)
+    
     from src.utils.timezone_utils import get_next_monday
     
     scheduler_header = request.headers.get("X-CloudScheduler-JobName")
@@ -771,6 +1092,8 @@ async def weekly_report_trigger(request: Request):
     Returns:
         dict: Aggregate report results
     """
+    verify_cron_request(request)
+    
     from src.agents.reporting_agent import send_weekly_reports_to_all
     
     scheduler_header = request.headers.get("X-CloudScheduler-JobName")
@@ -801,8 +1124,9 @@ async def global_exception_handler(request: Request, exc: Exception):
     """
     Global exception handler for unhandled errors.
     
-    Logs error and returns 500 response.
+    Logs error, records in metrics, and returns 500 response.
     """
+    metrics.record_error("unhandled", str(exc))
     logger.error(f"❌ Unhandled exception: {exc}", exc_info=True)
     
     return {

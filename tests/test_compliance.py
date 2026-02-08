@@ -27,11 +27,12 @@ from src.utils.compliance import (
 # ===== Test: Compliance Score Calculation =====
 
 def test_compliance_score_all_complete():
-    """Test 100% compliance when all items completed."""
+    """Test 100% compliance when all 6 items completed (Phase 3D: 6 items)."""
     tier1 = Tier1NonNegotiables(
         sleep=True,
         training=True,
         deep_work=True,
+        skill_building=True,  # Phase 3D: 6th item
         zero_porn=True,
         boundaries=True
     )
@@ -55,31 +56,35 @@ def test_compliance_score_all_incomplete():
 
 
 def test_compliance_score_partial():
-    """Test 80% compliance when 4/5 items completed."""
+    """Test ~83.3% compliance when 5/6 items completed (Phase 3D: 6 items)."""
     tier1 = Tier1NonNegotiables(
         sleep=False,  # Only one missed
         training=True,
         deep_work=True,
+        skill_building=True,  # Phase 3D: 6th item
         zero_porn=True,
         boundaries=True
     )
     
     score = calculate_compliance_score(tier1)
-    assert score == 80.0
+    expected = (5 / 6) * 100  # 83.33% with 6-item denominator
+    assert abs(score - expected) < 0.01
 
 
 def test_compliance_score_half():
-    """Test 60% compliance when 3/5 items completed."""
+    """Test ~66.7% compliance when 4/6 items completed (Phase 3D: 6 items)."""
     tier1 = Tier1NonNegotiables(
         sleep=True,
         training=True,
         deep_work=True,
+        skill_building=True,  # Phase 3D: 6th item
         zero_porn=False,
         boundaries=False
     )
     
     score = calculate_compliance_score(tier1)
-    assert score == 60.0
+    expected = (4 / 6) * 100  # 66.67% with 6-item denominator
+    assert abs(score - expected) < 0.01
 
 
 # ===== Test: Compliance Level Categorization =====
@@ -121,11 +126,12 @@ def test_compliance_emoji():
 # ===== Test: Missed Items Detection =====
 
 def test_get_missed_items_none():
-    """Test when no items missed."""
+    """Test when no items missed (all 6 items complete)."""
     tier1 = Tier1NonNegotiables(
         sleep=True,
         training=True,
         deep_work=True,
+        skill_building=True,  # Phase 3D: 6th item
         zero_porn=True,
         boundaries=True
     )
@@ -135,11 +141,12 @@ def test_get_missed_items_none():
 
 
 def test_get_missed_items_one():
-    """Test when one item missed."""
+    """Test when one item missed (with all 6 items)."""
     tier1 = Tier1NonNegotiables(
         sleep=False,  # Missed
         training=True,
         deep_work=True,
+        skill_building=True,  # Phase 3D: 6th item
         zero_porn=True,
         boundaries=True
     )
@@ -149,11 +156,12 @@ def test_get_missed_items_one():
 
 
 def test_get_missed_items_multiple():
-    """Test when multiple items missed."""
+    """Test when multiple items missed (with all 6 items)."""
     tier1 = Tier1NonNegotiables(
         sleep=False,
         training=False,
         deep_work=True,
+        skill_building=True,  # Phase 3D: 6th item
         zero_porn=False,
         boundaries=True
     )
@@ -165,7 +173,7 @@ def test_get_missed_items_multiple():
 # ===== Test: Edge Cases =====
 
 def test_compliance_score_with_details():
-    """Test that optional details don't affect score."""
+    """Test that optional details don't affect score (Phase 3D: 6 items)."""
     tier1_with_details = Tier1NonNegotiables(
         sleep=True,
         sleep_hours=7.5,
@@ -174,6 +182,7 @@ def test_compliance_score_with_details():
         training_type="rest",
         deep_work=True,
         deep_work_hours=2.5,
+        skill_building=True,  # Phase 3D: 6th item
         zero_porn=True,
         boundaries=True
     )
@@ -182,6 +191,7 @@ def test_compliance_score_with_details():
         sleep=True,
         training=True,
         deep_work=True,
+        skill_building=True,  # Phase 3D: 6th item
         zero_porn=True,
         boundaries=True
     )

@@ -871,9 +871,10 @@ class PatternDetectionAgent:
             logger.info(f"No ghosting check: User {user_id} has no last_checkin_date")
             return None
         
-        # Calculate days since last check-in
+        # Calculate days since last check-in (Phase B: timezone-aware)
+        user_tz = getattr(user, 'timezone', 'Asia/Kolkata') or 'Asia/Kolkata'
         days_since = self._calculate_days_since_checkin(
-            user.streaks.last_checkin_date
+            user.streaks.last_checkin_date, tz=user_tz
         )
         
         logger.info(f"Ghosting check: User {user_id} - {days_since} days since last check-in")
@@ -904,7 +905,7 @@ class PatternDetectionAgent:
         
         return pattern
     
-    def _calculate_days_since_checkin(self, last_checkin_date: str) -> int:
+    def _calculate_days_since_checkin(self, last_checkin_date: str, tz: str = "Asia/Kolkata") -> int:
         """
         Calculate days between last check-in and today.
         
@@ -916,33 +917,33 @@ class PatternDetectionAgent:
         
         **Date Math:**
         - last_checkin_date: "2026-02-02" (string from Firestore)
-        - today: "2026-02-04" (current IST date)
+        - today: "2026-02-04" (current date in user's timezone)
         - difference: 2 days
         
-        **Why IST instead of UTC?**
-        - User is in India (IST timezone)
-        - "Today" for user is IST date, not UTC
+        **Why user's timezone instead of UTC?**
+        - "Today" for user depends on their timezone
         - Prevents off-by-one errors near midnight
         
         Args:
-            last_checkin_date: Date string in format "YYYY-MM-DD" (IST)
+            last_checkin_date: Date string in format "YYYY-MM-DD"
+            tz: User's IANA timezone for "today" calculation
             
         Returns:
             Number of days since last check-in (integer)
             
         Example:
             Last check-in: "2026-02-02"
-            Today (IST): "2026-02-04"
+            Today (user's tz): "2026-02-04"
             → Returns: 2 days
         """
         from datetime import datetime
-        from src.utils.timezone_utils import get_current_date_ist
+        from src.utils.timezone_utils import get_current_date
         
         # Parse last check-in date
         last_date = datetime.strptime(last_checkin_date, "%Y-%m-%d").date()
         
-        # Get today's date in IST (user's timezone)
-        today_str = get_current_date_ist()
+        # Get today's date in user's timezone
+        today_str = get_current_date(tz)
         today = datetime.strptime(today_str, "%Y-%m-%d").date()
         
         # Calculate difference

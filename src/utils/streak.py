@@ -25,8 +25,136 @@ Example Timeline:
 from datetime import datetime, timedelta
 from typing import Optional, Dict
 import logging
+import random
 
 logger = logging.getLogger(__name__)
+
+
+# ===== Phase D: Streak Recovery System =====
+# Motivational facts shown when a streak resets. These normalize resets as part of
+# the long-term habit-building process (drawn from behavioral psychology research).
+# A random fact is chosen each time to keep the message fresh.
+RECOVERY_FACTS = [
+    "Most people who reach 30+ days had at least one reset along the way.",
+    "Research shows habit formation averages 66 days — resets are part of the process.",
+    "Elite athletes track 'return-to-form' time, not zero-failure streaks.",
+    "A streak reset isn't starting over — it's starting from experience.",
+    "The #1 predictor of long-term success? Restarting after a break.",
+    "Every marathon runner walks sometimes. What matters is finishing.",
+    "Consistency isn't perfection — it's always getting back on track.",
+    "Your brain forms stronger habits after recovering from a break.",
+]
+
+
+def format_streak_reset_message(
+    streak_before_reset: int,
+    recovery_fact: str
+) -> str:
+    """
+    Generate a compassionate, motivating message when a streak resets.
+    
+    **Why This Matters (Behavioral Psychology):**
+    When a streak resets, the user experiences a "what-the-hell" effect —
+    a cognitive distortion where a single failure feels like total failure.
+    This message combats that by:
+    1. Acknowledging their previous achievement (loss aversion is real)
+    2. Reframing the reset as a *part* of the journey, not the end
+    3. Providing a concrete next milestone (Comeback King at 7 days)
+    4. Using a random motivational fact for social proof
+    
+    Args:
+        streak_before_reset: The streak value before it was reset
+        recovery_fact: A motivational fact from RECOVERY_FACTS
+        longest_streak: All-time best streak for additional context
+        
+    Returns:
+        Formatted reset message string (Telegram Markdown-safe)
+    """
+    parts = ["🔄 <b>Fresh Start!</b>\n"]
+    
+    if streak_before_reset > 0:
+        parts.append(
+            f"Your previous streak: {streak_before_reset} days 🏆\n"
+            f"That's still YOUR record — and you earned every day of it.\n"
+        )
+    
+    parts.append("🔥 New streak: Day 1 — the comeback starts now.\n")
+    parts.append(f"💡 {recovery_fact}\n")
+    parts.append("🎯 Next milestone: 7 days → unlocks Comeback King! 🦁")
+    
+    return "\n".join(parts)
+
+
+def get_recovery_milestone_message(
+    current_streak: int,
+    streak_before_reset: int,
+    last_reset_date: Optional[str] = None
+) -> Optional[str]:
+    """
+    Check if the user's current post-reset streak deserves a recovery milestone message.
+    
+    **Recovery Milestone Theory:**
+    After a reset, we celebrate small wins MORE aggressively than normal milestones.
+    This is because the user is in a psychologically fragile state — they need positive
+    reinforcement early to prevent dropout. These milestones are *separate* from the
+    normal streak milestones (7, 14, 30...) and only fire when there was a recent reset.
+    
+    **Milestone Schedule:**
+    | Days After Reset | Message | Psychology |
+    |---|---|---|
+    | 3 | "3 days strong!" | Prove the reset was a bump, not a stop |
+    | 7 | "Comeback King!" | Full week = real momentum |
+    | 14 | "Two weeks rebuilt" | Halfway to a strong habit |
+    | Exceeds old streak | "NEW RECORD!" | Ultimate vindication |
+    
+    Args:
+        current_streak: Current streak value (post-reset)
+        streak_before_reset: What the streak was before it reset
+        last_reset_date: Date of last reset (YYYY-MM-DD) to confirm recency
+        
+    Returns:
+        Recovery milestone message if applicable, None otherwise
+    """
+    # Only show recovery milestones if there was a recent reset
+    if not last_reset_date or streak_before_reset == 0:
+        return None
+    
+    # Check if this is a recovery period (within reasonable timeframe)
+    # If the user has been going for 100+ days since reset, 
+    # the normal milestone system takes over
+    if current_streak > max(streak_before_reset * 2, 30):
+        return None
+    
+    # Check milestones (most impactful first)
+    if current_streak > streak_before_reset and streak_before_reset >= 3:
+        return (
+            f"👑 <b>NEW RECORD!</b>\n\n"
+            f"You've surpassed your previous {streak_before_reset}-day streak!\n"
+            f"Current: {current_streak} days. Unstoppable. 🔥"
+        )
+    
+    if current_streak == 14:
+        return (
+            "🔥 <b>Two Weeks Strong!</b>\n\n"
+            "You've rebuilt half of what you had. "
+            "The momentum is real. Keep going! 💪"
+        )
+    
+    if current_streak == 7:
+        return (
+            "🦁 <b>Comeback King!</b>\n\n"
+            "A full week back after reset. "
+            "Your resilience is your superpower. 💪"
+        )
+    
+    if current_streak == 3:
+        return (
+            "💪 <b>3 Days Strong!</b>\n\n"
+            "You're proving the reset was just a bump, not a stop. "
+            "Keep this energy going! 🔥"
+        )
+    
+    return None
 
 
 def should_increment_streak(last_checkin_date: str, current_date: str) -> bool:
@@ -273,7 +401,7 @@ def days_until_milestone(current_streak: int) -> tuple[int, str]:
     return (0, "legendary status")
 
 
-def is_streak_at_risk(last_checkin_date: str) -> bool:
+def is_streak_at_risk(last_checkin_date: str, tz: str = "Asia/Kolkata") -> bool:
     """
     Check if streak is at risk (approaching 48-hour deadline).
     
@@ -281,6 +409,7 @@ def is_streak_at_risk(last_checkin_date: str) -> bool:
     
     Args:
         last_checkin_date: Last check-in date (YYYY-MM-DD)
+        tz: User's IANA timezone (default: "Asia/Kolkata" for backward compat)
         
     Returns:
         bool: True if >24 hours have passed (needs check-in soon)
@@ -290,9 +419,9 @@ def is_streak_at_risk(last_checkin_date: str) -> bool:
         >>> is_streak_at_risk("2026-01-28")
         True  # 2 days passed, streak at risk!
     """
-    from src.models.schemas import get_current_date_ist
+    from src.utils.timezone_utils import get_current_date
     
-    current_date = get_current_date_ist()
+    current_date = get_current_date(tz)
     last_date = datetime.strptime(last_checkin_date, "%Y-%m-%d")
     curr_date = datetime.strptime(current_date, "%Y-%m-%d")
     
@@ -304,7 +433,7 @@ def is_streak_at_risk(last_checkin_date: str) -> bool:
 
 # ===== Phase 3A: Streak Shields =====
 
-def should_reset_streak_shields(last_reset_date: Optional[str]) -> bool:
+def should_reset_streak_shields(last_reset_date: Optional[str], tz: str = "Asia/Kolkata") -> bool:
     """
     Check if 30 days have passed since last shield reset (Phase 3A).
     
@@ -312,6 +441,7 @@ def should_reset_streak_shields(last_reset_date: Optional[str]) -> bool:
     
     Args:
         last_reset_date: Last reset date (YYYY-MM-DD) or None if never reset
+        tz: User's IANA timezone (default: "Asia/Kolkata")
         
     Returns:
         bool: True if shields should be reset
@@ -320,9 +450,9 @@ def should_reset_streak_shields(last_reset_date: Optional[str]) -> bool:
         # First time - reset needed
         return True
     
-    from src.models.schemas import get_current_date_ist
+    from src.utils.timezone_utils import get_current_date
     
-    current_date = get_current_date_ist()
+    current_date = get_current_date(tz)
     last_reset = datetime.strptime(last_reset_date, "%Y-%m-%d")
     curr_date_dt = datetime.strptime(current_date, "%Y-%m-%d")
     
@@ -332,7 +462,7 @@ def should_reset_streak_shields(last_reset_date: Optional[str]) -> bool:
     return days_diff >= 30
 
 
-def calculate_days_without_checkin(last_checkin_date: Optional[str]) -> int:
+def calculate_days_without_checkin(last_checkin_date: Optional[str], tz: str = "Asia/Kolkata") -> int:
     """
     Calculate how many days since last check-in (Phase 3A).
     
@@ -340,6 +470,7 @@ def calculate_days_without_checkin(last_checkin_date: Optional[str]) -> int:
     
     Args:
         last_checkin_date: Last check-in date (YYYY-MM-DD) or None
+        tz: User's IANA timezone (default: "Asia/Kolkata")
         
     Returns:
         int: Days since last check-in (0 if checked in today, -1 if never)
@@ -347,9 +478,9 @@ def calculate_days_without_checkin(last_checkin_date: Optional[str]) -> int:
     if last_checkin_date is None:
         return -1  # Never checked in
     
-    from src.models.schemas import get_current_date_ist
+    from src.utils.timezone_utils import get_current_date
     
-    current_date = get_current_date_ist()
+    current_date = get_current_date(tz)
     last_date = datetime.strptime(last_checkin_date, "%Y-%m-%d")
     curr_date_dt = datetime.strptime(current_date, "%Y-%m-%d")
     
@@ -484,7 +615,9 @@ def update_streak_data(
     longest_streak: int,
     total_checkins: int,
     last_checkin_date: Optional[str],
-    new_checkin_date: str
+    new_checkin_date: str,
+    streak_before_reset: int = 0,
+    last_reset_date: Optional[str] = None
 ) -> dict:
     """
     Calculate all streak updates after a check-in.
@@ -494,6 +627,24 @@ def update_streak_data(
     Returns a dictionary with updated streak data to store in Firestore.
     
     Phase 3C Update: Now also checks for milestones and returns milestone data.
+    Phase D Update: Now detects resets and returns recovery context.
+    
+    **Phase D Recovery System:**
+    When a reset is detected (gap >= 2 days), the function:
+    1. Saves the pre-reset streak value as `streak_before_reset`
+    2. Records the reset date as `last_reset_date`
+    3. Picks a random RECOVERY_FACT for the message
+    4. Generates a `recovery_message` for display
+    5. Sets `is_reset=True` flag for the conversation handler
+    
+    When NOT a reset, the function checks for recovery milestones
+    (Day 3, 7, 14, exceeds old streak) if there was a recent reset.
+    
+    **Key Design: Transient vs. Persistent keys**
+    - Persistent (stored in Firestore): current_streak, longest_streak,
+      last_checkin_date, total_checkins, streak_before_reset, last_reset_date
+    - Transient (used for UI only, stripped before Firestore write):
+      milestone_hit, is_reset, recovery_message, recovery_fact
     
     Args:
         current_streak: Current streak value
@@ -501,27 +652,11 @@ def update_streak_data(
         total_checkins: Lifetime total check-ins
         last_checkin_date: Last check-in date (None if first)
         new_checkin_date: Today's check-in date
+        streak_before_reset: Previous streak before last reset (Phase D)
+        last_reset_date: Date of last reset (Phase D)
         
     Returns:
-        dict: Updated streak data with keys:
-            - current_streak: New streak value
-            - longest_streak: Updated if current exceeds longest
-            - last_checkin_date: Today's date
-            - total_checkins: Incremented by 1
-            - milestone_hit: Milestone dict if milestone reached, None otherwise (Phase 3C)
-            
-    Example:
-        >>> updates = update_streak_data(
-        ...     current_streak=29,
-        ...     longest_streak=29,
-        ...     total_checkins=29,
-        ...     last_checkin_date="2026-02-05",
-        ...     new_checkin_date="2026-02-06"
-        ... )
-        >>> updates['current_streak']
-        30
-        >>> updates['milestone_hit']
-        {'title': '🎉 30 DAYS!', 'message': '...', 'percentile': 'Top 10%'}
+        dict: Updated streak data (persistent + transient keys)
     """
     # Calculate new streak
     new_streak = calculate_new_streak(
@@ -536,10 +671,50 @@ def update_streak_data(
     # ===== PHASE 3C: Check for milestone =====
     milestone = check_milestone(new_streak)
     
-    return {
+    # ===== PHASE D: Detect reset and add recovery context =====
+    is_reset = (new_streak == 1 and current_streak > 0 and last_checkin_date is not None)
+    
+    result = {
         "current_streak": new_streak,
         "longest_streak": new_longest,
         "last_checkin_date": new_checkin_date,
         "total_checkins": total_checkins + 1,
-        "milestone_hit": milestone  # Phase 3C addition
+        "milestone_hit": milestone,         # Phase 3C (transient)
+        "is_reset": False,                  # Phase D (transient)
+        "recovery_message": None,           # Phase D (transient)
+        "recovery_fact": None,              # Phase D (transient)
+        # Carry forward existing recovery tracking fields
+        "streak_before_reset": streak_before_reset,
+        "last_reset_date": last_reset_date,
     }
+    
+    if is_reset:
+        # Streak just reset! Capture recovery context.
+        fact = random.choice(RECOVERY_FACTS)
+        result["is_reset"] = True
+        result["streak_before_reset"] = current_streak  # What was lost
+        result["last_reset_date"] = new_checkin_date     # When it happened
+        result["recovery_fact"] = fact
+        result["recovery_message"] = format_streak_reset_message(
+            streak_before_reset=current_streak,
+            recovery_fact=fact
+        )
+        logger.info(
+            f"🔄 Streak reset detected: {current_streak} → 1 "
+            f"(previous best saved: {current_streak})"
+        )
+    else:
+        # Not a reset — check for recovery milestones (post-reset celebration)
+        recovery_milestone = get_recovery_milestone_message(
+            current_streak=new_streak,
+            streak_before_reset=streak_before_reset,
+            last_reset_date=last_reset_date
+        )
+        if recovery_milestone:
+            result["recovery_message"] = recovery_milestone
+            logger.info(
+                f"🎉 Recovery milestone for streak {new_streak} "
+                f"(post-reset from {streak_before_reset})"
+            )
+    
+    return result

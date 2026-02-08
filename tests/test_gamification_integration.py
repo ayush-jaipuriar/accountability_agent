@@ -62,7 +62,7 @@ def user_day_29():
 
 @pytest.fixture
 def perfect_checkins_7days():
-    """7 perfect check-ins for achievement testing."""
+    """7 perfect check-ins for achievement testing (Phase 3D: 6 items)."""
     checkins = []
     for i in range(1, 8):
         checkins.append(
@@ -76,15 +76,16 @@ def perfect_checkins_7days():
                     training=True,
                     deep_work=True,
                     deep_work_hours=3.0,
+                    skill_building=True,  # Phase 3D: 6th item
                     zero_porn=True,
                     boundaries=True
                 ),
                 responses=CheckInResponses(
-                    challenges="None",
+                    challenges="No challenges today, everything went smoothly",
                     rating=10,
-                    rating_reason="Perfect day",
-                    tomorrow_priority="Continue",
-                    tomorrow_obstacle="None"
+                    rating_reason="Perfect day with all goals achieved on time",
+                    tomorrow_priority="Continue daily constitution practice as planned",
+                    tomorrow_obstacle="No significant obstacles expected tomorrow"
                 ),
                 compliance_score=100.0,
                 completed_at=datetime.utcnow(),
@@ -388,17 +389,21 @@ def test_user_progress_tracks_across_sessions(mock_firestore_service):
     assert "fortnight_fighter" in newly_unlocked
     user.achievements.append("fortnight_fighter")
     
-    # Check progress
+    # Check progress - API uses 'rarity_breakdown' dict, not flat keys
     progress = achievement_service.get_user_progress(user)
     assert progress['total_unlocked'] == 3
-    assert progress['common_count'] == 3  # All are common tier
+    assert progress['rarity_breakdown']['common'] == 3  # All are common tier
 
 
 # ===== Integration Test: Comeback Journey =====
 
 @pytest.mark.integration
 def test_comeback_king_journey(mock_firestore_service):
-    """Test comeback king achievement over multiple check-ins."""
+    """Test comeback king achievement over multiple check-ins (Phase D).
+    
+    Phase D changed Comeback King from "rebuild to longest_streak" to 
+    "reach 7 days after a reset" (more achievable).
+    """
     # User had 50-day streak, broke it, now rebuilding
     user = User(
         user_id="comeback_user",
@@ -406,20 +411,22 @@ def test_comeback_king_journey(mock_firestore_service):
         name="Comeback User",
         timezone="Asia/Kolkata",
         streaks=UserStreaks(
-            current_streak=49,
+            current_streak=6,
             longest_streak=50,  # Previous best
             last_checkin_date="2026-02-05",
-            total_checkins=120
+            total_checkins=120,
+            streak_before_reset=50,  # Phase D: had 50-day streak before reset
+            last_reset_date="2026-01-28"  # Phase D: when it reset
         ),
         achievements=["first_checkin", "week_warrior", "fortnight_fighter", "month_master"]
     )
     
-    # Day 49: Not yet comeback king
+    # Day 6: Not yet comeback king (need 7 days)
     newly_unlocked = achievement_service.check_achievements(user, [])
     assert "comeback_king" not in newly_unlocked
     
-    # Day 50: Rebuilt to longest streak
-    user.streaks.current_streak = 50
+    # Day 7: Comeback King unlocks!
+    user.streaks.current_streak = 7
     newly_unlocked = achievement_service.check_achievements(user, [])
     assert "comeback_king" in newly_unlocked
 
@@ -455,8 +462,8 @@ def test_get_all_achievements_integration():
     """Test achievement catalog is accessible and complete."""
     all_achievements = achievement_service.get_all_achievements()
     
-    # Verify all 13 achievements present
-    assert len(all_achievements) == 13
+    # Verify all 15 achievements present (Phase D: +2 comeback achievements)
+    assert len(all_achievements) == 15
     
     # Verify all required achievements
     required_ids = [
@@ -471,7 +478,9 @@ def test_get_all_achievements_integration():
         "perfect_month",
         "tier1_master",
         "zero_breaks_month",
+        "comeback_kid",      # Phase D
         "comeback_king",
+        "comeback_legend",   # Phase D
         "shield_master"
     ]
     
@@ -481,7 +490,7 @@ def test_get_all_achievements_integration():
         assert achievement.name
         assert achievement.description
         assert achievement.icon
-        assert achievement.rarity in ["Common", "Rare", "Epic", "Legendary"]
+        assert achievement.rarity in ["common", "uncommon", "rare", "epic", "legendary"]
 
 
 # ===== Run Tests =====

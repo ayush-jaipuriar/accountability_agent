@@ -65,6 +65,32 @@ class Settings(BaseSettings):
     enable_ghosting_detection: bool = False    # Phase 4
     enable_reports: bool = False                # Phase 3
     
+    # ===== Phase Deployment Dates =====
+    # Used for backward-compatible score normalization.
+    # Phase 3D added Skill Building as a 6th Tier 1 item. Check-ins before this
+    # date had 5 items, so their compliance scores should use /5 (not /6) when
+    # re-evaluated. The stored compliance_score in Firestore is already correct,
+    # but functions that re-analyze tier1_non_negotiables need to know which era
+    # a check-in belongs to.
+    phase_3d_deployment_date: str = "2026-02-05"  # Date Phase 3D was deployed
+    
+    # ===== Cron/Scheduler Security =====
+    # Shared secret that Cloud Scheduler sends with each request.
+    # Endpoints verify this header to prevent unauthorized triggering.
+    # Set to empty string to disable auth (development only).
+    cron_secret: str = ""
+    
+    # ===== Admin Configuration =====
+    # Comma-separated list of Telegram user IDs that have admin privileges.
+    # Admins can: bypass rate limits, use /admin_status, access /admin/metrics.
+    # Format: "123456789,987654321" or single ID "123456789".
+    admin_telegram_ids: str = ""
+    
+    # ===== Monitoring Configuration =====
+    # Enable JSON structured logging (recommended for production).
+    # Plain text logging used when False (easier to read in development).
+    json_logging: bool = False
+    
     # ===== Pydantic Configuration =====
     model_config = SettingsConfigDict(
         env_file=".env",           # Load from .env file

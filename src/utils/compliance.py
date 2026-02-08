@@ -16,6 +16,8 @@ Compliance Score Formula:
 Where total_items = 6 (Tier 1 non-negotiables - Phase 3D expansion)
 """
 
+from typing import Optional
+
 from src.models.schemas import Tier1NonNegotiables
 
 
@@ -161,7 +163,7 @@ def format_compliance_message(score: float, streak: int) -> str:
         "excellent": f"Streak: {streak} days - You're unstoppable!",
         "good": f"Streak: {streak} days - Solid consistency!",
         "warning": f"Streak: {streak} days - Let's tighten up tomorrow.",
-        "critical": f"Streak: {streak} days - Time to refocus. You know what to do."
+        "critical": f"Streak: {streak} days - Tomorrow is a fresh start. The fact that you checked in shows real commitment.\nNeed to talk? Just type how you're feeling."
     }
     
     # Level-specific header
@@ -169,12 +171,111 @@ def format_compliance_message(score: float, streak: int) -> str:
         "excellent": "Perfect day!",
         "good": "Strong day!",
         "warning": "Room for improvement.",
-        "critical": "Below standards."
+        "critical": "Tough day."
     }
     
     message = f"{emoji} {headers[level]} Compliance: {score:.1f}%\n{encouragement[level]}"
     
     return message
+
+
+def calculate_compliance_score_normalized(
+    tier1: Tier1NonNegotiables,
+    checkin_date: Optional[str] = None
+) -> float:
+    """
+    Calculate compliance score with Phase 3D backward compatibility.
+    
+    WHY THIS EXISTS:
+    ----------------
+    Phase 3D (deployed 2026-02-05) added Skill Building as a 6th Tier 1 item.
+    Check-ins before this date had 5 items. When their tier1_non_negotiables are
+    loaded from Firestore, skill_building defaults to False (Pydantic default).
+    
+    If you recalculate compliance using the 6-item formula, old check-ins max out
+    at 83.3% (5/6) instead of their original 100% (5/5). This creates a fake
+    decline in historical stats.
+    
+    This function detects the era and uses the correct denominator:
+    - Pre-Phase 3D: score = completed / 5 * 100 (exclude skill_building)
+    - Post-Phase 3D: score = completed / 6 * 100 (include skill_building)
+    
+    NOTE: The stored compliance_score in Firestore is already correct. Use this
+    function only when RE-EVALUATING tier1 data (e.g., achievement checks, reports
+    that re-aggregate from raw tier1 booleans).
+    
+    Args:
+        tier1: Tier 1 non-negotiables
+        checkin_date: Check-in date in YYYY-MM-DD format. If None, uses 6-item formula.
+        
+    Returns:
+        float: Normalized compliance score (0.0 to 100.0)
+    """
+    from src.config import settings
+    
+    # Determine which era this check-in belongs to
+    is_pre_phase3d = False
+    if checkin_date:
+        is_pre_phase3d = checkin_date < settings.phase_3d_deployment_date
+    
+    if is_pre_phase3d:
+        # Pre-Phase 3D: 5 items (exclude skill_building)
+        items = [
+            tier1.sleep,
+            tier1.training,
+            tier1.deep_work,
+            tier1.zero_porn,
+            tier1.boundaries
+        ]
+        total = 5
+    else:
+        # Post-Phase 3D: 6 items
+        items = [
+            tier1.sleep,
+            tier1.training,
+            tier1.deep_work,
+            tier1.skill_building,
+            tier1.zero_porn,
+            tier1.boundaries
+        ]
+        total = 6
+    
+    completed = sum(1 for item in items if item)
+    return (completed / total) * 100.0
+
+
+def is_all_tier1_complete(tier1: Tier1NonNegotiables, checkin_date: Optional[str] = None) -> bool:
+    """
+    Check if all Tier 1 items are complete, with Phase 3D backward compatibility.
+    
+    Pre-Phase 3D: checks 5 items (excludes skill_building)
+    Post-Phase 3D: checks all 6 items
+    
+    Args:
+        tier1: Tier 1 non-negotiables
+        checkin_date: Check-in date (YYYY-MM-DD). If None, checks all 6 items.
+        
+    Returns:
+        bool: True if all applicable Tier 1 items are complete
+    """
+    from src.config import settings
+    
+    is_pre_phase3d = False
+    if checkin_date:
+        is_pre_phase3d = checkin_date < settings.phase_3d_deployment_date
+    
+    base_complete = (
+        tier1.sleep and
+        tier1.training and
+        tier1.deep_work and
+        tier1.zero_porn and
+        tier1.boundaries
+    )
+    
+    if is_pre_phase3d:
+        return base_complete
+    else:
+        return base_complete and tier1.skill_building
 
 
 # ===== Tier 1 Breakdown Analysis =====

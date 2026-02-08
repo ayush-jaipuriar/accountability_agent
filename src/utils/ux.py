@@ -493,18 +493,151 @@ def generate_help_text() -> str:
         f"<b>{EMOJI['settings']} Settings:</b>\n"
         f"/mode - Change constitution mode\n"
         f"/career - Change career phase\n"
+        f"/timezone - Change your timezone\n"
         f"/use_shield - Use streak shield\n"
         f"/achievements - View achievements\n\n"
         
-        f"<b>{EMOJI['partner']} Social:</b>\n"
+        f"<b>{EMOJI['partner']} Partner:</b>\n"
         f"/set_partner @user - Link accountability partner\n"
+        f"/partner_status - View partner's dashboard\n"
         f"/unlink_partner - Remove partner\n\n"
         
-        f"<b>{EMOJI['emotional']} Natural Language:</b>\n"
+        f"<b>{EMOJI['emotional']} Support & Natural Language:</b>\n"
+        f"/support - Talk through something you're struggling with\n"
         f"Just type naturally!\n"
         f"• 'What's my compliance this month?'\n"
         f"• 'I'm feeling stressed'\n"
         f"• 'Show my sleep trend'\n\n"
         
-        f"<i>{EMOJI['clock']} Reminders at 9 PM, 9:30 PM, 10 PM IST daily</i>"
+        f"<i>{EMOJI['clock']} Reminders at 9 PM, 9:30 PM, 10 PM in your local time</i>"
     )
+
+
+# ===== Phase C: Partner Dashboard Formatting =====
+
+def format_partner_dashboard(
+    partner_name: str,
+    partner_streak_current: int,
+    partner_streak_longest: int,
+    partner_checked_in_today: bool,
+    partner_today_compliance: float | None,
+    partner_weekly_checkins: int,
+    partner_weekly_possible: int,
+    partner_weekly_avg_compliance: float,
+    user_streak_current: int,
+    user_weekly_avg_compliance: float
+) -> str:
+    """
+    Format the /partner_status dashboard message.
+
+    **Privacy Model (Aggregate Only):**
+    Partners see streak, compliance %, and check-in status.
+    They do NOT see individual Tier 1 items, challenges, or ratings.
+
+    **Design:**
+    - Top: partner identity
+    - Middle: today's status + streak + weekly stats
+    - Bottom: motivational comparison footer
+
+    Args:
+        partner_name: Partner's display name
+        partner_streak_current: Partner's current streak in days
+        partner_streak_longest: Partner's all-time best streak
+        partner_checked_in_today: Whether partner has checked in today
+        partner_today_compliance: Today's compliance % (None if no check-in)
+        partner_weekly_checkins: Number of check-ins in last 7 days
+        partner_weekly_possible: Number of days in the window (usually 7)
+        partner_weekly_avg_compliance: Average compliance % over last 7 days
+        user_streak_current: Requesting user's current streak
+        user_weekly_avg_compliance: Requesting user's weekly avg compliance
+
+    Returns:
+        HTML-formatted partner dashboard string
+    """
+    # Header
+    lines = [
+        f"<b>{EMOJI['partner']} Partner Dashboard</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        "",
+        f"🤝 Your partner: <b>{partner_name}</b>",
+        "",
+    ]
+
+    # Today's status
+    lines.append(f"<b>{EMOJI['stats']} {partner_name}'s Status Today:</b>")
+    if partner_checked_in_today:
+        lines.append(f"  {EMOJI['success']} Checked in today")
+        if partner_today_compliance is not None:
+            lines.append(f"  {EMOJI['report']} Compliance: {partner_today_compliance:.0f}%")
+    else:
+        lines.append(f"  {EMOJI['loading']} Not yet checked in")
+    lines.append("")
+
+    # Streak info
+    lines.append(f"<b>{EMOJI['streak']} {partner_name}'s Streak:</b>")
+    streak_label = f"  Current: {partner_streak_current} days"
+    if not partner_checked_in_today and partner_streak_current > 0:
+        streak_label += " (at risk!)"
+    lines.append(streak_label)
+    lines.append(f"  Longest ever: {partner_streak_longest} days")
+    lines.append("")
+
+    # Weekly stats
+    lines.append(f"<b>{EMOJI['calendar']} This Week:</b>")
+    if partner_weekly_checkins > 0:
+        lines.append(f"  Check-ins: {partner_weekly_checkins}/{partner_weekly_possible}")
+        lines.append(f"  Avg Compliance: {partner_weekly_avg_compliance:.0f}%")
+    else:
+        lines.append("  No check-ins yet this week")
+    lines.append("")
+
+    # Comparison footer
+    lines.append("━━━━━━━━━━━━━━━━━━")
+    footer = get_partner_comparison_footer(
+        user_streak_current, partner_streak_current,
+        user_weekly_avg_compliance, partner_weekly_avg_compliance,
+        partner_name
+    )
+    lines.append(footer)
+
+    return "\n".join(lines)
+
+
+def get_partner_comparison_footer(
+    user_streak: int,
+    partner_streak: int,
+    user_compliance_week: float,
+    partner_compliance_week: float,
+    partner_name: str
+) -> str:
+    """
+    Generate a motivational comparison footer for the partner dashboard.
+
+    **Framing philosophy:** Always encouraging, never shaming.
+    - Leading = positive reinforcement
+    - Behind = competitive nudge
+    - Tied = celebration of teamwork
+
+    Args:
+        user_streak: Requesting user's current streak
+        partner_streak: Partner's current streak
+        user_compliance_week: User's weekly avg compliance %
+        partner_compliance_week: Partner's weekly avg compliance %
+        partner_name: Partner's name for personalization
+
+    Returns:
+        Motivational string
+    """
+    if user_streak > partner_streak and user_compliance_week >= partner_compliance_week:
+        return f"{EMOJI['achievement']} You're leading! Keep the momentum and inspire {partner_name}."
+    elif partner_streak > user_streak:
+        diff = partner_streak - user_streak
+        return f"{EMOJI['encourage']} {partner_name} is ahead by {diff} days. Time to close the gap!"
+    elif user_streak == partner_streak and user_streak > 0:
+        return f"🤝 You're perfectly matched at {user_streak} days! Keep pushing together."
+    elif user_compliance_week > partner_compliance_week + 10:
+        return f"{EMOJI['report']} Your compliance is stronger this week. Keep it up!"
+    elif partner_compliance_week > user_compliance_week + 10:
+        return f"{EMOJI['encourage']} {partner_name}'s compliance is strong. Match their energy!"
+    else:
+        return f"{EMOJI['encourage']} You're both showing up. Keep it going!"

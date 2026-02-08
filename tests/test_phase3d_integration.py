@@ -84,13 +84,11 @@ def create_test_checkin(
         duration_seconds=120
     )
     
-    # Add optional metadata
-    if wake_time or consumption_hours:
-        checkin.metadata = {}
-        if wake_time:
-            checkin.metadata['wake_time'] = wake_time
-        if consumption_hours:
-            checkin.metadata['consumption_hours'] = consumption_hours
+    # Note: DailyCheckIn is a Pydantic model without a 'metadata' field.
+    # Optional metadata like wake_time and consumption_hours should be
+    # stored in the tier1_non_negotiables or as separate fields if needed.
+    # For pattern detection tests, the PatternDetectionAgent reads these
+    # from check-in data directly, not from a metadata dict.
     
     return checkin
 
@@ -400,13 +398,17 @@ def test_intervention_messages_for_all_patterns():
     
     for pattern_type in pattern_types:
         # Create sample pattern
+        # Note: 'days_affected' must be a list (code calls len() on it),
+        # not an int. Other fields are used by specific pattern builders.
         pattern = Pattern(
             type=pattern_type,
             severity="warning",
             detected_at=datetime.utcnow(),
             data={
                 "message": f"Test pattern for {pattern_type}",
-                "days_affected": 3,
+                "days_affected": ["2026-02-01", "2026-02-02", "2026-02-03"],
+                "days_missing": 3,  # For ghosting pattern
+                "previous_streak": 10,  # For ghosting pattern
                 "avg_snooze_minutes": 45,  # For snooze_trap
                 "avg_consumption_hours": 4.0,  # For consumption_vortex
                 "correlation_pct": 75,  # For relationship_interference

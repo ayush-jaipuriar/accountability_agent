@@ -88,6 +88,62 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
+# ===== Phase D: Support Bridge Prompts =====
+# Severity-based prompts that append to every intervention message,
+# bridging the gap from "problem detected" to "emotional support available."
+#
+# **Why Graduated Severity?**
+# Low severity issues need a gentle nudge — being too urgent feels patronizing.
+# High/critical issues need an empathetic, no-judgment tone — the user is 
+# likely in a vulnerable state and needs to feel safe asking for help.
+SUPPORT_BRIDGES = {
+    "low": "\n\n💬 Want to talk about what got in the way? /support",
+    "medium": (
+        "\n\n━━━━━━━━━━━━━━━━━━\n"
+        "💬 Struggling with this? Type /support to talk it through.\n"
+        "   I can help you identify what's driving this pattern."
+    ),
+    "high": (
+        "\n\n━━━━━━━━━━━━━━━━━━\n"
+        "💙 This is hard. Type /support — no judgment, just support."
+    ),
+    "critical": (
+        "\n\n━━━━━━━━━━━━━━━━━━\n"
+        "🆘 I'm here for you. Type /support or just tell me how you're feeling."
+    ),
+}
+
+
+def add_support_bridge(message: str, severity: str) -> str:
+    """
+    Append a support bridge prompt to an intervention message.
+    
+    **What is a Support Bridge?**
+    It's the missing link between pattern detection and emotional support.
+    Previously, interventions would detect problems and suggest actions,
+    but never connected the user to the emotional support agent.
+    
+    The bridge prompt at the bottom says: "If you're struggling, here's help."
+    
+    **Design Principle — Graduated Intensity:**
+    | Severity | Tone | Example |
+    |----------|------|---------|
+    | Low | Gentle suggestion | "Want to talk?" |
+    | Medium | Encouraging offer | "I can help identify the pattern" |
+    | High | Empathetic | "No judgment, just support" |
+    | Critical | Urgent, safe | "I'm here for you" |
+    
+    Args:
+        message: The intervention message to append to
+        severity: Pattern severity (low, medium, high, critical)
+        
+    Returns:
+        Message with support bridge appended
+    """
+    bridge = SUPPORT_BRIDGES.get(severity, SUPPORT_BRIDGES["medium"])
+    return message + bridge
+
+
 class InterventionAgent:
     """
     Generates intervention messages for detected patterns
@@ -140,7 +196,8 @@ class InterventionAgent:
                 logger.info(f"Generating ghosting intervention for user {user_id}: Day {pattern.data.get('days_missing', 0)}")
                 intervention = self._build_ghosting_intervention(pattern, user)
                 logger.info(f"✅ Generated ghosting intervention: {len(intervention)} chars")
-                return intervention
+                # Phase D: Append support bridge
+                return add_support_bridge(intervention, pattern.severity)
             
             # Other patterns: Use AI generation
             # Get relevant constitution section
@@ -165,7 +222,8 @@ class InterventionAgent:
             
             logger.info(f"✅ Generated intervention for {pattern.type}: {len(intervention)} chars")
             
-            return intervention.strip()
+            # Phase D: Append support bridge prompt based on severity
+            return add_support_bridge(intervention.strip(), pattern.severity)
             
         except Exception as e:
             logger.error(f"❌ Intervention generation failed: {e}", exc_info=True)
@@ -341,7 +399,9 @@ Intervention:"""
                 name="User",
                 streaks=UserStreaks(current_streak=current_streak)
             )
-            return self._build_snooze_trap_intervention(pattern, user)
+            return add_support_bridge(
+                self._build_snooze_trap_intervention(pattern, user), pattern.severity
+            )
         
         if pattern.type == "consumption_vortex":
             from src.models.schemas import User, UserStreaks
@@ -351,7 +411,9 @@ Intervention:"""
                 name="User",
                 streaks=UserStreaks(current_streak=current_streak)
             )
-            return self._build_consumption_vortex_intervention(pattern, user)
+            return add_support_bridge(
+                self._build_consumption_vortex_intervention(pattern, user), pattern.severity
+            )
         
         if pattern.type == "deep_work_collapse":
             from src.models.schemas import User, UserStreaks
@@ -361,7 +423,9 @@ Intervention:"""
                 name="User",
                 streaks=UserStreaks(current_streak=current_streak)
             )
-            return self._build_deep_work_collapse_intervention(pattern, user)
+            return add_support_bridge(
+                self._build_deep_work_collapse_intervention(pattern, user), pattern.severity
+            )
         
         if pattern.type == "relationship_interference":
             from src.models.schemas import User, UserStreaks
@@ -371,7 +435,9 @@ Intervention:"""
                 name="User",
                 streaks=UserStreaks(current_streak=current_streak)
             )
-            return self._build_relationship_interference_intervention(pattern, user)
+            return add_support_bridge(
+                self._build_relationship_interference_intervention(pattern, user), pattern.severity
+            )
         
         # Generic fallback for other patterns
         severity_emoji = {
@@ -399,7 +465,8 @@ Reply with your plan to break this pattern.
 
 (Note: AI intervention temporarily unavailable - using basic template)"""
         
-        return message
+        # Phase D: Append support bridge
+        return add_support_bridge(message, pattern.severity)
     
     def _build_ghosting_intervention(self, pattern: Pattern, user) -> str:
         """
