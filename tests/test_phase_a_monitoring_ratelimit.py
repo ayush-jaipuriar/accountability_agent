@@ -348,31 +348,35 @@ class TestRateLimiterHourlyLimit:
     
     def test_hourly_limit_reached(self):
         """Should deny after hourly limit is reached."""
-        # Standard tier: 30/hour with 10sec cooldown
+        # Standard tier: 90/hour with 3sec cooldown (tripled from 30/hour)
         # Simulate reaching the limit by manipulating internals
         user_entries = self.limiter._requests["user1"]["standard"]
         now = datetime.utcnow()
         
-        # Fill up to the limit
-        for i in range(30):
-            user_entries.append(now - timedelta(minutes=i))
+        # Fill up to the limit (90 requests)
+        for i in range(90):
+            user_entries.append(now - timedelta(minutes=i % 60, seconds=i // 60))
         
         allowed, msg = self.limiter.check("user1", "leaderboard")
         assert allowed is False
         assert "times in the last hour" in msg
     
     def test_expensive_hourly_limit(self):
-        """Expensive tier: max 2 per hour."""
+        """Expensive tier: max 6 per hour (tripled from 2)."""
         # Manipulate timestamps to bypass cooldown but hit hourly limit
         now = datetime.utcnow()
         self.limiter._requests["user1"]["expensive"].extend([
+            now - timedelta(minutes=55),
             now - timedelta(minutes=45),
             now - timedelta(minutes=35),
+            now - timedelta(minutes=25),
+            now - timedelta(minutes=15),
+            now - timedelta(minutes=5),
         ])
         
         allowed, msg = self.limiter.check("user1", "report")
         assert allowed is False
-        assert "2" in msg  # Should mention the limit
+        assert "6" in msg  # Should mention the limit
 
 
 class TestRateLimiterAdminBypass:
@@ -461,11 +465,11 @@ class TestRateLimiterUsage:
         assert usage["expensive"]["used_this_hour"] == 1
     
     def test_usage_shows_limits(self):
-        """Usage should show max_per_hour."""
+        """Usage should show max_per_hour (tripled limits)."""
         usage = self.limiter.get_usage("user1")
-        assert usage["expensive"]["max_per_hour"] == 2
-        assert usage["ai_powered"]["max_per_hour"] == 20
-        assert usage["standard"]["max_per_hour"] == 30
+        assert usage["expensive"]["max_per_hour"] == 6  # Tripled from 2
+        assert usage["ai_powered"]["max_per_hour"] == 60  # Tripled from 20
+        assert usage["standard"]["max_per_hour"] == 90  # Tripled from 30
 
 
 class TestRateLimiterCleanup:

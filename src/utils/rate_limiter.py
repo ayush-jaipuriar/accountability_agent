@@ -27,9 +27,9 @@ and simpler than token buckets (no refill rate math).
 Tier System
 -----------
 Commands are grouped by resource cost:
-- Expensive: /report, /export — AI + graph generation (30min cooldown, 2/hour)
-- AI-Powered: General messages, /support — Gemini API calls (2min cooldown, 20/hour)
-- Standard: /stats, /partner_status, /leaderboard — DB reads only (10s cooldown, 30/hour)
+- Expensive: /report, /export — AI + graph generation (10min cooldown, 6/hour)
+- AI-Powered: General messages, /support — Gemini API calls (40s cooldown, 60/hour)
+- Standard: /stats, /partner_status, /leaderboard — DB reads only (3s cooldown, 90/hour)
 - Free: /start, /help, /mode, /cancel — no backend cost (unlimited)
 
 Memory Considerations
@@ -68,20 +68,21 @@ class RateLimiter:
     # Each tier has:
     #   cooldown_seconds: Minimum time between consecutive uses
     #   max_per_hour: Maximum number of uses within a rolling 1-hour window
+    # NOTE: Limits tripled from original (Feb 9, 2026)
     TIERS = {
         "expensive": {
-            "cooldown_seconds": 1800,  # 30 minutes
-            "max_per_hour": 2,
+            "cooldown_seconds": 600,  # 10 minutes (was 30 min)
+            "max_per_hour": 6,  # (was 2)
             "description": "Resource-intensive (graphs + AI analysis)",
         },
         "ai_powered": {
-            "cooldown_seconds": 120,  # 2 minutes
-            "max_per_hour": 20,
+            "cooldown_seconds": 40,  # 40 seconds (was 2 min)
+            "max_per_hour": 60,  # (was 20)
             "description": "Gemini API calls",
         },
         "standard": {
-            "cooldown_seconds": 10,  # 10 seconds
-            "max_per_hour": 30,
+            "cooldown_seconds": 3,  # 3 seconds (was 10 sec)
+            "max_per_hour": 90,  # (was 30)
             "description": "Database reads",
         },
     }
