@@ -53,7 +53,7 @@ def format_streak_reset_message(
     """
     Generate a compassionate, motivating message when a streak resets.
     
-    **Why This Matters (Behavioral Psychology):**
+    <b>Why This Matters (Behavioral Psychology):</b>
     When a streak resets, the user experiences a "what-the-hell" effect —
     a cognitive distortion where a single failure feels like total failure.
     This message combats that by:
@@ -93,13 +93,13 @@ def get_recovery_milestone_message(
     """
     Check if the user's current post-reset streak deserves a recovery milestone message.
     
-    **Recovery Milestone Theory:**
+    <b>Recovery Milestone Theory:</b>
     After a reset, we celebrate small wins MORE aggressively than normal milestones.
     This is because the user is in a psychologically fragile state — they need positive
     reinforcement early to prevent dropout. These milestones are *separate* from the
     normal streak milestones (7, 14, 30...) and only fire when there was a recent reset.
     
-    **Milestone Schedule:**
+    <b>Milestone Schedule:</b>
     | Days After Reset | Message | Psychology |
     |---|---|---|
     | 3 | "3 days strong!" | Prove the reset was a bump, not a stop |
@@ -494,9 +494,9 @@ MILESTONE_MESSAGES = {
     30: {
         "title": "🎉 30 DAYS!",
         "message": (
-            "🎉 **30 DAYS!** You're in the top 10% of accountability seekers.\n\n"
+            "🎉 <b>30 DAYS!</b> You're in the top 10% of accountability seekers.\n\n"
             "You've proven you can commit. This is where most people quit, but you pushed through. "
-            "Your constitution is becoming automatic. **Habit formation threshold reached.**\n\n"
+            "Your constitution is becoming automatic. <b>Habit formation threshold reached.</b>\n\n"
             "Keep going! 💪"
         ),
         "percentile": "Top 10%"
@@ -504,9 +504,9 @@ MILESTONE_MESSAGES = {
     60: {
         "title": "🔥 60 DAYS!",
         "message": (
-            "🔥 **60 DAYS!** Two months of consistency. You're unstoppable.\n\n"
+            "🔥 <b>60 DAYS!</b> Two months of consistency. You're unstoppable.\n\n"
             "The habit is locked in. You don't rely on willpower anymore - it's just what you do. "
-            "**You're in the top 5% now.** This is the version of yourself you were meant to be.\n\n"
+            "<b>You're in the top 5% now.</b> This is the version of yourself you were meant to be.\n\n"
             "This is mastery. 🚀"
         ),
         "percentile": "Top 5%"
@@ -514,8 +514,8 @@ MILESTONE_MESSAGES = {
     90: {
         "title": "💎 90 DAYS!",
         "message": (
-            "💎 **90 DAYS!** Quarter conquered. Elite territory.\n\n"
-            "Three months of unbroken commitment. **You're operating at a level 98% of people never reach.** "
+            "💎 <b>90 DAYS!</b> Quarter conquered. Elite territory.\n\n"
+            "Three months of unbroken commitment. <b>You're operating at a level 98% of people never reach.</b> "
             "Your June 2026 goals? They're within reach. This is what winning looks like.\n\n"
             "Elite status achieved. 🏆"
         ),
@@ -524,8 +524,8 @@ MILESTONE_MESSAGES = {
     180: {
         "title": "🏆 HALF YEAR!",
         "message": (
-            "🏆 **HALF YEAR!** You've built a new identity.\n\n"
-            "Six months of daily accountability. **You're not the same person who started this journey.** "
+            "🏆 <b>HALF YEAR!</b> You've built a new identity.\n\n"
+            "Six months of daily accountability. <b>You're not the same person who started this journey.</b> "
             "Top 1% consistency. Your future self thanks you for showing up every single day.\n\n"
             "This is transformation. 👑"
         ),
@@ -534,9 +534,9 @@ MILESTONE_MESSAGES = {
     365: {
         "title": "👑 ONE YEAR!",
         "message": (
-            "👑 **ONE YEAR!** You are the 1%. Welcome to mastery.\n\n"
+            "👑 <b>ONE YEAR!</b> You are the 1%. Welcome to mastery.\n\n"
             "365 consecutive days. You've achieved what less than 0.1% of people ever will. "
-            "**This isn't just a streak - it's proof of who you are.** Constitution isn't something you follow anymore. "
+            "<b>This isn't just a streak - it's proof of who you are.</b> Constitution isn't something you follow anymore. "
             "It's who you've become.\n\n"
             "Congratulations. You've mastered yourself. 🌟"
         ),
@@ -551,30 +551,30 @@ def check_milestone(new_streak: int) -> Optional[Dict[str, str]]:
     
     Theory - Why Milestones Work:
     ------------------------------
-    Milestones mark **psychological transition points** in behavior change:
+    Milestones mark <b>psychological transition points</b> in behavior change:
     
-    1. **30 Days - Habit Formation Threshold:**
+    1. <b>30 Days - Habit Formation Threshold:</b>
        - Research: Habits take 21-66 days to form (median: 66 days, Lally et al., 2009)
        - 30 days is past the "trying it out" phase
        - User has proven commitment
        - Message: "You've proven you can commit"
     
-    2. **60 Days - Habit Solidification:**
+    2. <b>60 Days - Habit Solidification:</b>
        - Neural pathways strengthened
        - Behavior becomes automatic (less willpower needed)
        - Message: "You don't rely on willpower anymore"
     
-    3. **90 Days - Quarter Marker:**
+    3. <b>90 Days - Quarter Marker:</b>
        - 3 months = significant life period
        - Identity starts to shift ("I'm someone who does this")
        - Message: "You're operating at a level 98% never reach"
     
-    4. **180 Days - Identity Transformation:**
+    4. <b>180 Days - Identity Transformation:</b>
        - Half year = life phase change
        - Behavior is now part of identity
        - Message: "You're not the same person who started"
     
-    5. **365 Days - Mastery:**
+    5. <b>365 Days - Mastery:</b>
        - Full year = legendary achievement
        - Identity fully transformed
        - Message: "It's who you've become"
@@ -629,7 +629,7 @@ def update_streak_data(
     Phase 3C Update: Now also checks for milestones and returns milestone data.
     Phase D Update: Now detects resets and returns recovery context.
     
-    **Phase D Recovery System:**
+    <b>Phase D Recovery System:</b>
     When a reset is detected (gap >= 2 days), the function:
     1. Saves the pre-reset streak value as `streak_before_reset`
     2. Records the reset date as `last_reset_date`
@@ -640,7 +640,7 @@ def update_streak_data(
     When NOT a reset, the function checks for recovery milestones
     (Day 3, 7, 14, exceeds old streak) if there was a recent reset.
     
-    **Key Design: Transient vs. Persistent keys**
+    <b>Key Design: Transient vs. Persistent keys</b>
     - Persistent (stored in Firestore): current_streak, longest_streak,
       last_checkin_date, total_checkins, streak_before_reset, last_reset_date
     - Transient (used for UI only, stripped before Firestore write):

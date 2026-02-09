@@ -1111,13 +1111,13 @@ class FirestoreService:
         """
         Store emotional support interaction for tracking (Phase 3B).
         
-        **What is This?**
+        <b>What is This?</b>
         Logs every time the emotional agent responds to a user. Useful for:
         - Analytics: Which emotions are most common?
         - Quality review: Are responses helpful?
         - Pattern detection: User in emotional crisis frequently?
         
-        **Database Structure:**
+        <b>Database Structure:</b>
         Collection: emotional_interactions
         Document ID: Auto-generated
         Fields:
@@ -1160,10 +1160,10 @@ class FirestoreService:
         """
         Get detected patterns for user (Phase 3E Query Agent support).
         
-        **Purpose:**
+        <b>Purpose:</b>
         Allows Query Agent to answer: "How often do I get sleep degradation?"
         
-        **Firestore Structure:**
+        <b>Firestore Structure:</b>
         patterns/{pattern_id}
         {
             user_id: str

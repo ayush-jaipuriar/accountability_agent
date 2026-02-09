@@ -15,33 +15,33 @@ Instead of just validating emotions, CBT helps users:
 
 Supported Emotion Types:
 ------------------------
-1. **Loneliness** - User feeling isolated during intentional celibacy phase
-2. **Porn Urge** - Sexual urges threatening streak
-3. **Breakup Thoughts** - Missing ex, considering reaching out
-4. **Stress/Anxiety** - General overwhelm, work pressure
-5. **General** - Other emotions not fitting above categories
+1. <b>Loneliness</b> - User feeling isolated during intentional celibacy phase
+2. <b>Porn Urge</b> - Sexual urges threatening streak
+3. <b>Breakup Thoughts</b> - Missing ex, considering reaching out
+4. <b>Stress/Anxiety</b> - General overwhelm, work pressure
+5. <b>General</b> - Other emotions not fitting above categories
 
 4-Step Protocol Structure:
 --------------------------
 Every emotional response follows this structure:
 
-1. **VALIDATE** (2 sentences)
+1. <b>VALIDATE</b> (2 sentences)
    - Acknowledge the emotion
    - Normalize the feeling (not weakness)
    - Example: "Loneliness is real and temporary. You're not broken for feeling this."
 
-2. **REFRAME** (2 sentences)
+2. <b>REFRAME</b> (2 sentences)
    - Connect to constitution principles
    - Provide perspective shift
    - Example: "Your intentional celibacy is by design, not default. You're building 
               the foundation for the life partner you deserve."
 
-3. **TRIGGER** (1 question)
+3. <b>TRIGGER</b> (1 question)
    - Ask what caused this feeling
    - Helps user identify patterns
    - Example: "What specifically triggered this feeling right now?"
 
-4. **ACTION** (3 specific steps)
+4. <b>ACTION</b> (3 specific steps)
    - Concrete, immediate actions
    - Numbered list (1, 2, 3)
    - Example: "1. Text one friend: 'Hey, what's up?' 
@@ -50,10 +50,10 @@ Every emotional response follows this structure:
 
 Theory - Why This Works:
 -------------------------
-1. **Validation prevents defensiveness** - User feels heard, not judged
-2. **Reframing provides perspective** - Connects temporary emotion to long-term goals
-3. **Trigger identification** - Helps prevent future episodes
-4. **Action breaks rumination** - Physical action interrupts emotional spiral
+1. <b>Validation prevents defensiveness</b> - User feels heard, not judged
+2. <b>Reframing provides perspective</b> - Connects temporary emotion to long-term goals
+3. <b>Trigger identification</b> - Helps prevent future episodes
+4. <b>Action breaks rumination</b> - Physical action interrupts emotional spiral
 
 Example Response:
 -----------------
@@ -125,7 +125,7 @@ class EmotionalSupportAgent:
         """
         Process emotional support request.
         
-        **Flow:**
+        <b>Flow:</b>
         1. Classify emotion type (loneliness, porn_urge, breakup, stress, general)
         2. Load appropriate protocol from constitution
         3. Get user context (streak, mode, partner)
@@ -133,7 +133,7 @@ class EmotionalSupportAgent:
         5. Log interaction in Firestore
         6. Return updated state with response
         
-        **Theory - Why Personalization Matters:**
+        <b>Theory - Why Personalization Matters:</b>
         Generic response: "Don't be sad, things will get better"
         Personalized response: "Your 47-day streak proves you can handle this"
         
@@ -218,17 +218,17 @@ class EmotionalSupportAgent:
         """
         Classify user's emotion from their message.
         
-        **How This Works:**
+        <b>How This Works:</b>
         Uses Gemini to analyze the user's message and determine which emotion
         category it falls into. This is a lightweight classification task.
         
-        **Why AI Classification?**
+        <b>Why AI Classification?</b>
         - Emotions are nuanced (not simple keyword matching)
         - "I miss her" could be loneliness OR breakup thoughts
         - "Feeling urges" could be porn urges OR general stress
         - AI understands context better than rules
         
-        **Cost:**
+        <b>Cost:</b>
         - Input: ~50 tokens
         - Output: 1 token (just the emotion word)
         - Cost: $0.000013 per classification
@@ -280,17 +280,17 @@ Respond with ONLY the category word (lowercase, no punctuation).
         """
         Get emotional support protocol from constitution.
         
-        **What Are Protocols?**
+        <b>What Are Protocols?</b>
         Pre-defined frameworks for each emotion type that tell the AI how to respond.
         Think of them as "response templates" with specific guidance.
         
-        **Why Pre-Defined Protocols?**
+        <b>Why Pre-Defined Protocols?</b>
         - Consistency: Same emotion always gets similar structure
         - Safety: No hallucination risk (protocols are vetted)
         - Quality: Protocols written with CBT principles
         - Cost: Smaller prompts (protocols define structure)
         
-        **Protocol Structure:**
+        <b>Protocol Structure:</b>
         Each protocol has 4 components:
         1. validate: How to acknowledge the emotion
         2. reframe: How to connect to constitution
@@ -373,7 +373,7 @@ Respond with ONLY the category word (lowercase, no punctuation).
         """
         Generate personalized emotional support response using Gemini.
         
-        **Prompt Engineering for Emotional Support:**
+        <b>Prompt Engineering for Emotional Support:</b>
         
         The prompt must:
         1. Provide the protocol (structure)
@@ -381,13 +381,13 @@ Respond with ONLY the category word (lowercase, no punctuation).
         3. Demand specific structure (4-step format)
         4. Set appropriate tone (coach, not therapist)
         
-        **Why Gemini for Generation?**
+        <b>Why Gemini for Generation?</b>
         - Personalization: Can reference user's streak, mode, partner
         - Natural language: Flows better than templates
         - Adaptation: Can adjust tone based on severity
         - Quality: Better than rule-based generation
         
-        **Cost:**
+        <b>Cost:</b>
         - Input: ~400 tokens (protocol + context + instructions)
         - Output: ~200 tokens (response)
         - Cost: $0.000075 per response

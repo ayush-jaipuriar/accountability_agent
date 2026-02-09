@@ -61,12 +61,12 @@ def get_skill_building_question(career_mode: str) -> dict:
     """
     Get skill building question adapted to user's career mode.
     
-    **Design Pattern: Strategy Pattern**
+    <b>Design Pattern: Strategy Pattern</b>
     - Same interface (returns consistent dict structure)
     - Different behavior based on state (career_mode)
     - Clean separation of concerns
     
-    **Why This Matters:**
+    <b>Why This Matters:</b>
     Your career phase determines what "skill building" means:
     - Learning phase: LeetCode, system design, courses
     - Job search: Applications + skill building
@@ -94,21 +94,21 @@ def get_skill_building_question(career_mode: str) -> dict:
     
     if career_mode == "skill_building":
         return {
-            "question": "📚 **Skill Building:** 2+ hours today?",
+            "question": "📚 <b>Skill Building:</b> 2+ hours today?",
             "label": "📚 Skill Building",
             "description": "(LeetCode, system design, AI/ML upskilling, courses, projects)"
         }
     
     elif career_mode == "job_searching":
         return {
-            "question": "💼 **Job Search Progress:** Made progress today?",
+            "question": "💼 <b>Job Search Progress:</b> Made progress today?",
             "label": "💼 Job Search",
             "description": "(Applications, interviews, LeetCode, networking)"
         }
     
     elif career_mode == "employed":
         return {
-            "question": "🎯 **Career Progress:** Worked toward promotion/raise?",
+            "question": "🎯 <b>Career Progress:</b> Worked toward promotion/raise?",
             "label": "🎯 Career",
             "description": "(High-impact work, skill development, visibility projects)"
         }
@@ -117,7 +117,7 @@ def get_skill_building_question(career_mode: str) -> dict:
         # Default fallback (defensive programming)
         logger.warning(f"⚠️ Unknown career_mode: {career_mode}, using default")
         return {
-            "question": "📚 **Skill Building:** 2+ hours today?",
+            "question": "📚 <b>Skill Building:</b> 2+ hours today?",
             "label": "📚 Skill Building",
             "description": "(Career-focused learning and development)"
         }
@@ -132,14 +132,14 @@ async def start_checkin(
     """
     Entry point for /checkin and /quickcheckin commands (Phase 3E: Added quick check-in).
     
-    **Process:**
+    <b>Process:</b>
     1. Check if user exists
     2. Check if already checked in today
     3. If /quickcheckin: Check weekly limit (2/week)
     4. Initialize conversation data
     5. Start Question 1 (Tier 1)
     
-    **Phase 3E Quick Check-In:**
+    <b>Phase 3E Quick Check-In:</b>
     - /quickcheckin triggers Tier 1-only flow (skip Q2-Q4)
     - Limited to 2 per week (enforced here)
     - Resets every Monday 12:00 AM IST
@@ -182,16 +182,16 @@ async def start_checkin(
         reset_date = get_next_monday(format_string="%A, %B %d")  # "Monday, February 10"
         
         await update.message.reply_text(
-            f"❌ **Quick Check-In Limit Reached**\n\n"
+            f"❌ <b>Quick Check-In Limit Reached</b>\n\n"
             f"You've used both quick check-ins this week (max 2/week):\n\n"
             f"{history_text}\n\n"
             f"━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"**Use /checkin for full check-in.**\n\n"
+            f"<b>Use /checkin for full check-in.</b>\n\n"
             f"🔄 Limit resets: {reset_date} at 12:00 AM IST\n\n"
-            f"💡 **Why the limit?**\n"
+            f"💡 <b>Why the limit?</b>\n"
             f"Full check-ins provide better insights and accountability.\n"
             f"Quick check-ins are for genuinely busy days only.",
-            parse_mode="Markdown"
+            parse_mode='HTML'
         )
         logger.info(f"❌ User {user_id} hit quick check-in limit (2/week)")
         return ConversationHandler.END
@@ -228,15 +228,15 @@ async def start_checkin(
         reset_date = get_next_monday(format_string="%A, %B %d")
         
         await update.message.reply_text(
-            f"⚡ **Quick Check-In Mode**\n\n"
+            f"⚡ <b>Quick Check-In Mode</b>\n\n"
             f"Complete Tier 1 in ~2 minutes (6 questions only)\n\n"
             f"━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"**Available This Week:** {remaining}/2 quick check-ins\n"
-            f"**Resets:** {reset_date} at 12:00 AM IST\n\n"
+            f"<b>Available This Week:</b> {remaining}/2 quick check-ins\n"
+            f"<b>Resets:</b> {reset_date} at 12:00 AM IST\n\n"
             f"💡 Quick check-ins count toward your streak but provide\n"
             f"abbreviated feedback. Use /checkin for full insights.\n\n"
             f"Let's go! Starting Tier 1 questions...",
-            parse_mode="Markdown"
+            parse_mode='HTML'
         )
     else:
         context.user_data['checkin_type'] = 'full'
@@ -253,22 +253,22 @@ async def ask_tier1_question(message, context):
     """
     Ask Question 1: Tier 1 non-negotiables with inline keyboard.
     
-    **Phase 3D Expansion: 5 items → 6 items**
+    <b>Phase 3D Expansion: 5 items → 6 items</b>
     
     6 items to answer (Y/N):
     1. Sleep (7+ hours)
     2. Training (workout or rest day)
     3. Deep Work (2+ hours)
-    4. Skill Building (2+ hours) - **NEW in Phase 3D** - Adapts to career mode
+    4. Skill Building (2+ hours) - <b>NEW in Phase 3D</b> - Adapts to career mode
     5. Zero Porn
     6. Boundaries
     
-    **Why 6 Items?**
+    <b>Why 6 Items?</b>
     - Constitution mandates daily skill building (LeetCode, system design, AI/ML)
     - June 2026 career goal (₹28-42 LPA) requires tracking career progress
     - Skill building is different from general deep work (career-specific learning)
     
-    **Adaptive Question Logic:**
+    <b>Adaptive Question Logic:</b>
     - Skill building question adapts based on user's career_mode
     - skill_building mode: "Did you do 2+ hours skill building?"
     - job_searching mode: "Did you make job search progress?"
@@ -287,15 +287,15 @@ async def ask_tier1_question(message, context):
     skill_q = get_skill_building_question(career_mode)
     
     question_text = (
-        "**📋 Daily Check-In - Question 1/4**\n\n"
-        "**Constitution Compliance** (Tier 1 Non-Negotiables):\n\n"
+        "<b>📋 Daily Check-In - Question 1/4</b>\n\n"
+        "<b>Constitution Compliance</b> (Tier 1 Non-Negotiables):\n\n"
         "Did you complete the following today?\n\n"
-        "• 💤 **Sleep:** 7+ hours last night?\n"
-        f"• 💪 **Training:** Workout OR rest day? ({training_target})\n"
-        "• 🧠 **Deep Work:** 2+ hours focused work/study?\n"
+        "• 💤 <b>Sleep:</b> 7+ hours last night?\n"
+        f"• 💪 <b>Training:</b> Workout OR rest day? ({training_target})\n"
+        "• 🧠 <b>Deep Work:</b> 2+ hours focused work/study?\n"
         f"• {skill_q['question']} {skill_q['description']}\n"
-        "• 🚫 **Zero Porn:** No consumption today?\n"
-        "• 🛡️ **Boundaries:** No toxic interactions?\n\n"
+        "• 🚫 <b>Zero Porn:</b> No consumption today?\n"
+        "• 🛡️ <b>Boundaries:</b> No toxic interactions?\n\n"
         "Click the buttons below to answer:"
     )
     
@@ -329,7 +329,7 @@ async def ask_tier1_question(message, context):
     ]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await message.reply_text(question_text, reply_markup=reply_markup, parse_mode="Markdown")
+    await message.reply_text(question_text, reply_markup=reply_markup, parse_mode='HTML')
 
 
 # ===== State Q1: Tier 1 Non-Negotiables =====
@@ -438,9 +438,9 @@ async def handle_tier1_response(
         if is_quick_checkin:
             # Quick check-in: Skip Q2-Q4 and finish immediately
             await query.message.reply_text(
-                "⚡ **Quick Check-In Complete!**\n\n"
+                "⚡ <b>Quick Check-In Complete!</b>\n\n"
                 "Processing Tier 1 responses and generating feedback...",
-                parse_mode="Markdown"
+                parse_mode='HTML'
             )
             
             # Set dummy values for Q2-Q4 (required by finish_checkin)
@@ -506,12 +506,12 @@ async def handle_challenges_response(
     
     # Move to Q3
     await update.message.reply_text(
-        "**📋 Question 3/4**\n\n"
-        "**Self-Rating & Reflection:**\n"
+        "<b>📋 Question 3/4</b>\n\n"
+        "<b>Self-Rating & Reflection:</b>\n"
         "Rate today 1-10 on constitution alignment. Why that score?\n\n"
         "📝 Format: Start with number (1-10), then explain.\n\n"
         "_Example: '8 - Solid day overall. Missed one study hour but otherwise strong.'_",
-        parse_mode="Markdown"
+        parse_mode='HTML'
     )
     
     return Q3_RATING
@@ -571,13 +571,13 @@ async def handle_rating_response(
     
     # Move to Q4
     await update.message.reply_text(
-        "**📋 Question 4/4**\n\n"
-        "**Tomorrow's Plan:**\n"
+        "<b>📋 Question 4/4</b>\n\n"
+        "<b>Tomorrow's Plan:</b>\n"
         "1. What's tomorrow's #1 priority?\n"
         "2. What's the biggest potential obstacle?\n\n"
         "📝 Format: Priority | Obstacle\n\n"
         "_Example: 'Priority: Complete 3 LeetCode problems. Obstacle: Late evening meeting might drain energy.'_",
-        parse_mode="Markdown"
+        parse_mode='HTML'
     )
     
     return Q4_TOMORROW
@@ -745,7 +745,7 @@ async def finish_checkin(
             
             # Build final message with header and AI feedback
             feedback_parts = []
-            feedback_parts.append("🎉 **Check-In Complete!**\n")
+            feedback_parts.append("🎉 <b>Check-In Complete!</b>\n")
             feedback_parts.append(f"📊 Compliance: {compliance_score}%")
             
             # Phase D: Show recovery message on reset, normal streak otherwise
@@ -755,7 +755,7 @@ async def finish_checkin(
                 feedback_parts.append(f"🔥 Streak: {streak_updates['current_streak']} days")
             
             if is_new_record:
-                feedback_parts.append("🏆 **NEW PERSONAL RECORD!**")
+                feedback_parts.append("🏆 <b>NEW PERSONAL RECORD!</b>")
             
             feedback_parts.append(f"📈 Total check-ins: {streak_updates['total_checkins']}")
             feedback_parts.append(f"\n---\n\n{ai_feedback}")
@@ -781,7 +781,7 @@ async def finish_checkin(
             
             # Fallback to Phase 1 hardcoded feedback
             feedback_parts = []
-            feedback_parts.append("🎉 **Check-In Complete!**\n")
+            feedback_parts.append("🎉 <b>Check-In Complete!</b>\n")
             feedback_parts.append(f"📊 Compliance: {compliance_score}%")
             
             # Phase D: Show recovery message on reset, normal streak otherwise
@@ -819,7 +819,7 @@ async def finish_checkin(
             
             final_message = "\n".join(feedback_parts)
         
-        await update.message.reply_text(final_message, parse_mode="Markdown")
+        await update.message.reply_text(final_message, parse_mode='HTML')
         
         # ===== PHASE 3C: Achievement System Integration =====
         # Check for newly unlocked achievements after streak update
@@ -854,7 +854,7 @@ async def finish_checkin(
                         # Send celebration as separate message (after check-in feedback)
                         await update.message.reply_text(
                             celebration_message,
-                            parse_mode="Markdown"
+                            parse_mode='HTML'
                         )
                         
                         logger.info(f"✅ Sent celebration for {achievement_id} to user {user_id}")
@@ -872,13 +872,13 @@ async def finish_checkin(
         if milestone_hit:
             try:
                 milestone_message = (
-                    f"**{milestone_hit['title']}**\n\n"
+                    f"<b>{milestone_hit['title']}</b>\n\n"
                     f"{milestone_hit['message']}"
                 )
                 
                 await update.message.reply_text(
                     milestone_message,
-                    parse_mode="Markdown"
+                    parse_mode='HTML'
                 )
                 
                 logger.info(
@@ -934,14 +934,14 @@ async def finish_checkin_quick(
     """
     Complete quick check-in (Phase 3E).
     
-    **Differences from Regular Check-In:**
+    <b>Differences from Regular Check-In:</b>
     1. Tier 1 ONLY (no Q2-Q4 data)
     2. Abbreviated AI feedback (1-2 sentences vs 3-4 paragraphs)
     3. Increment quick_checkin_count
     4. Track date in quick_checkin_used_dates
     5. Mark as quick check-in in database
     
-    **Process:**
+    <b>Process:</b>
     1. Create CheckIn object (with dummy Q2-Q4 data)
     2. Calculate compliance score
     3. Update streak
@@ -950,7 +950,7 @@ async def finish_checkin_quick(
     6. Increment quick check-in counter
     7. Send feedback
     
-    **Why Abbreviated Feedback:**
+    <b>Why Abbreviated Feedback:</b>
     - Quick check-ins are for busy days
     - User wants fast completion (~2 min total)
     - Full AI analysis requires Q2-Q4 context
@@ -1064,7 +1064,7 @@ async def finish_checkin_quick(
         
         # Build final message
         feedback_parts = []
-        feedback_parts.append("⚡ **Quick Check-In Complete!**\n")
+        feedback_parts.append("⚡ <b>Quick Check-In Complete!</b>\n")
         feedback_parts.append(f"📊 Compliance: {compliance_score}%")
         
         # Phase D: Show recovery message on reset, normal streak otherwise
@@ -1075,7 +1075,7 @@ async def finish_checkin_quick(
         
         feedback_parts.append(f"\n{ai_feedback}")
         feedback_parts.append(f"\n━━━━━━━━━━━━━━━━━━━━")
-        feedback_parts.append(f"\n**Quick Check-Ins This Week:** {new_count}/2")
+        feedback_parts.append(f"\n<b>Quick Check-Ins This Week:</b> {new_count}/2")
         feedback_parts.append(f"Use /checkin for full check-in next time.")
         
         final_message = "\n".join(feedback_parts)
@@ -1083,9 +1083,9 @@ async def finish_checkin_quick(
         # Get the query object from update (since this was triggered by callback query)
         query = update.callback_query
         if query:
-            await query.message.reply_text(final_message, parse_mode="Markdown")
+            await query.message.reply_text(final_message, parse_mode='HTML')
         else:
-            await update.message.reply_text(final_message, parse_mode="Markdown")
+            await update.message.reply_text(final_message, parse_mode='HTML')
         
         logger.info(
             f"⚡ Quick check-in completed for {user_id}: {compliance_score}% compliance, "

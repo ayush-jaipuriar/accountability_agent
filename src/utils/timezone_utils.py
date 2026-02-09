@@ -177,16 +177,16 @@ def get_checkin_date(current_time: Optional[datetime] = None, tz: str = "Asia/Ko
     """
     Determine which date a check-in should count for.
 
-    **3 AM Cutoff Rule (in user's local timezone):**
+    <b>3 AM Cutoff Rule (in user's local timezone):</b>
     - Check-in before 3 AM local → Counts for PREVIOUS day (late check-in)
     - Check-in after 3 AM local → Counts for CURRENT day (normal check-in)
 
-    **Why 3 AM?**
+    <b>Why 3 AM?</b>
     Some users work late or have irregular sleep schedules.
     3 AM gives a 3-hour grace period after midnight while still
     maintaining "daily" discipline.
 
-    **Examples (in user's local timezone):**
+    <b>Examples (in user's local timezone):</b>
     - 11:30 PM Feb 3 → Counts for Feb 3 (normal)
     - 12:30 AM Feb 4 → Counts for Feb 3 (late check-in)
     - 2:45 AM Feb 4 → Counts for Feb 3 (late check-in)

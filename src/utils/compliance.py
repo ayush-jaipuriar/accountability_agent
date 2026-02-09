@@ -25,7 +25,7 @@ def calculate_compliance_score(tier1: Tier1NonNegotiables) -> float:
     """
     Calculate compliance score as percentage of Tier 1 items completed.
     
-    **Phase 3D Expansion: 5 items → 6 items**
+    <b>Phase 3D Expansion: 5 items → 6 items</b>
     
     Tier 1 Non-Negotiables (6 items):
     1. Sleep: 7+ hours
@@ -35,7 +35,7 @@ def calculate_compliance_score(tier1: Tier1NonNegotiables) -> float:
     5. Zero Porn: No consumption (absolute)
     6. Boundaries: No toxic interactions
     
-    **Impact on Scoring:**
+    <b>Impact on Scoring:</b>
     - Before Phase 3D: Each item = 20% (5 items)
     - After Phase 3D: Each item = 16.67% (6 items)
     - 100% requires all 6 items completed

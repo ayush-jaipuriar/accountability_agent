@@ -6,9 +6,9 @@ This module defines the state structure for our multi-agent workflow.
 What is State in LangGraph?
 -----------------------------
 State is a dictionary that flows through the agent workflow. Each agent can:
-1. **Read** any field in the state
-2. **Update** specific fields
-3. **Pass** the state to the next agent
+1. <b>Read</b> any field in the state
+2. <b>Update</b> specific fields
+3. <b>Pass</b> the state to the next agent
 
 Think of it like a shared context object that gets passed around:
 - User message comes in → State created with user_id, message
@@ -18,19 +18,19 @@ Think of it like a shared context object that gets passed around:
 
 Key Concepts:
 -------------
-1. **TypedDict**: Python type annotation for dictionary structures
+1. <b>TypedDict</b>: Python type annotation for dictionary structures
    - Required by LangGraph for type checking
    - Defines which fields exist and their types
    
-2. **Annotated**: Adds metadata to types
+2. <b>Annotated</b>: Adds metadata to types
    - Used to specify HOW fields should be updated
    - Example: Annotated[list, add] means "append new items to list"
    
-3. **Reducer Functions** (from operator module):
+3. <b>Reducer Functions</b> (from operator module):
    - `add`: Appends/merges values (for lists and dicts)
    - Default: Replaces old value with new value
    
-4. **Optional Fields**: Fields that may or may not be populated
+4. <b>Optional Fields</b>: Fields that may or may not be populated
    - Not every agent sets every field
    - Example: intent is None until Supervisor classifies it
 

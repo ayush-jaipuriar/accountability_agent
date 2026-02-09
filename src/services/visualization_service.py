@@ -4,25 +4,25 @@ Visualization Service - Graph Generation for Weekly Reports
 
 Phase 3F: Generates 4 types of graphs for weekly visual reports.
 
-**Graph Types:**
+<b>Graph Types:</b>
 1. Sleep Trend (Line Chart) - Hours per night with target line
 2. Training Frequency (Bar Chart) - Workout/Rest/Missed per day
 3. Compliance Scores (Line + Trend) - Scores with linear regression
 4. Domain Radar (Polar Chart) - 5-axis balance visualization
 
-**Technology Choice: Matplotlib**
+<b>Technology Choice: Matplotlib</b>
 - Open source ($0 cost)
 - Agg backend: Renders to memory without display server (Cloud Run compatible)
 - Well-documented, widely used
 - Produces publication-quality graphs
 
-**Design Philosophy:**
+<b>Design Philosophy:</b>
 - Mobile-first: Graphs designed for phone screens (Telegram)
 - High DPI: 150 DPI for crisp text on retina displays
 - Consistent color scheme: Green/Red/Blue/Yellow across all charts
 - Clean: Minimal gridlines, clear labels, readable at small sizes
 
-**Why Not Plotly?**
+<b>Why Not Plotly?</b>
 - Plotly generates interactive HTML (useless in Telegram)
 - Plotly requires Node.js for static export (heavy dependency)
 - Matplotlib is lighter and purpose-built for static images
@@ -66,7 +66,7 @@ def _setup_figure(title: str, figsize: Tuple = FIGURE_SIZE) -> Tuple[plt.Figure,
     """
     Create a consistently styled figure and axes.
     
-    **Why a helper?**
+    <b>Why a helper?</b>
     Every graph needs the same setup: figure size, background color,
     title style, grid, and spine removal. This DRY helper ensures
     visual consistency across all 4 graph types.
@@ -95,7 +95,7 @@ def _figure_to_bytes(fig: plt.Figure) -> io.BytesIO:
     """
     Convert matplotlib figure to PNG bytes in memory.
     
-    **Why BytesIO?**
+    <b>Why BytesIO?</b>
     Cloud Run has no persistent filesystem. We render the graph
     to an in-memory buffer that can be sent directly to Telegram's
     photo upload API without touching disk.
@@ -119,14 +119,14 @@ def generate_sleep_chart(checkins: List[DailyCheckIn]) -> io.BytesIO:
     """
     Generate sleep trend line chart for the week.
     
-    **Visual Design:**
+    <b>Visual Design:</b>
     - Line chart with data points (circle markers)
     - Green horizontal line at 7-hour target
     - Color-coded zones: Green (>=7h), Yellow (6-7h), Red (<6h)
     - Data labels on each point showing exact hours
     - Average line as dashed indicator
     
-    **Theory: Why Color Zones?**
+    <b>Theory: Why Color Zones?</b>
     Color zones provide instant visual feedback. The user doesn't need
     to read numbers - they can instantly see "mostly green = good week"
     or "lots of red = sleep needs attention." This leverages the
@@ -198,13 +198,13 @@ def generate_training_chart(checkins: List[DailyCheckIn]) -> io.BytesIO:
     """
     Generate training frequency bar chart.
     
-    **Visual Design:**
+    <b>Visual Design:</b>
     - Bar chart with 3 states: Completed (green), Rest Day (blue), Missed (red)
     - Each bar is full height (binary) with color indicating status
     - Legend explains color coding
     - Training mode indicator shown in subtitle
     
-    **Theory: Binary vs. Continuous**
+    <b>Theory: Binary vs. Continuous</b>
     Training is inherently binary (did/didn't train), unlike sleep which
     is continuous (hours). Bar charts are the ideal visualization for
     categorical/binary data because each bar represents a discrete
@@ -277,14 +277,14 @@ def generate_compliance_chart(checkins: List[DailyCheckIn]) -> io.BytesIO:
     """
     Generate compliance score line chart with trend line.
     
-    **Visual Design:**
+    <b>Visual Design:</b>
     - Line chart with data points showing actual scores
     - Linear regression trend line (dashed purple)
     - Average line (dotted grey)
     - Data labels on each point
     - Y-axis 0-100% scale
     
-    **Theory: Linear Regression Trend**
+    <b>Theory: Linear Regression Trend</b>
     We use numpy's polyfit(degree=1) to fit a linear regression line
     through the compliance scores. This shows whether compliance is
     trending up (improving) or down (degrading). The slope tells
@@ -349,20 +349,20 @@ def generate_domain_radar(checkins: List[DailyCheckIn]) -> io.BytesIO:
     """
     Generate domain radar chart showing 5-axis life balance.
     
-    **5 Domains (from Constitution):**
+    <b>5 Domains (from Constitution):</b>
     1. Physical: Sleep + Training completion rate
     2. Career: Deep Work + Skill Building completion rate
     3. Mental: Zero Porn + Boundaries (self-control metrics)
     4. Discipline: Overall compliance average
     5. Consistency: Check-in rate (days checked in / total days)
     
-    **Visual Design:**
+    <b>Visual Design:</b>
     - Polar projection with 5 axes (pentagon shape)
     - Filled polygon with transparency showing current balance
     - Scale 0-100 per axis
     - Each axis labeled with domain name and score
     
-    **Theory: Radar Charts for Multi-Dimensional Assessment**
+    <b>Theory: Radar Charts for Multi-Dimensional Assessment</b>
     Radar charts (also called spider/web charts) are ideal for showing
     how a single entity (the user) performs across multiple dimensions.
     The shape of the polygon instantly communicates balance:
@@ -454,7 +454,7 @@ def generate_weekly_graphs(checkins: List[DailyCheckIn]) -> Dict[str, io.BytesIO
     """
     Generate all 4 weekly report graphs.
     
-    **Orchestration Function:**
+    <b>Orchestration Function:</b>
     Calls each graph generator and returns a dictionary of buffers.
     If any individual graph fails, we log the error and skip it
     rather than failing the entire report (graceful degradation).

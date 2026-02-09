@@ -27,36 +27,36 @@ The Supervisor uses Gemini's language understanding to classify these correctly.
 
 Intent Types:
 -------------
-1. **checkin**: User wants to do daily check-in
+1. <b>checkin</b>: User wants to do daily check-in
    - Examples: "I'm ready to check in", "let's go", "checking in"
    
-2. **emotional**: User expressing difficult emotions
+2. <b>emotional</b>: User expressing difficult emotions
    - Examples: "I'm feeling lonely", "had urges today", "struggling"
    
-3. **query**: Questions about stats, constitution, bot functionality
+3. <b>query</b>: Questions about stats, constitution, bot functionality
    - Examples: "what's my streak?", "show stats", "how does this work?"
    
-4. **command**: Bot commands
+4. <b>command</b>: Bot commands
    - Examples: "/start", "/help", "/status", "/mode"
 
 Key Concepts:
 -------------
-1. **Zero-shot Classification**: 
+1. <b>Zero-shot Classification</b>: 
    - LLM can classify intents without being trained on labeled examples
    - We just provide a clear prompt with intent descriptions
    - Gemini's pre-training allows it to understand intent from context
    
-2. **Temperature = 0.1** (very low):
+2. <b>Temperature = 0.1</b> (very low):
    - Makes classification deterministic
    - Same input → same output (consistency)
    - Reduces randomness/creativity (we want accuracy, not creativity here)
    
-3. **Context Injection**:
+3. <b>Context Injection</b>:
    - We pass user's streak and last check-in date to help classification
    - Example: If user says "let's continue" and has a streak going,
      it's likely "checkin" intent
 
-4. **Fallback Strategy**:
+4. <b>Fallback Strategy</b>:
    - If Gemini returns invalid intent → default to "query"
    - If API fails → default to "query"
    - "query" is safest because it just answers questions (no state changes)
@@ -114,7 +114,7 @@ class SupervisorAgent:
         This is the main entry point for the Supervisor.
         It takes the current state, classifies the intent, and returns updated state.
         
-        **Phase 3E Enhancement:**
+        <b>Phase 3E Enhancement:</b>
         Added fast keyword-based detection for query intents before LLM call.
         This saves API costs for obvious queries like "what's my streak?"
         
@@ -241,11 +241,11 @@ class SupervisorAgent:
         
         Prompt Engineering Principles:
         ------------------------------
-        1. **Clear Instructions**: Tell model exactly what to do
-        2. **Context**: Provide relevant user information
-        3. **Examples**: Show what each intent looks like
-        4. **Constraints**: Specify output format (one word only)
-        5. **Structure**: Use clear sections and formatting
+        1. <b>Clear Instructions</b>: Tell model exactly what to do
+        2. <b>Context</b>: Provide relevant user information
+        3. <b>Examples</b>: Show what each intent looks like
+        4. <b>Constraints</b>: Specify output format (one word only)
+        5. <b>Structure</b>: Use clear sections and formatting
         
         Why This Works:
         ---------------
@@ -285,7 +285,7 @@ USER CONTEXT:
 
 INTENT OPTIONS (in order of priority):
 
-1. **emotional** - User is expressing feelings, emotions, struggles, or seeking emotional support
+1. <b>emotional</b> - User is expressing feelings, emotions, struggles, or seeking emotional support
    CRITICAL: If the message contains ANY emotional keywords, classify as emotional
    Emotional keywords: feeling, lonely, sad, anxious, stressed, urge, struggling, difficult, hard, help, support, worried, scared, frustrated
    Examples:
@@ -298,7 +298,7 @@ INTENT OPTIONS (in order of priority):
    - "Going through a breakup"
    - "Feel like giving up"
 
-2. **checkin** - User wants to start/continue their daily check-in
+2. <b>checkin</b> - User wants to start/continue their daily check-in
    Examples:
    - "I'm ready to check in"
    - "Let's do this"
@@ -306,14 +306,14 @@ INTENT OPTIONS (in order of priority):
    - "Let's go"
    - "Ready"
 
-3. **query** - User is asking factual questions about their stats, constitution, or how the bot works
+3. <b>query</b> - User is asking factual questions about their stats, constitution, or how the bot works
    Examples:
    - "What's my streak?"
    - "Show my stats"
    - "What are the constitution rules?"
    - "How does this work?"
 
-4. **command** - User is issuing a bot command (starts with /)
+4. <b>command</b> - User is issuing a bot command (starts with /)
    Examples:
    - "/start"
    - "/help"

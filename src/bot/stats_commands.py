@@ -4,17 +4,17 @@ Stats Commands - Quick Statistics Commands
 
 Phase 3E: /weekly, /monthly, /yearly command handlers.
 
-**Purpose:**
+<b>Purpose:</b>
 Provide instant access to statistics without opening dashboard:
 - /weekly: Last 7 days summary
 - /monthly: Last 30 days summary
 - /yearly: Year-to-date summary
 
-**User Experience:**
+<b>User Experience:</b>
 One command → Formatted stats message in Telegram
 No context switching, no dashboard loading
 
-**Implementation:**
+<b>Implementation:</b>
 1. Parse command (weekly/monthly/yearly)
 2. Call analytics_service to calculate stats
 3. Format stats into Markdown message
@@ -22,18 +22,18 @@ No context switching, no dashboard loading
 
 Key Concepts:
 -------------
-1. **Markdown Formatting**: Use Telegram's Markdown for readability
-   - **Bold** for headers
+1. <b>Markdown Formatting</b>: Use Telegram's Markdown for readability
+   - <b>Bold</b> for headers
    - • Bullets for lists
    - Emojis for visual appeal
 
-2. **Information Hierarchy**: Most important stats first
+2. <b>Information Hierarchy</b>: Most important stats first
    - Compliance average (primary metric)
    - Streaks (motivation)
    - Tier 1 breakdown (actionable insights)
    - Patterns (warnings)
 
-3. **Actionable Insights**: Not just numbers, but meaning
+3. <b>Actionable Insights</b>: Not just numbers, but meaning
    - "↗️ +5% improving" vs just "89%"
    - "Top 20% of users" vs just raw percentile
    - "Focus on deep work" vs just "2/7 days"
@@ -62,16 +62,16 @@ async def weekly_command(
     """
     Handle /weekly command - Last 7 days summary.
     
-    **What It Shows:**
+    <b>What It Shows:</b>
     - Compliance average and trend
     - Current streak and check-in rate
     - Tier 1 performance breakdown
     - Pattern detections
     
-    **User Experience:**
+    <b>User Experience:</b>
     Simple command → Instant stats → Back to chat
     
-    **Error Handling:**
+    <b>Error Handling:</b>
     - No user profile → Prompt to use /start
     - No check-ins → Show helpful message
     - Calculation error → Show fallback message
@@ -96,17 +96,17 @@ async def weekly_command(
         if not stats.get("has_data", False):
             error_msg = stats.get("error", "No check-ins found")
             await update.message.reply_text(
-                f"📊 **Last 7 Days**\n\n"
+                f"📊 <b>Last 7 Days</b>\n\n"
                 f"No check-in data available yet.\n\n"
                 f"Complete your first check-in with /checkin to start tracking!",
-                parse_mode="Markdown"
+                parse_mode='HTML'
             )
             logger.info(f"⚠️ No weekly data for user {user_id}: {error_msg}")
             return
         
         # Format and send message
         message = format_weekly_summary(stats)
-        await update.message.reply_text(message, parse_mode="Markdown")
+        await update.message.reply_text(message, parse_mode='HTML')
         
         logger.info(f"✅ Weekly stats sent to user {user_id}")
         
@@ -115,7 +115,7 @@ async def weekly_command(
         await update.message.reply_text(
             "❌ Sorry, I couldn't calculate your weekly stats right now.\n\n"
             "Try again in a moment or use /status for basic stats.",
-            parse_mode="Markdown"
+            parse_mode='HTML'
         )
 
 
@@ -126,7 +126,7 @@ async def monthly_command(
     """
     Handle /monthly command - Last 30 days summary.
     
-    **What It Shows:**
+    <b>What It Shows:</b>
     - Compliance average with weekly breakdown
     - Best/worst week analysis
     - Tier 1 performance averages
@@ -134,7 +134,7 @@ async def monthly_command(
     - Pattern summary
     - Social proof (percentile)
     
-    **Richer Than Weekly:**
+    <b>Richer Than Weekly:</b>
     - Week-by-week comparison
     - Achievement tracking
     - Percentile ranking
@@ -159,17 +159,17 @@ async def monthly_command(
         if not stats.get("has_data", False):
             error_msg = stats.get("error", "No check-ins found")
             await update.message.reply_text(
-                f"📊 **Last 30 Days**\n\n"
+                f"📊 <b>Last 30 Days</b>\n\n"
                 f"No check-in data available yet.\n\n"
                 f"Complete more check-ins to see monthly trends!",
-                parse_mode="Markdown"
+                parse_mode='HTML'
             )
             logger.info(f"⚠️ No monthly data for user {user_id}: {error_msg}")
             return
         
         # Format and send message
         message = format_monthly_summary(stats)
-        await update.message.reply_text(message, parse_mode="Markdown")
+        await update.message.reply_text(message, parse_mode='HTML')
         
         logger.info(f"✅ Monthly stats sent to user {user_id}")
         
@@ -178,7 +178,7 @@ async def monthly_command(
         await update.message.reply_text(
             "❌ Sorry, I couldn't calculate your monthly stats right now.\n\n"
             "Try again in a moment or use /status for basic stats.",
-            parse_mode="Markdown"
+            parse_mode='HTML'
         )
 
 
@@ -189,7 +189,7 @@ async def yearly_command(
     """
     Handle /yearly command - Year-to-date summary.
     
-    **What It Shows:**
+    <b>What It Shows:</b>
     - Overall compliance and check-in rate
     - Current vs longest streak
     - Monthly breakdown (Jan, Feb, Mar...)
@@ -197,7 +197,7 @@ async def yearly_command(
     - Career progress (skill building)
     - Pattern summary
     
-    **Big Picture View:**
+    <b>Big Picture View:</b>
     - Shows progress over entire year
     - Highlights career goal alignment
     - Motivates with achievements count
@@ -222,17 +222,17 @@ async def yearly_command(
         if not stats.get("has_data", False):
             error_msg = stats.get("error", "No check-ins found")
             await update.message.reply_text(
-                f"📊 **2026 Year to Date**\n\n"
+                f"📊 <b>2026 Year to Date</b>\n\n"
                 f"No check-in data available yet.\n\n"
                 f"Complete more check-ins to see yearly trends!",
-                parse_mode="Markdown"
+                parse_mode='HTML'
             )
             logger.info(f"⚠️ No yearly data for user {user_id}: {error_msg}")
             return
         
         # Format and send message
         message = format_yearly_summary(stats)
-        await update.message.reply_text(message, parse_mode="Markdown")
+        await update.message.reply_text(message, parse_mode='HTML')
         
         logger.info(f"✅ Yearly stats sent to user {user_id}")
         
@@ -241,7 +241,7 @@ async def yearly_command(
         await update.message.reply_text(
             "❌ Sorry, I couldn't calculate your yearly stats right now.\n\n"
             "Try again in a moment or use /status for basic stats.",
-            parse_mode="Markdown"
+            parse_mode='HTML'
         )
 
 
@@ -251,7 +251,7 @@ def format_weekly_summary(stats: dict) -> str:
     """
     Format weekly stats into Telegram-friendly Markdown message.
     
-    **Structure:**
+    <b>Structure:</b>
     1. Header with date range
     2. Compliance section (avg + trend)
     3. Streaks section (current + check-in rate)
@@ -259,7 +259,7 @@ def format_weekly_summary(stats: dict) -> str:
     5. Patterns section
     6. Encouragement
     
-    **Design Principles:**
+    <b>Design Principles:</b>
     - Most important info first (compliance, streak)
     - Use emojis for visual scanning
     - Group related stats together
@@ -280,20 +280,20 @@ def format_weekly_summary(stats: dict) -> str:
     parts = []
     
     # Header
-    parts.append(f"📊 **{stats['period']}** ({stats['date_range']})\n")
+    parts.append(f"📊 <b>{stats['period']}</b> ({stats['date_range']})\n")
     
     # Compliance section
-    parts.append("**Compliance:**")
+    parts.append("<b>Compliance:</b>")
     parts.append(f"Average: {compliance['average']:.0f}%")
     parts.append(f"Trend: {compliance['trend']}\n")
     
     # Streaks section
-    parts.append("**Streaks:**")
+    parts.append("<b>Streaks:</b>")
     parts.append(f"Current: {streaks['current']} days 🔥")
     parts.append(f"Check-ins: {streaks['checkin_rate']} ({streaks['completion_pct']:.0f}%)\n")
     
     # Tier 1 performance
-    parts.append("**Tier 1 Performance:**")
+    parts.append("<b>Tier 1 Performance:</b>")
     parts.append(f"• Sleep: {tier1['sleep']['days']}/{tier1['sleep']['total']} days ({tier1['sleep']['avg_hours']:.1f} hrs avg)")
     parts.append(f"• Training: {tier1['training']['days']}/{tier1['training']['total']} days")
     parts.append(f"• Deep Work: {tier1['deep_work']['days']}/{tier1['deep_work']['total']} days ({tier1['deep_work']['avg_hours']:.1f} hrs avg)")
@@ -308,7 +308,7 @@ def format_weekly_summary(stats: dict) -> str:
     parts.append(f"• Boundaries: {tier1['boundaries']['days']}/{tier1['boundaries']['total']} days\n")
     
     # Patterns
-    parts.append(f"**Patterns:** {patterns['message']}\n")
+    parts.append(f"<b>Patterns:</b> {patterns['message']}\n")
     
     # Encouragement based on performance
     if compliance['average'] >= 90:
@@ -327,7 +327,7 @@ def format_monthly_summary(stats: dict) -> str:
     """
     Format monthly stats into Telegram-friendly Markdown message.
     
-    **Additional Elements vs Weekly:**
+    <b>Additional Elements vs Weekly:</b>
     - Week-by-week comparison
     - Achievement tracking
     - Social proof (percentile)
@@ -349,22 +349,22 @@ def format_monthly_summary(stats: dict) -> str:
     parts = []
     
     # Header
-    parts.append(f"📊 **{stats['period']}** ({stats['date_range']})\n")
+    parts.append(f"📊 <b>{stats['period']}</b> ({stats['date_range']})\n")
     
     # Compliance section with weekly breakdown
-    parts.append("**Compliance:**")
+    parts.append("<b>Compliance:</b>")
     parts.append(f"Average: {compliance['average']:.0f}%")
     parts.append(f"Best week: {compliance['best_week']}")
     parts.append(f"Worst week: {compliance['worst_week']}\n")
     
     # Streaks section
-    parts.append("**Streaks:**")
+    parts.append("<b>Streaks:</b>")
     parts.append(f"Current: {streaks['current']} days 🔥")
     parts.append(f"Longest this month: {streaks['longest_this_month']} days")
     parts.append(f"Check-ins: {streaks['checkin_rate']} ({streaks['completion_pct']:.0f}%)\n")
     
     # Tier 1 averages
-    parts.append("**Tier 1 Averages:**")
+    parts.append("<b>Tier 1 Averages:</b>")
     parts.append(f"• Sleep: {tier1['sleep']['avg_hours']:.1f} hrs (target: {tier1['sleep']['target']}+)")
     parts.append(f"• Training: {tier1['training']['pct']:.0f}% days ({tier1['training']['days']}/{tier1['training']['total']})")
     parts.append(f"• Deep Work: {tier1['deep_work']['avg_hours']:.1f} hrs (target: {tier1['deep_work']['target']}+)")
@@ -380,13 +380,13 @@ def format_monthly_summary(stats: dict) -> str:
     
     # Achievements
     if achievements['count'] > 0:
-        parts.append(f"**Achievements Unlocked:** {achievements['count']}")
+        parts.append(f"<b>Achievements Unlocked:</b> {achievements['count']}")
         for achievement in achievements['list']:
             parts.append(f"🏆 {achievement}")
         parts.append("")  # Empty line
     
     # Patterns
-    parts.append(f"**Patterns Detected:** {patterns['count']}")
+    parts.append(f"<b>Patterns Detected:</b> {patterns['count']}")
     if patterns['count'] > 0:
         parts.append(f"⚠️ {patterns['message']}\n")
     else:
@@ -402,7 +402,7 @@ def format_yearly_summary(stats: dict) -> str:
     """
     Format yearly stats into Telegram-friendly Markdown message.
     
-    **Yearly Specifics:**
+    <b>Yearly Specifics:</b>
     - Overview stats (days tracked, completion %)
     - Monthly breakdown
     - Career progress tracking
@@ -425,33 +425,33 @@ def format_yearly_summary(stats: dict) -> str:
     parts = []
     
     # Header
-    parts.append(f"📊 **{stats['period']}** ({stats['date_range']})\n")
+    parts.append(f"📊 <b>{stats['period']}</b> ({stats['date_range']})\n")
     
     # Overview
-    parts.append("**Overview:**")
+    parts.append("<b>Overview:</b>")
     parts.append(f"Days tracked: {overview['days_tracked']}/{overview['total_days']} ({overview['completion_pct']:.0f}%)")
     parts.append(f"Average compliance: {overview['avg_compliance']:.0f}%\n")
     
     # Streaks
-    parts.append("**Streaks:**")
+    parts.append("<b>Streaks:</b>")
     parts.append(f"Current: {streaks['current']} days 🔥")
     parts.append(f"Longest this year: {streaks['longest_this_year']} days")
     parts.append(f"Total check-ins: {streaks['total_checkins']}\n")
     
     # Monthly breakdown
-    parts.append("**Monthly Breakdown:**")
+    parts.append("<b>Monthly Breakdown:</b>")
     for month_data in monthly_breakdown:
         parts.append(f"{month_data['month']}: {month_data['days']}/{month_data.get('total_days', 31)} days, {month_data['avg_compliance']} avg")
     parts.append("")  # Empty line
     
     # Achievements
-    parts.append(f"**Achievements:** {achievements['total']} {achievements['message']}\n")
+    parts.append(f"<b>Achievements:</b> {achievements['total']} {achievements['message']}\n")
     
     # Patterns
-    parts.append(f"**Patterns:** {patterns['total']} {patterns['message']}\n")
+    parts.append(f"<b>Patterns:</b> {patterns['total']} {patterns['message']}\n")
     
     # Career progress
-    parts.append("**Career Progress:**")
+    parts.append("<b>Career Progress:</b>")
     parts.append(f"Skill building: {career['consistency_pct']:.0f}% days ({career['skill_building_days']} days)")
     
     # Career mode context
@@ -494,7 +494,7 @@ def get_encouragement(compliance: float) -> str:
     """
     Get contextual encouragement based on compliance score.
     
-    **Psychology:**
+    <b>Psychology:</b>
     - High performers: Maintain momentum
     - Mid performers: Focus on consistency
     - Low performers: Fresh start mindset

@@ -5,7 +5,7 @@ This agent generates personalized check-in feedback using Gemini 2.5 Flash.
 
 What Changed from Phase 1:
 ---------------------------
-**Phase 1 (Hardcoded):**
+<b>Phase 1 (Hardcoded):</b>
 ```
 if compliance_score == 100:
     return "💯 Perfect day! All Tier 1 non-negotiables completed."
@@ -13,7 +13,7 @@ elif compliance_score >= 80:
     return "✅ Strong day! You're maintaining solid consistency."
 ```
 
-**Phase 2 (AI-Generated):**
+<b>Phase 2 (AI-Generated):</b>
 ```
 # Gemini analyzes:
 # - Today's compliance score
@@ -40,22 +40,22 @@ Keep going. 💪"
 
 Key Concepts:
 -------------
-1. **Context-Aware Feedback**:
+1. <b>Context-Aware Feedback</b>:
    - References actual streak numbers
    - Mentions specific items completed/missed
    - Identifies patterns over last 7 days
 
-2. **Constitution Integration**:
+2. <b>Constitution Integration</b>:
    - Quotes relevant principles
    - Connects daily actions to long-term goals
    - Reinforces identity ("Physical Sovereignty")
 
-3. **Forward-Looking Guidance**:
+3. <b>Forward-Looking Guidance</b>:
    - Specific action for tomorrow
    - Based on user's stated priorities
    - Addresses potential obstacles
 
-4. **Tone Calibration**:
+4. <b>Tone Calibration</b>:
    - Direct, not fluffy
    - Motivating but realistic
    - Like a coach who knows the athlete
@@ -133,11 +133,11 @@ class CheckInAgent:
             
         Theory - Why This Works:
         ------------------------
-        1. **Contextualization**: LLM has all the data to make specific observations
-        2. **Pattern Recognition**: Can identify trends from recent check-ins
-        3. **Personalization**: References actual numbers and user's own words
-        4. **Consistency**: Same prompt structure ensures reliable quality
-        5. **Scalability**: No need to write rules for every scenario
+        1. <b>Contextualization</b>: LLM has all the data to make specific observations
+        2. <b>Pattern Recognition</b>: Can identify trends from recent check-ins
+        3. <b>Personalization</b>: References actual numbers and user's own words
+        4. <b>Consistency</b>: Same prompt structure ensures reliable quality
+        5. <b>Scalability</b>: No need to write rules for every scenario
         """
         try:
             # Get recent check-ins for pattern analysis
@@ -192,17 +192,17 @@ class CheckInAgent:
         """
         Generate abbreviated feedback for quick check-ins (Phase 3E).
         
-        **Goal:** 1-2 sentences that:
+        <b>Goal:</b> 1-2 sentences that:
         1. Acknowledge 1-2 wins from Tier 1
         2. Suggest 1 focus area for tomorrow
         
-        **Why Abbreviated:**
+        <b>Why Abbreviated:</b>
         - Quick check-ins skip Q2-Q4 (no challenges, priorities, obstacles)
         - User wants fast completion (~2 minutes total)
         - Limited context = limited analysis
         - Still provide value: recognize wins + actionable advice
         
-        **Format:**
+        <b>Format:</b>
         "Good job on X and Y! Focus on Z tomorrow."
         OR
         "Strong performance on X! Don't skip Y tomorrow."
@@ -220,7 +220,7 @@ class CheckInAgent:
             # Build abbreviated prompt
             prompt = f"""Generate brief (1-2 sentences) check-in feedback.
 
-**Tier 1 Results:**
+<b>Tier 1 Results:</b>
 - Sleep: {'✅' if tier1.sleep else '❌'} (7+ hours)
 - Training: {'✅' if tier1.training else '❌'} (workout or rest)
 - Deep Work: {'✅' if tier1.deep_work else '❌'} (2+ hours)
@@ -228,26 +228,26 @@ class CheckInAgent:
 - Zero Porn: {'✅' if tier1.zero_porn else '❌'}
 - Boundaries: {'✅' if tier1.boundaries else '❌'} (no toxic interactions)
 
-**Compliance:** {compliance_score}%
-**Streak:** {current_streak} days
+<b>Compliance:</b> {compliance_score}%
+<b>Streak:</b> {current_streak} days
 
-**Task:** Generate 1-2 sentences:
+<b>Task:</b> Generate 1-2 sentences:
 1. Acknowledge 1-2 wins (things with ✅)
 2. Suggest 1 focus area for tomorrow (prioritize ❌ items)
 
-**Requirements:**
+<b>Requirements:</b>
 - Maximum 100 words
 - Specific (mention actual areas like "sleep", "deep work")
 - Encouraging but direct
 - No generic platitudes
 
-**Examples:**
+<b>Examples:</b>
 - "Great work on sleep and training! Focus on skill building tomorrow."
 - "Strong day with perfect compliance! Keep this momentum going."
 - "Good boundaries maintained! Prioritize deep work and skill building tomorrow."
 - "Sleep on track! Don't skip training tomorrow - consistency matters."
 
-**Your Response (1-2 sentences only):**"""
+<b>Your Response (1-2 sentences only):</b>"""
 
             # Generate abbreviated feedback with Gemini
             logger.info(f"⚡ Generating abbreviated feedback for quick check-in (user {user_id})")
@@ -393,12 +393,12 @@ class CheckInAgent:
         
         Prompt Engineering Principles Used:
         -----------------------------------
-        1. **Clear Role**: "You are a constitution accountability coach"
-        2. **Structured Data**: Organized input (today's data, context, trends)
-        3. **Output Format**: Specific word count and sections
-        4. **Tone Specification**: Direct, motivating, no fluff
-        5. **Examples**: (Could add few-shot examples for better quality)
-        6. **Constraints**: What to avoid (generic praise, fluff, vague advice)
+        1. <b>Clear Role</b>: "You are a constitution accountability coach"
+        2. <b>Structured Data</b>: Organized input (today's data, context, trends)
+        3. <b>Output Format</b>: Specific word count and sections
+        4. <b>Tone Specification</b>: Direct, motivating, no fluff
+        5. <b>Examples</b>: (Could add few-shot examples for better quality)
+        6. <b>Constraints</b>: What to avoid (generic praise, fluff, vague advice)
         """
         # Summarize tier1 status
         tier1_items = []
@@ -484,28 +484,28 @@ GENERATE FEEDBACK (150-250 words):
 ----------------------------------
 Write feedback that:
 
-1. **ACKNOWLEDGE TODAY** (1-2 sentences):
+1. <b>ACKNOWLEDGE TODAY</b> (1-2 sentences):
    - Reference exact compliance score
    - If perfect (100%): Strong praise
    - If good (80-99%): Acknowledge + note what was missed
    - If struggling (<80%): Direct but supportive
 
-2. **STREAK CONTEXT** (1-2 sentences):
+2. <b>STREAK CONTEXT</b> (1-2 sentences):
    - Mention current streak number
    - If milestone (7, 14, 30, 60, 100 days): Celebrate it
    - If near personal best: Motivate to break it
    - Connect streak to identity/systems
 
-3. **PATTERN OBSERVATION** (1 sentence):
+3. <b>PATTERN OBSERVATION</b> (1 sentence):
    - Note the trend (improving/declining/consistent)
    - Reference specific numbers if relevant
 
-4. **CONSTITUTION CONNECTION** (1-2 sentences):
+4. <b>CONSTITUTION CONNECTION</b> (1-2 sentences):
    - Reference a relevant principle from constitution
    - Connect today's actions to that principle
    - Use principle names (e.g., "Physical Sovereignty", "Create Don't Consume")
 
-5. **FORWARD FOCUS** (1-2 sentences):
+5. <b>FORWARD FOCUS</b> (1-2 sentences):
    - ONE specific action for tomorrow
    - Reference their stated priority or obstacle
    - Make it actionable and concrete

@@ -168,7 +168,7 @@ class TelegramBotManager:
         Args:
             conversation_handler: ConversationHandler for check-ins
             
-        **CRITICAL: Handler Groups**
+        <b>CRITICAL: Handler Groups</b>
         ConversationHandler is added to group 0 (default, highest priority).
         This ensures /checkin and /quickcheckin commands are caught by the
         ConversationHandler BEFORE the general message handler.
@@ -277,43 +277,43 @@ class TelegramBotManager:
             
             # Step 1: Welcome + Purpose
             welcome_message = (
-                f"🎯 **Welcome to Your Constitution Accountability Agent!**\n\n"
+                f"🎯 <b>Welcome to Your Constitution Accountability Agent!</b>\n\n"
                 f"Hi {user.first_name}! I'm here to help you build unbreakable discipline "
                 f"through daily accountability.\n\n"
-                f"**What I do for you:**\n"
+                f"<b>What I do for you:</b>\n"
                 f"✅ Daily check-ins to track your progress\n"
                 f"✅ Smart reminders (9 PM, 9:30 PM, 10 PM)\n"
                 f"✅ Personalized AI feedback on your performance\n"
                 f"✅ Pattern detection & proactive interventions\n"
                 f"✅ Streak tracking with protection shields\n"
                 f"✅ Gamification & achievements\n\n"
-                f"**📋 Your Tier 1 Non-Negotiables:**\n\n"
+                f"<b>📋 Your Tier 1 Non-Negotiables:</b>\n\n"
                 f"These are your *daily foundation* - the 6 non-negotiables:\n\n"
-                f"1️⃣ **💤 Sleep:** 7+ hours of quality sleep\n"
-                f"2️⃣ **💪 Training:** Workout or scheduled rest day\n"
-                f"3️⃣ **🧠 Deep Work:** 2+ hours of focused work\n"
-                f"4️⃣ **📚 Skill Building:** 2+ hours career-focused learning\n"
-                f"5️⃣ **🚫 Zero Porn:** Absolute rule, no exceptions\n"
-                f"6️⃣ **🛡️ Boundaries:** No toxic interactions\n\n"
+                f"1️⃣ <b>💤 Sleep:</b> 7+ hours of quality sleep\n"
+                f"2️⃣ <b>💪 Training:</b> Workout or scheduled rest day\n"
+                f"3️⃣ <b>🧠 Deep Work:</b> 2+ hours of focused work\n"
+                f"4️⃣ <b>📚 Skill Building:</b> 2+ hours career-focused learning\n"
+                f"5️⃣ <b>🚫 Zero Porn:</b> Absolute rule, no exceptions\n"
+                f"6️⃣ <b>🛡️ Boundaries:</b> No toxic interactions\n\n"
                 f"Every day, I'll ask you about these 6 items + a few questions "
                 f"to calculate your compliance score.\n\n"
                 f"Let's personalize your experience..."
             )
             
-            await update.message.reply_text(welcome_message, parse_mode='Markdown')
+            await update.message.reply_text(welcome_message, parse_mode='HTML')
             
             # Step 2: Mode Selection with Inline Keyboard
             mode_message = (
-                f"🎯 **Choose Your Mode:**\n\n"
-                f"**Optimization Mode** (Beast Mode)\n"
+                f"🎯 <b>Choose Your Mode:</b>\n\n"
+                f"<b>Optimization Mode</b> (Beast Mode)\n"
                 f"• Training: 6x/week, one rest day\n"
                 f"• Deep work: 2+ hours daily\n"
                 f"• For aggressive growth phases\n\n"
-                f"**Maintenance Mode** (Steady State)\n"
+                f"<b>Maintenance Mode</b> (Steady State)\n"
                 f"• Training: 4x/week, flexible schedule\n"
                 f"• Deep work: 2+ hours daily\n"
                 f"• For sustainable consistency\n\n"
-                f"**Survival Mode** (Crisis)\n"
+                f"<b>Survival Mode</b> (Crisis)\n"
                 f"• Training: 3x/week minimum\n"
                 f"• Deep work: 1+ hour daily\n"
                 f"• For recovery or difficult life phases\n\n"
@@ -327,7 +327,7 @@ class TelegramBotManager:
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await update.message.reply_text(mode_message, reply_markup=reply_markup, parse_mode='Markdown')
+            await update.message.reply_text(mode_message, reply_markup=reply_markup, parse_mode='HTML')
         
         logger.info(f"✅ /start command from {user_id} ({user.first_name})")
     
@@ -384,15 +384,15 @@ class TelegramBotManager:
         }
         
         await query.edit_message_text(
-            f"✅ **{mode_emojis[selected_mode]} {selected_mode.title()} Mode Selected!**\n\n"
+            f"✅ <b>{mode_emojis[selected_mode]} {selected_mode.title()} Mode Selected!</b>\n\n"
             f"Great choice. I've set your constitution to {selected_mode} mode.\n"
             f"You can change this anytime with /mode"
         )
         
         # Step 3: Timezone Selection (2-level picker: confirm IST or pick region → city)
         timezone_message = (
-            f"🌍 **Timezone Setup**\n\n"
-            f"I've defaulted your timezone to **Asia/Kolkata (IST)**.\n\n"
+            f"🌍 <b>Timezone Setup</b>\n\n"
+            f"I've defaulted your timezone to <b>Asia/Kolkata (IST)</b>.\n\n"
             f"Your daily reminders will be sent at:\n"
             f"• 1st reminder: 9:00 PM\n"
             f"• 2nd reminder: 9:30 PM\n"
@@ -473,7 +473,7 @@ class TelegramBotManager:
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             await query.edit_message_text(
-                "🌍 **Select Your Region:**\n\n"
+                "🌍 <b>Select Your Region:</b>\n\n"
                 "Pick the region closest to you, then you'll choose your city.",
                 reply_markup=reply_markup
             )
@@ -499,7 +499,7 @@ class TelegramBotManager:
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             await query.edit_message_text(
-                f"🏙️ **{region['label']} — Choose Your City:**\n\n"
+                f"🏙️ <b>{region['label']} — Choose Your City:</b>\n\n"
                 f"Select the timezone closest to you:",
                 reply_markup=reply_markup
             )
@@ -518,7 +518,7 @@ class TelegramBotManager:
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             await query.edit_message_text(
-                "🌍 **Select Your Region:**\n\n"
+                "🌍 <b>Select Your Region:</b>\n\n"
                 "Pick the region closest to you, then you'll choose your city.",
                 reply_markup=reply_markup
             )
@@ -566,8 +566,8 @@ class TelegramBotManager:
         tz_display = get_timezone_display_name(timezone)
 
         await query.edit_message_text(
-            f"✅ **Timezone Updated!**\n\n"
-            f"Your timezone is now: **{tz_display}** (`{timezone}`)\n\n"
+            f"✅ <b>Timezone Updated!</b>\n\n"
+            f"Your timezone is now: <b>{tz_display}</b> (`{timezone}`)\n\n"
             f"All reminders and date calculations will use this timezone.\n"
             f"Your daily reminders will be sent at 9 PM in your new local time."
         )
@@ -602,17 +602,17 @@ class TelegramBotManager:
         tz_display = get_timezone_display_name(timezone)
 
         await query.edit_message_text(
-            f"✅ **Timezone Set: {tz_display}**\n\n"
+            f"✅ <b>Timezone Set: {tz_display}</b>\n\n"
             f"Your daily reminders will be sent at 9 PM in your local time."
         )
 
         # Streak Mechanics Explanation
         streak_message = (
-            f"🔥 **How Streaks Work:**\n\n"
-            f"• **Check in daily** to build your streak\n"
-            f"• **48-hour grace period:** Miss a day? You have 48 hours to recover\n"
-            f"• **Streak shields:** You get 3 shields per month to protect your streak\n"
-            f"• **Achievements:** Unlock badges at 7, 30, 90, 180, 365 days\n\n"
+            f"🔥 <b>How Streaks Work:</b>\n\n"
+            f"• <b>Check in daily</b> to build your streak\n"
+            f"• <b>48-hour grace period:</b> Miss a day? You have 48 hours to recover\n"
+            f"• <b>Streak shields:</b> You get 3 shields per month to protect your streak\n"
+            f"• <b>Achievements:</b> Unlock badges at 7, 30, 90, 180, 365 days\n\n"
             f"Your longest streak becomes your permanent record — it never decreases!"
         )
 
@@ -623,12 +623,12 @@ class TelegramBotManager:
 
         # First Check-In Prompt
         first_checkin_message = (
-            f"🎯 **You're Ready to Start!**\n\n"
+            f"🎯 <b>You're Ready to Start!</b>\n\n"
             f"Welcome to your accountability journey. I'll remind you daily at 9 PM "
             f"in your local time, but you can check in anytime.\n\n"
-            f"**Your first check-in is available now!**\n\n"
+            f"<b>Your first check-in is available now!</b>\n\n"
             f"Use /checkin to complete your first check-in and start building your streak.\n\n"
-            f"**Quick Commands:**\n"
+            f"<b>Quick Commands:</b>\n"
             f"/checkin - Start daily check-in\n"
             f"/status - View your stats\n"
             f"/help - Show all commands\n\n"
@@ -688,11 +688,11 @@ class TelegramBotManager:
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         await update.message.reply_text(
-            f"🌍 **Change Timezone**\n\n"
-            f"Current timezone: **{tz_display}** (`{current_tz}`)\n\n"
+            f"🌍 <b>Change Timezone</b>\n\n"
+            f"Current timezone: <b>{tz_display}</b> (`{current_tz}`)\n\n"
             f"Select your new region:",
             reply_markup=reply_markup,
-            parse_mode="Markdown"
+            parse_mode='HTML'
         )
         logger.info(f"🌍 User {user_id} initiated timezone change (current: {current_tz})")
 
@@ -825,8 +825,8 @@ class TelegramBotManager:
             if requested_mode in valid_modes:
                 if requested_mode == user.constitution_mode:
                     await update.message.reply_text(
-                        f"You're already in **{requested_mode.title()}** mode! ✅",
-                        parse_mode='Markdown'
+                        f"You're already in <b>{requested_mode.title()}</b> mode! ✅",
+                        parse_mode='HTML'
                     )
                     return
                 
@@ -840,11 +840,11 @@ class TelegramBotManager:
                 }
                 
                 await update.message.reply_text(
-                    f"✅ **Mode Changed!**\n\n"
-                    f"{mode_emojis[requested_mode]} **{requested_mode.title()} Mode** is now active.\n\n"
+                    f"✅ <b>Mode Changed!</b>\n\n"
+                    f"{mode_emojis[requested_mode]} <b>{requested_mode.title()} Mode</b> is now active.\n\n"
                     f"This affects your check-in expectations and pattern detection thresholds.\n"
                     f"Use /mode anytime to view or change.",
-                    parse_mode='Markdown'
+                    parse_mode='HTML'
                 )
                 logger.info(f"✅ User {user_id} changed mode to {requested_mode}")
                 return
@@ -865,17 +865,17 @@ class TelegramBotManager:
         current_emoji = mode_emojis.get(user.constitution_mode, "🎯")
         
         mode_info = (
-            f"**🎯 Constitution Modes**\n\n"
-            f"**Current Mode:** {current_emoji} {user.constitution_mode.title()} ✅\n\n"
-            f"**🚀 Optimization Mode:**\n"
+            f"<b>🎯 Constitution Modes</b>\n\n"
+            f"<b>Current Mode:</b> {current_emoji} {user.constitution_mode.title()} ✅\n\n"
+            f"<b>🚀 Optimization Mode:</b>\n"
             f"• All systems firing - aggressive growth\n"
             f"• 6x/week training, 3+ hours deep work\n"
             f"• Target: 90%+ compliance\n\n"
-            f"**⚖️ Maintenance Mode:**\n"
+            f"<b>⚖️ Maintenance Mode:</b>\n"
             f"• Sustaining progress, recovery phase\n"
             f"• 4x/week training, 2+ hours deep work\n"
             f"• Target: 80%+ compliance\n\n"
-            f"**🛡️ Survival Mode:**\n"
+            f"<b>🛡️ Survival Mode:</b>\n"
             f"• Crisis mode - protect bare minimums\n"
             f"• 3x/week training, 1+ hour deep work\n"
             f"• Target: 60%+ compliance\n\n"
@@ -895,7 +895,7 @@ class TelegramBotManager:
                 ])
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_text(mode_info, reply_markup=reply_markup, parse_mode='Markdown')
+        await update.message.reply_text(mode_info, reply_markup=reply_markup, parse_mode='HTML')
         logger.info(f"✅ /mode command from {user_id}")
     
     async def mode_change_callback(
@@ -931,11 +931,11 @@ class TelegramBotManager:
         }
         
         await query.edit_message_text(
-            f"✅ **Mode Changed!**\n\n"
-            f"{mode_emojis[new_mode]} **{new_mode.title()} Mode** is now active.\n\n"
+            f"✅ <b>Mode Changed!</b>\n\n"
+            f"{mode_emojis[new_mode]} <b>{new_mode.title()} Mode</b> is now active.\n\n"
             f"This affects your check-in expectations and pattern detection thresholds.\n"
             f"Use /mode anytime to view or change.",
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
         
         logger.info(f"✅ User {user_id} changed mode to {new_mode} via inline button")
@@ -952,16 +952,16 @@ class TelegramBotManager:
         
         Display and toggle career mode.
         
-        **Career Mode System:**
-        - **skill_building:** Learning phase (LeetCode, system design, upskilling)
-        - **job_searching:** Active job hunt (applications, interviews)
-        - **employed:** Working toward promotion/raise
+        <b>Career Mode System:</b>
+        - <b>skill_building:</b> Learning phase (LeetCode, system design, upskilling)
+        - <b>job_searching:</b> Active job hunt (applications, interviews)
+        - <b>employed:</b> Working toward promotion/raise
         
-        **Why This Matters:**
+        <b>Why This Matters:</b>
         Career mode determines how the Tier 1 skill building question is phrased.
         The question adapts to your current career phase for more relevant tracking.
         
-        **Constitution Alignment:**
+        <b>Constitution Alignment:</b>
         - Tracks progress toward ₹28-42 LPA June 2026 goal
         - Ensures daily skill building (LeetCode, system design)
         - Adapts as you transition from learning → job searching → employed
@@ -978,33 +978,33 @@ class TelegramBotManager:
         # Career mode descriptions
         mode_descriptions = {
             "skill_building": (
-                "📚 **Skill Building**\n"
+                "📚 <b>Skill Building</b>\n"
                 "Learning phase: LeetCode, system design, AI/ML upskilling, courses, projects\n\n"
-                "✅ **Skill building question:** Did you do 2+ hours skill building?"
+                "✅ <b>Skill building question:</b> Did you do 2+ hours skill building?"
             ),
             "job_searching": (
-                "💼 **Job Searching**\n"
+                "💼 <b>Job Searching</b>\n"
                 "Active job hunt: Applications, interviews, networking, skill building\n\n"
-                "✅ **Skill building question:** Did you make job search progress?"
+                "✅ <b>Skill building question:</b> Did you make job search progress?"
             ),
             "employed": (
-                "🎯 **Employed**\n"
+                "🎯 <b>Employed</b>\n"
                 "Working toward promotion/raise: High-impact work, skill development, visibility\n\n"
-                "✅ **Skill building question:** Did you work toward promotion/raise?"
+                "✅ <b>Skill building question:</b> Did you work toward promotion/raise?"
             )
         }
         
         current_desc = mode_descriptions.get(user.career_mode, "Unknown mode")
         
         message = (
-            f"**🎯 Career Phase Tracking**\n\n"
-            f"**Current Mode:**\n{current_desc}\n\n"
+            f"<b>🎯 Career Phase Tracking</b>\n\n"
+            f"<b>Current Mode:</b>\n{current_desc}\n\n"
             f"━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"**Why Career Mode Matters:**\n"
+            f"<b>Why Career Mode Matters:</b>\n"
             f"• Your Tier 1 skill building question adapts to your career phase\n"
             f"• Tracks progress toward ₹28-42 LPA June 2026 goal\n"
             f"• Aligns check-ins with constitution career protocols\n\n"
-            f"**Change mode using buttons below:**"
+            f"<b>Change mode using buttons below:</b>"
         )
         
         # Create inline keyboard for mode selection
@@ -1017,7 +1017,7 @@ class TelegramBotManager:
         await update.message.reply_text(
             message,
             reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown"
+            parse_mode='HTML'
         )
         logger.info(f"✅ /career command from {user_id}")
     
@@ -1029,18 +1029,18 @@ class TelegramBotManager:
         """
         Handle career mode selection from inline buttons (Phase 3D).
         
-        **Callback Data Format:**
+        <b>Callback Data Format:</b>
         - career_skill → skill_building mode
         - career_job → job_searching mode
         - career_employed → employed mode
         
-        **Process:**
+        <b>Process:</b>
         1. Parse callback data to get selected mode
         2. Update user's career_mode in Firestore
         3. Edit message to show confirmation
         4. Log change
         
-        **Impact:**
+        <b>Impact:</b>
         Starting next check-in, Tier 1 skill building question will adapt
         to the new career mode.
         """
@@ -1090,13 +1090,13 @@ class TelegramBotManager:
         
         # Send confirmation
         await query.edit_message_text(
-            f"✅ **Career mode updated!**\n\n"
-            f"**New Mode:** {mode_names[new_mode]}\n\n"
-            f"**Your Tier 1 skill building question will now be:**\n"
+            f"✅ <b>Career mode updated!</b>\n\n"
+            f"<b>New Mode:</b> {mode_names[new_mode]}\n\n"
+            f"<b>Your Tier 1 skill building question will now be:</b>\n"
             f"\"{mode_questions[new_mode]}\"\n\n"
             f"This change takes effect starting your next check-in.\n\n"
             f"🎯 Keep tracking progress toward your June 2026 goal! (₹28-42 LPA)",
-            parse_mode="Markdown"
+            parse_mode='HTML'
         )
         
         logger.info(f"✅ User {user_id} changed career mode to {new_mode}")
@@ -1132,12 +1132,12 @@ class TelegramBotManager:
         # Check if shields available
         if user.streak_shields.available <= 0:
             await update.message.reply_text(
-                f"❌ **No Streak Shields Available**\n\n"
+                f"❌ <b>No Streak Shields Available</b>\n\n"
                 f"You've used all {user.streak_shields.total} shields this month.\n"
                 f"Shields reset every 30 days.\n\n"
-                f"**Last reset:** {user.streak_shields.last_reset or 'Never'}\n\n"
+                f"<b>Last reset:</b> {user.streak_shields.last_reset or 'Never'}\n\n"
                 f"💪 The best protection is consistency! Try to check in daily.",
-                parse_mode='Markdown'
+                parse_mode='HTML'
             )
             return
         
@@ -1152,12 +1152,12 @@ class TelegramBotManager:
         
         if checked_in_today:
             await update.message.reply_text(
-                f"✅ **Shield Not Needed!**\n\n"
+                f"✅ <b>Shield Not Needed!</b>\n\n"
                 f"You've already checked in for {checkin_date}.\n"
                 f"Your streak is safe! 🔥\n\n"
                 f"🛡️ Shields remaining: {user.streak_shields.available}/{user.streak_shields.total}\n\n"
                 f"Save your shields for emergencies.",
-                parse_mode='Markdown'
+                parse_mode='HTML'
             )
             return
         
@@ -1179,21 +1179,21 @@ class TelegramBotManager:
             updated_user = firestore_service.get_user(user_id)
             
             await update.message.reply_text(
-                f"🛡️ **Streak Shield Activated!**\n\n"
+                f"🛡️ <b>Streak Shield Activated!</b>\n\n"
                 f"Your {user.streaks.current_streak}-day streak is protected.\n\n"
-                f"**Shields remaining:** {updated_user.streak_shields.available}/{updated_user.streak_shields.total}\n\n"
-                f"⚠️ **Important:** Shields are for emergencies only!\n"
+                f"<b>Shields remaining:</b> {updated_user.streak_shields.available}/{updated_user.streak_shields.total}\n\n"
+                f"⚠️ <b>Important:</b> Shields are for emergencies only!\n"
                 f"Using too many shields defeats the purpose of daily accountability.\n\n"
                 f"Get back on track tomorrow with /checkin! 💪",
-                parse_mode='Markdown'
+                parse_mode='HTML'
             )
             
             logger.info(f"✅ User {user_id} used streak shield ({updated_user.streak_shields.available} remaining)")
         else:
             await update.message.reply_text(
-                f"❌ **Failed to use shield**\n\n"
+                f"❌ <b>Failed to use shield</b>\n\n"
                 f"Something went wrong. Please try again or contact support.",
-                parse_mode='Markdown'
+                parse_mode='HTML'
             )
             logger.error(f"❌ Failed to use streak shield for {user_id}")
     
@@ -1233,10 +1233,10 @@ class TelegramBotManager:
         # Parse @username from message
         if not context.args or not context.args[0].startswith('@'):
             await update.message.reply_text(
-                "❌ **Invalid usage**\n\n"
+                "❌ <b>Invalid usage</b>\n\n"
                 "Format: /set_partner @username\n\n"
                 "Example: /set_partner @john_doe",
-                parse_mode='Markdown'
+                parse_mode='HTML'
             )
             return
         
@@ -1247,10 +1247,10 @@ class TelegramBotManager:
         
         if not partner:
             await update.message.reply_text(
-                f"❌ **User not found**\n\n"
+                f"❌ <b>User not found</b>\n\n"
                 f"User @{partner_username} hasn't started using the bot yet.\n\n"
                 "They need to send /start first!",
-                parse_mode='Markdown'
+                parse_mode='HTML'
             )
             return
         
@@ -1275,22 +1275,22 @@ class TelegramBotManager:
         await context.bot.send_message(
             chat_id=partner.telegram_id,
             text=(
-                f"👥 **Accountability Partner Request**\n\n"
+                f"👥 <b>Accountability Partner Request</b>\n\n"
                 f"{user.name} wants to be your accountability partner.\n\n"
-                f"**What this means:**\n"
+                f"<b>What this means:</b>\n"
                 f"• You'll be notified if they ghost for 5+ days\n"
                 f"• They'll be notified if you ghost for 5+ days\n"
                 f"• Mutual support and motivation\n\n"
                 f"Accept this request?"
             ),
-            parse_mode='Markdown',
+            parse_mode='HTML',
             reply_markup=reply_markup
         )
         
         await update.message.reply_text(
-            f"✅ **Partner request sent to @{partner_username}!**\n\n"
+            f"✅ <b>Partner request sent to @{partner_username}!</b>\n\n"
             f"Waiting for them to accept...",
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
         
         logger.info(f"✅ Partner request sent: {user_id} → {partner.user_id}")
@@ -1318,7 +1318,7 @@ class TelegramBotManager:
         
         if not requester or not accepter:
             await query.edit_message_text(
-                "❌ **Error:** One or both users not found."
+                "❌ <b>Error:</b> One or both users not found."
             )
             return
         
@@ -1337,7 +1337,7 @@ class TelegramBotManager:
         
         # Notify both users
         await query.edit_message_text(
-            f"✅ **Partnership Confirmed!**\n\n"
+            f"✅ <b>Partnership Confirmed!</b>\n\n"
             f"You and {requester.name} are now accountability partners.\n\n"
             f"You'll be notified if they ghost for 5+ days, and vice versa."
         )
@@ -1345,7 +1345,7 @@ class TelegramBotManager:
         await context.bot.send_message(
             chat_id=requester.telegram_id,
             text=(
-                f"✅ **Partnership Confirmed!**\n\n"
+                f"✅ <b>Partnership Confirmed!</b>\n\n"
                 f"{accepter.name} accepted your request!\n\n"
                 f"You're now accountability partners. 🤝"
             )
@@ -1372,12 +1372,12 @@ class TelegramBotManager:
         
         if not requester or not decliner:
             await query.edit_message_text(
-                "❌ **Error:** User not found."
+                "❌ <b>Error:</b> User not found."
             )
             return
         
         await query.edit_message_text(
-            "❌ **Partnership declined.**"
+            "❌ <b>Partnership declined.</b>"
         )
         
         await context.bot.send_message(
@@ -1398,19 +1398,19 @@ class TelegramBotManager:
         This is the core of Partner Mutual Visibility. It shows aggregate
         partner stats while respecting privacy (no individual Tier 1 items).
 
-        **What is shown (aggregate only):**
+        <b>What is shown (aggregate only):</b>
         - Partner's current/longest streak
         - Whether partner checked in today
         - Today's compliance % (if checked in)
         - Weekly check-in count and avg compliance
         - Motivational comparison footer
 
-        **What is NOT shown (privacy):**
+        <b>What is NOT shown (privacy):</b>
         - Individual Tier 1 items (sleep, training, etc.)
         - Challenge text / rating reason
         - Emotional support conversations
 
-        **Rate limiting:** Standard tier (10s cooldown, 30/hour)
+        <b>Rate limiting:</b> Standard tier (10s cooldown, 30/hour)
         """
         if not await self._check_rate_limit(update, "partner_status"):
             return
@@ -1426,11 +1426,11 @@ class TelegramBotManager:
 
         if not user.accountability_partner_id:
             await update.message.reply_text(
-                "❌ **No Partner Linked**\n\n"
+                "❌ <b>No Partner Linked</b>\n\n"
                 "You don't have an accountability partner yet.\n\n"
                 "Link one with: /set_partner @username\n\n"
                 "Having a partner increases your check-in consistency by 40%!",
-                parse_mode='Markdown'
+                parse_mode='HTML'
             )
             return
 
@@ -1529,8 +1529,8 @@ class TelegramBotManager:
             # Just unlink on this side
             firestore_service.set_accountability_partner(user_id, None, None)
             await update.message.reply_text(
-                "✅ **Partnership removed.**",
-                parse_mode='Markdown'
+                "✅ <b>Partnership removed.</b>",
+                parse_mode='HTML'
             )
             return
         
@@ -1539,8 +1539,8 @@ class TelegramBotManager:
         firestore_service.set_accountability_partner(partner.user_id, None, None)
         
         await update.message.reply_text(
-            f"✅ **Partnership with {partner.name} removed.**",
-            parse_mode='Markdown'
+            f"✅ <b>Partnership with {partner.name} removed.</b>",
+            parse_mode='HTML'
         )
         
         await context.bot.send_message(
@@ -1563,10 +1563,10 @@ class TelegramBotManager:
         Display user's unlocked achievements grouped by rarity.
         Shows progress toward next milestone.
         
-        **Theory - Why This Works:**
-        - Viewing achievements creates **progress visualization**
-        - Rarity grouping creates **status hierarchy** (legendary first)
-        - Next milestone creates **goal clarity** (X days until Month Master)
+        <b>Theory - Why This Works:</b>
+        - Viewing achievements creates <b>progress visualization</b>
+        - Rarity grouping creates <b>status hierarchy</b> (legendary first)
+        - Next milestone creates <b>goal clarity</b> (X days until Month Master)
         - Together these drive continued engagement
         """
         user_id = str(update.effective_user.id)
@@ -1584,21 +1584,21 @@ class TelegramBotManager:
         # If no achievements yet, show motivation message
         if not user.achievements:
             await update.message.reply_text(
-                "🎯 **No achievements yet!**\n\n"
+                "🎯 <b>No achievements yet!</b>\n\n"
                 "Keep checking in daily to unlock:\n"
                 "🎯 First Step (1 day)\n"
                 "🏅 Week Warrior (7 days)\n"
                 "🏆 Month Master (30 days)\n"
                 "⭐ Perfect Week (7 days at 100%)\n\n"
-                f"Your current streak: **{user.streaks.current_streak} days** 🔥\n\n"
+                f"Your current streak: <b>{user.streaks.current_streak} days</b> 🔥\n\n"
                 "Complete your daily check-in with /checkin",
-                parse_mode="Markdown"
+                parse_mode='HTML'
             )
             return
         
         # Build achievements display message
         message_parts = []
-        message_parts.append(f"🏆 **Your Achievements ({len(user.achievements)}/{len(achievement_service.get_all_achievements())})**\n")
+        message_parts.append(f"🏆 <b>Your Achievements ({len(user.achievements)}/{len(achievement_service.get_all_achievements())})</b>\n")
         
         # Group achievements by rarity
         from collections import defaultdict
@@ -1620,7 +1620,7 @@ class TelegramBotManager:
         
         for rarity in rarity_order:
             if by_rarity[rarity]:
-                message_parts.append(f"\n**{rarity_labels[rarity]}**")
+                message_parts.append(f"\n<b>{rarity_labels[rarity]}</b>")
                 for achievement in by_rarity[rarity]:
                     message_parts.append(f"{achievement.icon} {achievement.name}")
                     # Optionally add description (commented out to keep message short)
@@ -1649,23 +1649,23 @@ class TelegramBotManager:
         if next_milestone:
             days_remaining = next_milestone - current_streak
             message_parts.append(
-                f"\n📈 **Next Milestone:** {next_milestone_name} "
+                f"\n📈 <b>Next Milestone:</b> {next_milestone_name} "
                 f"({days_remaining} day{'s' if days_remaining != 1 else ''} to go!)"
             )
         else:
             # User has completed all streak milestones!
-            message_parts.append("\n🎉 **All streak milestones unlocked!** You're a legend! 👑")
+            message_parts.append("\n🎉 <b>All streak milestones unlocked!</b> You're a legend! 👑")
         
         # Add call to action
         message_parts.append(
-            f"\n💪 Keep going! Current streak: **{current_streak} days** 🔥"
+            f"\n💪 Keep going! Current streak: <b>{current_streak} days</b> 🔥"
         )
         
         final_message = "\n".join(message_parts)
         
         await update.message.reply_text(
             final_message,
-            parse_mode="Markdown"
+            parse_mode='HTML'
         )
         
         logger.info(f"✅ Displayed {len(user.achievements)} achievements for user {user_id}")
@@ -1682,13 +1682,13 @@ class TelegramBotManager:
         
         Supports: /export csv, /export json, /export pdf
         
-        **How It Works:**
+        <b>How It Works:</b>
         1. Rate limit check (expensive tier: 30min cooldown, 2/hour)
         2. Parse format from command arguments
         3. Call export service to generate file in memory
         4. Send file via Telegram's document upload API
         
-        **Telegram File Limits:**
+        <b>Telegram File Limits:</b>
         - Documents: up to 50MB
         - Our exports: typically <1MB (well within limits)
         """
@@ -1766,7 +1766,7 @@ class TelegramBotManager:
         This is the same report that auto-sends on Sundays, but
         available anytime via command.
         
-        **Process:**
+        <b>Process:</b>
         1. Rate limit check (expensive tier: 30min cooldown, 2/hour)
         2. Show "generating" message (reports take 5-15 seconds)
         3. Generate 4 graphs + AI insights
@@ -1819,12 +1819,12 @@ class TelegramBotManager:
         """
         Handle /leaderboard command - Show weekly rankings.
         
-        **Ranking Logic:**
+        <b>Ranking Logic:</b>
         1. Average compliance score over last 7 days (primary)
         2. Current streak length (tiebreaker, +0.1 per day, max +5)
         3. Minimum 3 check-ins to qualify
         
-        **Privacy:**
+        <b>Privacy:</b>
         Only users with leaderboard_opt_in=True are shown.
         Users see their own rank even if not in top 10.
         """
@@ -1863,12 +1863,12 @@ class TelegramBotManager:
         """
         Handle /invite command - Show referral link and stats.
         
-        **Deep Link Mechanism:**
+        <b>Deep Link Mechanism:</b>
         Telegram supports deep links: t.me/botname?start=PAYLOAD
         When a new user clicks this, the bot receives /start PAYLOAD.
         We parse the referral code to attribute the new user.
         
-        **Rewards:**
+        <b>Rewards:</b>
         - Referrer: +1% compliance boost per active referral (max +5%)
         - Referee: 3 bonus streak shields
         """
@@ -1958,7 +1958,7 @@ class TelegramBotManager:
         """
         Handle /resume command - Resume an incomplete check-in.
         
-        **How It Works:**
+        <b>How It Works:</b>
         1. Check Firestore for partial_checkins/{user_id}
         2. If found and <24h old, offer to resume
         3. If not found, tell user no incomplete check-in exists
@@ -2080,13 +2080,13 @@ class TelegramBotManager:
         }
         
         # Show current answers
-        lines = ["**✏️ Correct Today's Check-In**\n"]
+        lines = ["<b>✏️ Correct Today's Check-In</b>\n"]
         lines.append("Current answers:\n")
         for key, (label, value) in items.items():
             status = "✅ YES" if value else "❌ NO"
             lines.append(f"  {label}: {status}")
         lines.append("\nTap an item below to toggle it (YES↔NO):")
-        lines.append("Then tap **Save Correction** when done.\n")
+        lines.append("Then tap <b>Save Correction</b> when done.\n")
         
         # Build toggle keyboard
         keyboard = []
@@ -2115,7 +2115,7 @@ class TelegramBotManager:
         await update.message.reply_text(
             "\n".join(lines),
             reply_markup=reply_markup,
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
         
         logger.info(f"✏️ User {user_id} started correction for {today}")
@@ -2183,11 +2183,11 @@ class TelegramBotManager:
                 context.user_data.pop('correction_date', None)
                 
                 await query.edit_message_text(
-                    f"✅ **Check-In Corrected!**\n\n"
+                    f"✅ <b>Check-In Corrected!</b>\n\n"
                     f"Updated compliance: {new_compliance:.0f}%\n\n"
                     f"Your stats, patterns, and achievements will reflect the correction.\n"
                     f"Note: Only 1 correction per check-in is allowed.",
-                    parse_mode='Markdown'
+                    parse_mode='HTML'
                 )
                 logger.info(f"✅ User {user_id} corrected check-in for {date}: compliance={new_compliance}%")
             else:
@@ -2216,13 +2216,13 @@ class TelegramBotManager:
             'boundaries': '🛡️ Boundaries',
         }
         
-        lines = ["**✏️ Correct Today's Check-In**\n"]
+        lines = ["<b>✏️ Correct Today's Check-In</b>\n"]
         lines.append("Updated answers:\n")
         for key, label in item_labels.items():
             status = "✅ YES" if items[key] else "❌ NO"
             lines.append(f"  {label}: {status}")
         lines.append("\nTap an item to toggle (YES↔NO):")
-        lines.append("Then tap **Save Correction** when done.\n")
+        lines.append("Then tap <b>Save Correction</b> when done.\n")
         
         keyboard = []
         for key, label in item_labels.items():
@@ -2244,7 +2244,7 @@ class TelegramBotManager:
         await query.edit_message_text(
             "\n".join(lines),
             reply_markup=reply_markup,
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
     
     # ===== Rate Limiting Helper =====
@@ -2327,13 +2327,13 @@ class TelegramBotManager:
         """
         Handle /support command — direct entry to emotional support agent.
         
-        **What This Does:**
+        <b>What This Does:</b>
         This command creates a direct bridge from "I need help" to the 
         Emotional Support Agent. Previously, emotional support was only 
         available when the supervisor classified a free-text message as 
         "emotional" intent. Now users can explicitly request it.
         
-        **Context-Aware Support:**
+        <b>Context-Aware Support:</b>
         If the user received an intervention in the last 24 hours, the 
         emotional agent is given context about what pattern was detected.
         This makes the support feel connected rather than generic.
@@ -2342,14 +2342,14 @@ class TelegramBotManager:
         then types /support, the agent might say: "I see you've been 
         struggling with sleep. Let's talk about what's driving that."
         
-        **Flow:**
+        <b>Flow:</b>
         1. Check rate limit (ai_powered tier — uses Gemini API)
         2. Look up recent interventions (24h) for context
         3. If user provided text after /support, use that as the message
         4. If standalone /support, show welcome prompt and wait
         5. Route to emotional support agent with context
         
-        **Rate Limiting:** ai_powered tier (2 min cooldown, 20/hour)
+        <b>Rate Limiting:</b> ai_powered tier (2 min cooldown, 20/hour)
         """
         user_id = str(update.effective_user.id)
         
@@ -2426,7 +2426,7 @@ class TelegramBotManager:
         """
         Process a support message through the emotional support agent.
         
-        **How Context-Aware Support Works:**
+        <b>How Context-Aware Support Works:</b>
         When `intervention_context` is provided, we prepend context to the 
         user's message so the emotional agent understands the situation:
         
@@ -2501,20 +2501,20 @@ class TelegramBotManager:
         """
         Handle general text messages (non-commands) - Phase 3B + 3E.
         
-        **Flow:**
+        <b>Flow:</b>
         1. Use supervisor to classify intent (emotional, query, checkin)
         2. Route to appropriate agent:
            - emotional → Emotional Support Agent
            - query → Query Agent (Phase 3E: Natural language queries)
            - checkin → Suggest /checkin command
         
-        **Phase 3E Enhancement:**
+        <b>Phase 3E Enhancement:</b>
         Query intent now routes to QueryAgent which:
         - Classifies query type (compliance, streak, training, etc.)
         - Fetches relevant data from Firestore
         - Generates natural language response
         
-        **Why This Handler?**
+        <b>Why This Handler?</b>
         Users don't always use commands. They might say:
         - "I'm feeling lonely" (emotional)
         - "What's my average compliance?" (query → QueryAgent)
@@ -2600,7 +2600,7 @@ class TelegramBotManager:
                     "❓ /help - See all available commands"
                 )
                 
-                await update.message.reply_text(response, parse_mode="Markdown")
+                await update.message.reply_text(response, parse_mode='HTML')
                 
                 logger.info(f"✅ Query answered for {user_id}")
                 

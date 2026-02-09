@@ -4,7 +4,7 @@ Reporting Agent - Weekly Report Generation & Delivery
 
 Phase 3F: Orchestrates weekly visual reports with graphs and AI insights.
 
-**Architecture: Mediator Pattern**
+<b>Architecture: Mediator Pattern</b>
 This agent coordinates between multiple services without them knowing
 about each other:
 - FirestoreService → data retrieval
@@ -12,17 +12,17 @@ about each other:
 - LLMService → AI insights generation
 - Telegram Bot → report delivery
 
-**Weekly Report Contents:**
+<b>Weekly Report Contents:</b>
 1. Summary header (week dates, check-in count)
 2. 4 graphs (sleep, training, compliance, radar)
 3. AI-generated insights (2-3 sentences referencing actual data)
 4. Quick stats (compliance avg, streak, best day)
 
-**Delivery Schedule:**
+<b>Delivery Schedule:</b>
 - Automated: Every Sunday 9:00 AM IST via Cloud Scheduler
 - On-demand: /report command for immediate generation
 
-**Cost Analysis:**
+<b>Cost Analysis:</b>
 - Graphs: $0.00 (matplotlib, open source)
 - AI Insights: ~300 tokens × $0.25/1M = $0.000075 per report
 - Monthly (4 reports × 10 users): $0.003/month
@@ -48,7 +48,7 @@ async def generate_ai_insights(
     """
     Generate AI-powered insights for the weekly report.
     
-    **Theory: Data-Grounded Generation**
+    <b>Theory: Data-Grounded Generation</b>
     We pass actual metrics to the LLM rather than asking it to analyze
     raw data. This approach:
     1. Reduces token count (summary data vs raw check-ins)
@@ -130,7 +130,7 @@ def _generate_fallback_insights(
     """
     Generate template-based insights when LLM is unavailable.
     
-    **Why Fallback?**
+    <b>Why Fallback?</b>
     LLM calls can fail (rate limits, network issues, API outages).
     Rather than showing an error in the report, we generate a
     reasonable template-based insight. The user still gets value.
@@ -238,14 +238,14 @@ async def generate_and_send_weekly_report(
     """
     Generate and deliver a complete weekly report to a single user.
     
-    **Full Report Pipeline:**
+    <b>Full Report Pipeline:</b>
     1. Fetch last 7 days of check-ins from Firestore
     2. Generate 4 graphs using Visualization Service
     3. Generate AI insights using LLM Service
     4. Build summary message
     5. Send message + 4 images via Telegram
     
-    **Error Handling Strategy:**
+    <b>Error Handling Strategy:</b>
     - If graph generation fails: Send text-only report (graceful degradation)
     - If AI insights fail: Use template-based fallback
     - If Telegram send fails: Log error, don't retry (next week's report will work)
@@ -348,12 +348,12 @@ async def send_weekly_reports_to_all(
     
     Called by Cloud Scheduler endpoint every Sunday 9 AM IST.
     
-    **Process:**
+    <b>Process:</b>
     1. Get all active users
     2. For each user, generate and send report
     3. Aggregate results for logging
     
-    **Why Sequential (not parallel)?**
+    <b>Why Sequential (not parallel)?</b>
     - Telegram rate limits: 30 messages/second
     - Graph generation is CPU-intensive
     - Cloud Run has limited CPU (1-2 vCPUs)

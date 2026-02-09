@@ -36,38 +36,38 @@ Your 47-day streak is at risk. Protect it by protecting your sleep.
 
 Key Concepts:
 -------------
-1. **Firmness + Support**: 
+1. <b>Firmness + Support</b>: 
    - Not: "Maybe consider getting more sleep?"
    - Yes: "Action Required: In bed by 11 PM, no exceptions."
    
-2. **Evidence-Based**:
+2. <b>Evidence-Based</b>:
    - Shows actual numbers (5.2 hrs average, not "you're sleeping poorly")
    - References specific dates
    - Quantifiable data
 
-3. **Constitution-Connected**:
+3. <b>Constitution-Connected</b>:
    - Quotes relevant principle
    - Reminds user of their own rules
    - "This is what YOU decided"
 
-4. **Consequence-Aware**:
+4. <b>Consequence-Aware</b>:
    - Not scare tactics
    - But honest about what happens if pattern continues
    - Based on user's historical patterns
 
-5. **Action-Oriented**:
+5. <b>Action-Oriented</b>:
    - ONE specific action (not 5 vague suggestions)
    - Time-bound (tonight, tomorrow)
    - Concrete (11 PM, not "earlier")
 
 Intervention Structure:
 -----------------------
-1. **Alert** (1 line): Clear statement of pattern
-2. **Evidence** (2-3 lines): Data showing the pattern
-3. **Constitution Reference** (2-3 lines): Which principle violated
-4. **Consequences** (3-4 lines): What happens if continues
-5. **Action Required** (2-3 lines): Specific next step
-6. **Motivation** (1 line): Reference streak/progress at stake
+1. <b>Alert</b> (1 line): Clear statement of pattern
+2. <b>Evidence</b> (2-3 lines): Data showing the pattern
+3. <b>Constitution Reference</b> (2-3 lines): Which principle violated
+4. <b>Consequences</b> (3-4 lines): What happens if continues
+5. <b>Action Required</b> (2-3 lines): Specific next step
+6. <b>Motivation</b> (1 line): Reference streak/progress at stake
 
 Token Budget:
 -------------
@@ -92,7 +92,7 @@ logger = logging.getLogger(__name__)
 # Severity-based prompts that append to every intervention message,
 # bridging the gap from "problem detected" to "emotional support available."
 #
-# **Why Graduated Severity?**
+# <b>Why Graduated Severity?</b>
 # Low severity issues need a gentle nudge — being too urgent feels patronizing.
 # High/critical issues need an empathetic, no-judgment tone — the user is 
 # likely in a vulnerable state and needs to feel safe asking for help.
@@ -118,14 +118,14 @@ def add_support_bridge(message: str, severity: str) -> str:
     """
     Append a support bridge prompt to an intervention message.
     
-    **What is a Support Bridge?**
+    <b>What is a Support Bridge?</b>
     It's the missing link between pattern detection and emotional support.
     Previously, interventions would detect problems and suggest actions,
     but never connected the user to the emotional support agent.
     
     The bridge prompt at the bottom says: "If you're struggling, here's help."
     
-    **Design Principle — Graduated Intensity:**
+    <b>Design Principle — Graduated Intensity:</b>
     | Severity | Tone | Example |
     |----------|------|---------|
     | Low | Gentle suggestion | "Want to talk?" |
@@ -242,17 +242,17 @@ class InterventionAgent:
         
         Prompt Engineering for Interventions:
         -------------------------------------
-        1. **Severity-Appropriate Tone**:
+        1. <b>Severity-Appropriate Tone</b>:
            - CRITICAL: Firm, urgent ("Action required NOW")
            - HIGH: Direct, serious ("This is a problem")
            - MEDIUM: Concerned, supportive ("Let's address this")
         
-        2. **Evidence First**:
+        2. <b>Evidence First</b>:
            - Start with data (numbers, dates)
            - Then interpretation
            - Then consequences
         
-        3. **Constitution as Authority**:
+        3. <b>Constitution as Authority</b>:
            - Quote the rule the user wrote
            - "YOUR constitution says..."
            - Not judgment, just accountability to self
@@ -303,34 +303,34 @@ GENERATE INTERVENTION (200-300 words):
 --------------------------------------
 Write an intervention message with this structure:
 
-1. **ALERT** (1 line with {emoji}):
+1. <b>ALERT</b> (1 line with {emoji}):
    "🚨 PATTERN ALERT: [Pattern Name]"
 
-2. **EVIDENCE** (2-3 lines):
+2. <b>EVIDENCE</b> (2-3 lines):
    Show the data:
    - Specific numbers (hours, days, scores)
    - Dates when applicable
    - What the constitution requires vs what happened
 
-3. **CONSTITUTION REFERENCE** (2-3 lines):
+3. <b>CONSTITUTION REFERENCE</b> (2-3 lines):
    - Quote the relevant principle
    - Connect today's data to the rule violated
    - Remind: "This is what YOU decided"
 
-4. **CONSEQUENCES** (3-4 bullet points):
+4. <b>CONSEQUENCES</b> (3-4 bullet points):
    "If this pattern continues:"
    - What happens to performance
    - What happens to other areas (cascade effects)
    - Historical context if relevant
 
-5. **ACTION REQUIRED** (2-4 lines):
+5. <b>ACTION REQUIRED</b> (2-4 lines):
    "Action Required:"
    - ONE specific action
    - Time-bound (tonight, tomorrow, next 24 hours)
    - Concrete and measurable
    - Remove obstacles (e.g., "Delete app", "Block calendar", "Text friend")
 
-6. **MOTIVATION** (1 line):
+6. <b>MOTIVATION</b> (1 line):
    Reference streak at stake:
    "Your {current_streak}-day streak is at risk. Protect it by [protecting X]."
 
@@ -340,7 +340,7 @@ TONE: {tone_instruction}
 - Not judgmental, but not apologetic either
 - Like a coach calling out a problem, demanding a fix
 
-FORMAT: Use {emoji} at start, **bold** for "Action Required" heading
+FORMAT: Use {emoji} at start, <b>bold</b> for "Action Required" heading
 
 Intervention:"""
 
@@ -376,7 +376,7 @@ Intervention:"""
         """
         Fallback template-based intervention if AI generation fails
         
-        **Phase 3D Update:**
+        <b>Phase 3D Update:</b>
         Now includes specific template builders for new patterns:
         - snooze_trap → _build_snooze_trap_intervention()
         - consumption_vortex → _build_consumption_vortex_intervention()
@@ -472,17 +472,17 @@ Reply with your plan to break this pattern.
         """
         Build escalating ghosting intervention message (Phase 3B).
         
-        **What is This?**
+        <b>What is This?</b>
         When a user disappears (ghosts) after missing check-ins, we send
         escalating intervention messages based on how long they've been gone.
         
-        **Why Escalating Messages?**
+        <b>Why Escalating Messages?</b>
         - Day 2: Gentle nudge (empathy first)
         - Day 3: Firm warning (accountability)
         - Day 4: Critical with historical reference (evidence-based urgency)
         - Day 5+: Emergency with partner escalation (social support)
         
-        **Message Structure:**
+        <b>Message Structure:</b>
         Each message includes:
         1. Severity indicator (emoji)
         2. Days missing count
@@ -490,7 +490,7 @@ Reply with your plan to break this pattern.
         4. Action prompt (/checkin command)
         5. Context (streak at risk, shields available, etc.)
         
-        **Theory - Progressive Escalation:**
+        <b>Theory - Progressive Escalation:</b>
         Based on crisis intervention research:
         - Start gentle (avoid defensiveness)
         - Build urgency gradually
@@ -505,7 +505,7 @@ Reply with your plan to break this pattern.
             Intervention message string (ready to send via Telegram)
             
         Example Output (Day 2):
-            "👋 **Missed you yesterday!**
+            "👋 <b>Missed you yesterday!</b>
             
             You had a 47-day streak going. Everything okay?
             
@@ -517,7 +517,7 @@ Reply with your plan to break this pattern.
         # Day 2: Gentle Nudge
         if days == 2:
             return (
-                "👋 **Missed you yesterday!**\n\n"
+                "👋 <b>Missed you yesterday!</b>\n\n"
                 f"You had a {streak}-day streak going. Everything okay?\n\n"
                 "Quick check-in: /checkin"
             )
@@ -525,7 +525,7 @@ Reply with your plan to break this pattern.
         # Day 3: Firm Warning
         elif days == 3:
             return (
-                "⚠️ **3 Days Missing**\n\n"
+                "⚠️ <b>3 Days Missing</b>\n\n"
                 f"Your {streak}-day streak is at risk. This is a constitution violation.\n\n"
                 "Check in NOW to save your progress: /checkin"
             )
@@ -533,10 +533,10 @@ Reply with your plan to break this pattern.
         # Day 4: Critical with Historical Reference
         elif days == 4:
             return (
-                "🚨 **4-Day Absence - CRITICAL**\n\n"
+                "🚨 <b>4-Day Absence - CRITICAL</b>\n\n"
                 f"You had a {streak}-day streak. Last time this happened (Feb 2025): "
                 "6-month spiral.\n\n"
-                "**Don't let history repeat.** Check in immediately: /checkin"
+                "<b>Don't let history repeat.</b> Check in immediately: /checkin"
             )
         
         # Day 5+: Emergency with Partner/Shield Info
@@ -558,10 +558,10 @@ Reply with your plan to break this pattern.
                 )
             
             return (
-                "🔴 **EMERGENCY - 5+ Days Missing**\n\n"
+                "🔴 <b>EMERGENCY - 5+ Days Missing</b>\n\n"
                 f"Your {streak}-day streak is gone. This is exactly how the Feb 2025 "
                 "regression started.\n\n"
-                "**You need help. Do this NOW:**\n"
+                "<b>You need help. Do this NOW:</b>\n"
                 "1. Check in: /checkin\n"
                 "2. Text a friend\n"
                 "3. Review your constitution"
@@ -573,19 +573,19 @@ Reply with your plan to break this pattern.
         """
         Build snooze trap intervention message (Phase 3D).
         
-        **What is Snooze Trap?**
+        <b>What is Snooze Trap?</b>
         Pattern of waking >30min late for 3+ consecutive days.
         This is an early warning sign that leads to:
         - Rushed mornings → no deep work
         - Sleep debt accumulation
         - Discipline erosion → other habits slip
         
-        **Constitution Reference:**
+        <b>Constitution Reference:</b>
         Section G - Interrupt Pattern 2: "The Snooze Trap"
         - Each snooze = 15min earlier bedtime (forced debt repayment)
         - 3 snoozes/week = Maintenance Mode warning
         
-        **Message Strategy:**
+        <b>Message Strategy:</b>
         1. Show evidence (avg snooze time, worst day)
         2. Connect to career goal (June 2026 ₹28-42 LPA)
         3. Reference historical pattern (Feb 2025 snooze → spiral)
@@ -603,23 +603,23 @@ Reply with your plan to break this pattern.
         worst_day = pattern.data.get("worst_day", {})
         target_wake = pattern.data.get("target_wake", "06:30")
         
-        return f"""⚠️ **SNOOZE TRAP DETECTED**
+        return f"""⚠️ <b>SNOOZE TRAP DETECTED</b>
 
 You've snoozed for {avg_snooze}+ minutes for {days} consecutive days.
 
-**This pattern leads to:**
+<b>This pattern leads to:</b>
 • Rushed mornings → missed deep work sessions
 • Sleep debt accumulation → worse performance
 • Compliance decline → discipline erosion
 • Energy drain throughout day
 
-**Constitution Protocol:**
-1. **TONIGHT:** Move alarm across room (physical distance)
+<b>Constitution Protocol:</b>
+1. <b>TONIGHT:</b> Move alarm across room (physical distance)
 2. Sleep 30min earlier (target: 10:30 PM → 7hrs sleep)
-3. **TOMORROW:** No snooze button - stand up immediately
+3. <b>TOMORROW:</b> No snooze button - stand up immediately
 4. Morning routine: Bathroom → Water → Natural light
 
-**Your June 2026 goal (₹28-42 LPA) depends on morning execution.**
+<b>Your June 2026 goal (₹28-42 LPA) depends on morning execution.</b>
 
 Target wake time: {target_wake}
 Tomorrow: NO SNOOZE. Execute your constitution.
@@ -631,23 +631,23 @@ Don't repeat history. Break the pattern NOW."""
         """
         Build consumption vortex intervention message (Phase 3D).
         
-        **What is Consumption Vortex?**
+        <b>What is Consumption Vortex?</b>
         Pattern of >3 hours daily consumption for 5+ days.
         Indicates shift from creator → consumer mode.
         
-        **Constitution Reference:**
+        <b>Constitution Reference:</b>
         Section G - Interrupt Pattern 3: "The Consumption Vortex"
         Principle 2: "Create Don't Consume"
         - Time is irreplaceable
         - Consumption >2hrs/day = warning sign
         
-        **Why This Matters:**
+        <b>Why This Matters:</b>
         - 21 hours/week = 1260 minutes of life
         - Time that could go to skill building → wasted
         - Dopamine hijacking → makes deep work harder
         - Avoidance behavior → what are you avoiding?
         
-        **Message Strategy:**
+        <b>Message Strategy:</b>
         1. Quantify the loss (total hours, minutes of life)
         2. Quote Principle 2 ("Create Don't Consume")
         3. Reference historical pattern (Jan 2025 consumption → job search stall)
@@ -667,29 +667,29 @@ Don't repeat history. Break the pattern NOW."""
         # Calculate minutes of life
         total_minutes = int(total_hours * 60)
         
-        return f"""⚠️ **CONSUMPTION VORTEX DETECTED**
+        return f"""⚠️ <b>CONSUMPTION VORTEX DETECTED</b>
 
 You've averaged {avg_hours} hours of consumption for {days} days.
-**Total this week: {total_hours} hours = {total_minutes} minutes of life.**
+<b>Total this week: {total_hours} hours = {total_minutes} minutes of life.</b>
 
-**You're becoming a consumer, not a creator.**
+<b>You're becoming a consumer, not a creator.</b>
 
-**Constitution Violation:**
+<b>Constitution Violation:</b>
 • Principle 2: "Create Don't Consume"
 • Your time is irreplaceable
 • {total_hours} hours = potential for 2-3 LeetCode problems/day
 • That's what separates ₹28 LPA from your current path
 
-**Actions NOW:**
-1. **TODAY:** Install blockers (Freedom app, Cold Turkey)
+<b>Actions NOW:</b>
+1. <b>TODAY:</b> Install blockers (Freedom app, Cold Turkey)
 2. Delete time-sink apps from phone (YouTube, Reddit, Twitter)
-3. **TOMORROW:** Schedule 2-hour creation block (morning: 6:30-8:30 AM)
+3. <b>TOMORROW:</b> Schedule 2-hour creation block (morning: 6:30-8:30 AM)
 4. Track consumption daily (accountability prevents drift)
 
-**Historical Pattern:**
+<b>Historical Pattern:</b>
 Jan 2025: 15hrs/week consumption → job search stalled → 3-month spiral → opportunity lost
 
-**Your ₹28-42 LPA goal requires creation, not consumption.**
+<b>Your ₹28-42 LPA goal requires creation, not consumption.</b>
 
 Tomorrow: <2 hours consumption. No exceptions.
 Block apps NOW. Don't wait.
@@ -700,23 +700,23 @@ Block apps NOW. Don't wait.
         """
         Build deep work collapse intervention message (Phase 3D Enhanced).
         
-        **What is Deep Work Collapse?**
+        <b>What is Deep Work Collapse?</b>
         Pattern of <1.5 hours deep work for 5+ consecutive days.
         This is CRITICAL severity because it directly impacts June 2026 career goal.
         
-        **Why This is CRITICAL (Phase 3D Upgrade):**
+        <b>Why This is CRITICAL (Phase 3D Upgrade):</b>
         - Constitution mandates 2+ hours daily deep work
         - Your ₹28-42 LPA goal by June 2026 requires daily skill building
         - Without deep work: No LeetCode progress, no system design mastery
         - Historical: Jan 2025 collapse → 3-month spiral → opportunity lost
         
-        **Constitution Reference:**
+        <b>Constitution Reference:</b>
         Section III.C: Daily AI Check-In
         - "2+ hours focused work/study" (Tier 1 non-negotiable)
         Principle 2: "Create Don't Consume"
         Section III.B: Career Goal (₹28-42 LPA by June 2026)
         
-        **Message Strategy:**
+        <b>Message Strategy:</b>
         1. Show evidence (avg hours, days affected)
         2. Connect to specific goal (June 2026 career)
         3. Reference historical pattern (Jan 2025)
@@ -734,35 +734,35 @@ Block apps NOW. Don't wait.
         avg_hours = pattern.data.get("avg_deep_work_hours", 0)
         target = pattern.data.get("target", 2.0)
         
-        return f"""🚨 **DEEP WORK COLLAPSE**
+        return f"""🚨 <b>DEEP WORK COLLAPSE</b>
 
 You've averaged {avg_hours} hours deep work for {days} days.
-**Constitution target: {target}+ hours.**
+<b>Constitution target: {target}+ hours.</b>
 
-**This is how you miss June 2026 career goals (₹28-42 LPA).**
+<b>This is how you miss June 2026 career goals (₹28-42 LPA).</b>
 
-**Historical Pattern:**
+<b>Historical Pattern:</b>
 • Jan 2025: Deep work collapse → no job offers
 • Recovery took 3 months
 • You've seen this movie before
 
-**Root Cause Analysis:**
+<b>Root Cause Analysis:</b>
 What's blocking deep work?
 • Meetings eating your calendar?
 • Distractions (phone, notifications)?
 • Energy/motivation low?
 • Avoiding difficult tasks (LeetCode hard problems)?
 
-**Actions NOW:**
-1. **Block calendar:** 2-hour morning slot (6:30-8:30 AM) - NON-NEGOTIABLE
+<b>Actions NOW:</b>
+1. <b>Block calendar:</b> 2-hour morning slot (6:30-8:30 AM) - NON-NEGOTIABLE
 2. Phone on airplane mode during deep work
 3. Track specific output (LeetCode problems solved, not just "hours")
 4. Identify #1 distraction → remove it TODAY
 
-**Tomorrow's Deep Work:**
+<b>Tomorrow's Deep Work:</b>
 2+ hours, no excuses. Your ₹28-42 LPA goal depends on it.
 
-**If you don't fix this by Friday → Maintenance Mode warning.**
+<b>If you don't fix this by Friday → Maintenance Mode warning.</b>
 
 *Your future self will either thank you or regret this week. Choose.*"""
     
@@ -770,30 +770,30 @@ What's blocking deep work?
         """
         Build relationship interference intervention message (Phase 3D).
         
-        **What is Relationship Interference?**
+        <b>What is Relationship Interference?</b>
         CRITICAL pattern where boundary violations correlate (>70%) with 
         sleep/training failures. This is the EXACT pattern from toxic relationship
         (Feb-July 2025) that caused 6-month regression.
         
-        **Why This is CRITICAL:**
+        <b>Why This is CRITICAL:</b>
         Historical evidence from constitution:
         - Feb-July 2025: Boundary violations → sleep/training failures
         - 6-month regression (job search stalled, fitness declined)
         - Pattern ended in breakup anyway (fear of loss = loss happened)
         - Constitution Principle 5 violation: "Fear of loss is not a reason to stay"
         
-        **Constitution Reference:**
+        <b>Constitution Reference:</b>
         Section G - Interrupt Pattern 4: "The Boundary Violation (Relationship)"
         Principle 5: "Fear of Loss is Not a Reason to Stay"
         - Quote: "I do not tolerate toxic relationships out of fear of losing them"
         
-        **Detection Method:**
+        <b>Detection Method:</b>
         Correlation-based (not simple threshold):
         - Boundary violation days: X
         - Days where violation → sleep/training failure: Y
         - Correlation: Y/X > 70% → PATTERN DETECTED
         
-        **Message Strategy:**
+        <b>Message Strategy:</b>
         1. Show evidence (correlation percentage, days affected)
         2. Reference EXACT historical pattern (Feb-July 2025)
         3. Quote Constitution Principle 5
@@ -812,37 +812,37 @@ What's blocking deep work?
         correlation = pattern.data.get("correlation_pct", 0)
         total = pattern.data.get("total_days_analyzed", 0)
         
-        return f"""🚨 **RELATIONSHIP INTERFERENCE PATTERN DETECTED**
+        return f"""🚨 <b>RELATIONSHIP INTERFERENCE PATTERN DETECTED</b>
 
 {days}/{boundary_violations} boundary violations → Sleep/Training failures
-**Correlation: {correlation}% (threshold: 70%)**
+<b>Correlation: {correlation}% (threshold: 70%)</b>
 
-**This is the EXACT pattern from your toxic relationship (Feb-July 2025).**
+<b>This is the EXACT pattern from your toxic relationship (Feb-July 2025).</b>
 
-**Constitution Principle 5:**
+<b>Constitution Principle 5:</b>
 "Fear of loss is not a reason to stay."
 "I do not tolerate toxic relationships, jobs, or situations out of fear of losing them."
 
-**Historical Consequences:**
+<b>Historical Consequences:</b>
 • Feb-July 2025: 6-month regression
 • Sacrificed sleep for 1-1.5hr calls about partying
 • Missed workouts due to exhaustion
 • Job search stalled → opportunity lost
 • Ended in breakup anyway (feared loss happened regardless)
 
-**Critical Questions:**
+<b>Critical Questions:</b>
 1. Are you sacrificing constitution for this person?
 2. Do they respect your boundaries when you set them?
 3. Are you afraid to enforce boundaries? ⚠️ RED FLAG
 4. Is this relationship making you better or worse?
 
-**Actions NOW:**
-1. **Set boundary TODAY:** "I need my sleep/training time, non-negotiable."
+<b>Actions NOW:</b>
+1. <b>Set boundary TODAY:</b> "I need my sleep/training time, non-negotiable."
 2. Observe reaction: Supportive? Or guilt-trip?
 3. If guilt-trip → Relationship audit required
 4. If pattern continues 3 more days → Serious conversation needed
 
-**This is your system telling you something is wrong.**
+<b>This is your system telling you something is wrong.</b>
 
 Listen to it. Your future self will thank you.
 

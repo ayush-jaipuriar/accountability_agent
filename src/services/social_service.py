@@ -4,22 +4,22 @@ Social Service - Leaderboard, Referrals, and Shareable Stats
 
 Phase 3F: Social features to increase engagement and retention.
 
-**Three Components:**
+<b>Three Components:</b>
 1. Leaderboard - Weekly compliance ranking with privacy controls
 2. Referral System - Invite tracking with deep-link attribution
 3. Shareable Stats - Image generation for social sharing
 
-**Privacy Model: Opt-In**
+<b>Privacy Model: Opt-In</b>
 Users are NOT shown on the leaderboard by default. They must opt in.
 This respects privacy while still enabling social comparison for those
 who want it. Stored as a boolean flag on the User document.
 
-**Referral Deep Links:**
+<b>Referral Deep Links:</b>
 Telegram supports bot deep links: t.me/botname?start=ref_USERID
 When a new user clicks this link, Telegram sends /start ref_USERID
 to the bot. We parse the referral code and attribute the new user.
 
-**Cost: $0.00** (all logic runs against existing Firestore data)
+<b>Cost: $0.00</b> (all logic runs against existing Firestore data)
 """
 
 import io
@@ -42,17 +42,17 @@ def calculate_leaderboard(
     """
     Calculate leaderboard rankings for all opted-in users.
     
-    **Ranking Algorithm:**
+    <b>Ranking Algorithm:</b>
     1. Primary sort: Average compliance score (last N days)
     2. Tiebreaker: Current streak length
     3. Minimum qualification: 3+ check-ins in the period
     
-    **Why Compliance + Streak?**
+    <b>Why Compliance + Streak?</b>
     Compliance measures quality (how well you do each day).
     Streak measures consistency (how many days in a row).
     Together they reward users who are both consistent AND thorough.
     
-    **Privacy: Opt-In Only**
+    <b>Privacy: Opt-In Only</b>
     Only users with leaderboard_opt_in=True are included.
     This is checked via a field on the User document.
     
@@ -114,7 +114,7 @@ def format_leaderboard_message(
     """
     Format leaderboard as a Telegram-friendly message.
     
-    **Design Decisions:**
+    <b>Design Decisions:</b>
     - First name only (privacy)
     - Rank medals for top 3 (🥇🥈🥉)
     - Compliance + streak shown for each entry
@@ -189,7 +189,7 @@ def generate_referral_link(user_id: str, bot_username: str) -> str:
     """
     Generate a Telegram deep-link referral URL.
     
-    **How Telegram Deep Links Work:**
+    <b>How Telegram Deep Links Work:</b>
     When someone clicks t.me/botname?start=PAYLOAD, Telegram sends
     the bot a /start command with the payload as argument:
     
@@ -197,7 +197,7 @@ def generate_referral_link(user_id: str, bot_username: str) -> str:
     
     We parse this in the start_command handler to attribute the referral.
     
-    **Payload Format:** ref_{user_id}
+    <b>Payload Format:</b> ref_{user_id}
     Simple and traceable. User IDs are already unique.
     
     Args:
@@ -214,7 +214,7 @@ def get_referral_stats(user_id: str) -> Dict[str, Any]:
     """
     Get referral statistics for a user.
     
-    **Tracked Metrics:**
+    <b>Tracked Metrics:</b>
     - Total referrals: Number of users who joined via this user's link
     - Active referrals: Users with 7+ check-ins in last 30 days
     - Reward: Compliance boost percentage (1% per active, max 5%)
@@ -290,19 +290,19 @@ def generate_shareable_stats_image(user: User, checkins: List[DailyCheckIn]) -> 
     """
     Generate a visually appealing stats image for social sharing.
     
-    **Image Design:**
+    <b>Image Design:</b>
     - Mobile-optimized (1080x1920 story format)
     - Dark gradient background (modern look)
     - Key stats: streak, compliance, check-in count
     - QR code at bottom linking to bot
     - Branded with bot name
     
-    **Theory: Social Proof via Shareable Content**
+    <b>Theory: Social Proof via Shareable Content</b>
     When users share their stats, it creates social proof for the bot.
     The image acts as both a brag and an advertisement. The QR code
     makes it easy for viewers to join, completing the viral loop.
     
-    **Technology:** Pillow for image composition, qrcode for QR generation
+    <b>Technology:</b> Pillow for image composition, qrcode for QR generation
     
     Args:
         user: User profile

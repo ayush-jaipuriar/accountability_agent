@@ -4,18 +4,18 @@ UX Utilities - Formatting, Error Messages, and Timeout Handling
 
 Phase 3F: Standardized UX components for consistent user experience.
 
-**Three Pillars:**
+<b>Three Pillars:</b>
 1. Message Formatting - Consistent visual structure across all commands
 2. Error Messages - Helpful, actionable errors with emoji indicators
 3. Timeout Management - Conversation state tracking and auto-cleanup
 
-**Design Philosophy:**
+<b>Design Philosophy:</b>
 - Telegram messages have limited formatting (HTML/Markdown)
 - Mobile screens are small - concise is better
 - Every error must answer: "What happened?" and "What should I do?"
 - Emojis are semantic (success=✅, error=❌, warning=⚠️), not decorative
 
-**Why a Utility Module?**
+<b>Why a Utility Module?</b>
 These functions are used by every command handler. Centralizing them:
 1. Ensures consistency (all messages look the same)
 2. Makes updates easy (change format in one place)
@@ -71,7 +71,7 @@ def format_header(title: str, subtitle: Optional[str] = None) -> str:
     """
     Format a consistent message header.
     
-    **Structure:**
+    <b>Structure:</b>
     <b>EMOJI Title</b>
     <i>Subtitle (if provided)</i>
     
@@ -92,7 +92,7 @@ def format_stat_line(label: str, value: str, emoji_key: Optional[str] = None) ->
     """
     Format a single statistic line.
     
-    **Structure:**
+    <b>Structure:</b>
     • EMOJI <b>Label:</b> Value
     
     Args:
@@ -111,7 +111,7 @@ def format_command_hint(command: str, description: str) -> str:
     """
     Format a command suggestion.
     
-    **Structure:**
+    <b>Structure:</b>
     /{command} - Description
     
     Args:
@@ -128,7 +128,7 @@ def format_section(title: str, content: str) -> str:
     """
     Format a message section with header and content.
     
-    **Structure:**
+    <b>Structure:</b>
     <b>Title:</b>
     Content
     
@@ -157,14 +157,14 @@ class ErrorMessages:
     """
     Centralized error messages following a consistent pattern.
     
-    **Pattern: Emoji + What Happened + What To Do**
+    <b>Pattern: Emoji + What Happened + What To Do</b>
     
     Every error message follows this structure:
     1. Emoji indicator (❌, ⚠️, 🔧)
     2. Clear explanation of what went wrong
     3. Actionable next step
     
-    **Theory: Error Messages as UX**
+    <b>Theory: Error Messages as UX</b>
     Most apps show generic "An error occurred" messages. This is a
     missed opportunity. Good error messages:
     - Reduce support requests (user can self-serve)
@@ -262,24 +262,24 @@ class TimeoutManager:
     """
     Manages conversation timeout tracking and cleanup.
     
-    **Problem:** When a user starts a check-in but doesn't finish,
+    <b>Problem:</b> When a user starts a check-in but doesn't finish,
     the conversation state gets stuck. The bot keeps waiting for
     the next answer indefinitely, which:
     1. Confuses the user ("Why isn't /status working?")
     2. Wastes memory (conversation state stored in RAM)
     3. Can corrupt data (partial check-in state)
     
-    **Solution: Proactive Timeouts**
+    <b>Solution: Proactive Timeouts</b>
     - Check-in: 15 min → reminder, 30 min → auto-cancel
     - Query: 5 min → auto-cancel
     - Store partial state for /resume capability
     
-    **Implementation:**
+    <b>Implementation:</b>
     We store the start timestamp in context.user_data when a
     conversation begins. A background check (or middleware) compares
     against current time and triggers cleanup if expired.
     
-    **Firestore State Storage:**
+    <b>Firestore State Storage:</b>
     Partial check-in data is stored in Firestore under:
     partial_checkins/{user_id} → {state, last_updated, data}
     This enables /resume across server restarts.
@@ -353,7 +353,7 @@ class TimeoutManager:
         Stores the current state of an incomplete conversation so
         the user can pick up where they left off later.
         
-        **Firestore Structure:**
+        <b>Firestore Structure:</b>
         partial_checkins/{user_id}:
         {
             "conversation_type": "checkin",
@@ -457,7 +457,7 @@ def generate_help_text() -> str:
     """
     Generate comprehensive help text organized by category.
     
-    **Design: Category-Based Organization**
+    <b>Design: Category-Based Organization</b>
     Commands are grouped by function (Check-Ins, Stats, Social, Settings)
     rather than listed alphabetically. This helps users find what they
     need based on intent rather than knowing the command name.
@@ -530,11 +530,11 @@ def format_partner_dashboard(
     """
     Format the /partner_status dashboard message.
 
-    **Privacy Model (Aggregate Only):**
+    <b>Privacy Model (Aggregate Only):</b>
     Partners see streak, compliance %, and check-in status.
     They do NOT see individual Tier 1 items, challenges, or ratings.
 
-    **Design:**
+    <b>Design:</b>
     - Top: partner identity
     - Middle: today's status + streak + weekly stats
     - Bottom: motivational comparison footer
@@ -613,7 +613,7 @@ def get_partner_comparison_footer(
     """
     Generate a motivational comparison footer for the partner dashboard.
 
-    **Framing philosophy:** Always encouraging, never shaming.
+    <b>Framing philosophy:</b> Always encouraging, never shaming.
     - Leading = positive reinforcement
     - Behind = competitive nudge
     - Tied = celebration of teamwork

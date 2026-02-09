@@ -4,3 +4,34 @@ markers = [
     "integration: marks tests as integration tests (slow)",
     "unit: marks tests as unit tests (fast)",
 ]
+# Default pytest-cov options: measure src/ directory, show missing lines
+addopts = "--cov=src --cov-report=term-missing --cov-report=html:htmlcov --cov-config=pyproject.toml"
+
+[tool.coverage.run]
+# Branch coverage checks both sides of if/else, not just line execution
+branch = true
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+    "src/config.py",        # Config loading, not logic
+]
+
+[tool.coverage.report]
+# Exclude lines that are defensive/boilerplate from coverage stats
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if __name__ == .__main__.",
+    "raise NotImplementedError",
+    "pass",
+    "except ImportError",
+]
+# Show which lines are missing coverage in terminal output
+show_missing = true
+# Minimum coverage percentage (can increase as coverage improves)
+# fail_under = 40
+
+[tool.coverage.html]
+directory = "htmlcov"

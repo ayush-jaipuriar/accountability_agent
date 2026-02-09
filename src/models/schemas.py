@@ -245,7 +245,7 @@ class Tier1NonNegotiables(BaseModel):
     """
     Tier 1 non-negotiables from constitution.
     
-    **Phase 3D Expansion: 5 items → 6 items**
+    <b>Phase 3D Expansion: 5 items → 6 items</b>
     
     6 Core Habits (Boolean + Optional Details):
     1. Sleep: 7+ hours
@@ -255,13 +255,13 @@ class Tier1NonNegotiables(BaseModel):
     5. Zero Porn: No consumption (absolute rule)
     6. Boundaries: No toxic interactions
     
-    **Why Add Skill Building?**
+    <b>Why Add Skill Building?</b>
     - Constitution Section III.B mandates daily skill building (LeetCode, system design)
     - June 2026 career goal (₹28-42 LPA) requires tracking
     - Different from general deep work (career-specific learning)
     - Question adapts to career mode (skill_building/job_searching/employed)
     
-    **Backward Compatibility:**
+    <b>Backward Compatibility:</b>
     - skill_building has default value False
     - Old check-ins without this field will work (Pydantic sets default)
     - New check-ins require this field

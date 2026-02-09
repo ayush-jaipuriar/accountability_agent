@@ -7,9 +7,9 @@ In-memory metrics tracking for application health monitoring.
 Architecture Concept: Observability Triad
 -----------------------------------------
 Production systems need three pillars of observability:
-1. **Logs** — What happened (events, errors, debug info)
-2. **Metrics** — How much (counters, gauges, histograms)
-3. **Traces** — How long (request flows, latencies)
+1. <b>Logs</b> — What happened (events, errors, debug info)
+2. <b>Metrics</b> — How much (counters, gauges, histograms)
+3. <b>Traces</b> — How long (request flows, latencies)
 
 This module provides pillar #2 (Metrics). It collects:
 - Counters: Total check-ins, commands processed, errors
@@ -17,13 +17,13 @@ This module provides pillar #2 (Metrics). It collects:
 - Error rates: Categorized by source (Telegram, Firestore, AI, etc.)
 
 Design Decisions:
-- **In-memory** (no Redis/external store): Acceptable for a single-instance Cloud Run service.
+- <b>In-memory</b> (no Redis/external store): Acceptable for a single-instance Cloud Run service.
   Metrics reset on deployment/restart, which is fine because:
   1. Restarts are rare (Cloud Run keeps warm instances)
   2. Failing open (allowing on restart) is better than failing closed
   3. Avoids external dependency cost and complexity
-- **Thread-safe** via simple operations: Python's GIL makes counter increments atomic.
-- **Fixed-size latency buffers**: Keep last 100 entries per metric to bound memory usage.
+- <b>Thread-safe</b> via simple operations: Python's GIL makes counter increments atomic.
+- <b>Fixed-size latency buffers</b>: Keep last 100 entries per metric to bound memory usage.
 
 Usage:
     from src.utils.metrics import metrics

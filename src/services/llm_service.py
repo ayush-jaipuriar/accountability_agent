@@ -6,28 +6,28 @@ It provides a simple interface for text generation while tracking token usage an
 
 Key Concepts:
 --------------
-1. **Google GenAI SDK**: Modern unified SDK for Gemini
+1. <b>Google GenAI SDK</b>: Modern unified SDK for Gemini
    - Supports both Gemini Developer API and Vertex AI
    - Supports thinking_budget parameter (critical for cost optimization)
    - Cleaner API than older vertexai SDK
    
-2. **Gemini 2.5 Flash**: The model we're using
+2. <b>Gemini 2.5 Flash</b>: The model we're using
    - Fast: <2 second response times
    - Cheap: $0.25/M input tokens, $0.50/M output tokens
    - Smart enough for our use cases (intent classification, feedback generation)
    - Thinking mode can be disabled to save tokens!
    
-3. **Token Counting**: 
+3. <b>Token Counting</b>: 
    - Tokens are the "units" of text the model processes
    - Roughly: 1 token ≈ 4 characters (or ~0.75 words)
    - We track every API call to stay under budget
    
-4. **Thinking Budget Optimization**:
+4. <b>Thinking Budget Optimization</b>:
    - Gemini 2.5 Flash has thinking/reasoning mode enabled by default
    - This uses invisible tokens for internal reasoning
    - We disable it with thinking_budget=0 to save ~40% on tokens!
    
-5. **Singleton Pattern**:
+5. <b>Singleton Pattern</b>:
    - Only one LLMService instance exists across the app
    - Avoids re-initializing client multiple times
    - Accessed via get_llm_service() function
@@ -122,20 +122,20 @@ class LLMService:
             
         Theory - Understanding the Parameters:
         ---------------------------------------
-        1. **Temperature**: Controls randomness
+        1. <b>Temperature</b>: Controls randomness
            - 0.0: Always picks most likely word (deterministic)
            - 0.5: Balanced (good for classification)
            - 1.0: More creative/diverse (good for feedback)
            
-        2. **Top-p (nucleus sampling)**: Considers tokens with cumulative probability p
+        2. <b>Top-p (nucleus sampling)</b>: Considers tokens with cumulative probability p
            - 0.95 means "consider tokens until 95% probability mass is covered"
            - Prevents model from sampling very unlikely words
            
-        3. **Top-k**: Only consider top k most likely tokens
+        3. <b>Top-k</b>: Only consider top k most likely tokens
            - 40 means "only sample from the 40 most likely next words"
            - Prevents nonsense by ignoring very rare words
         
-        4. **Thinking Budget = 0**: Disables internal reasoning
+        4. <b>Thinking Budget = 0</b>: Disables internal reasoning
            - Gemini 2.5 Flash normally uses tokens for "thinking"
            - These thinking tokens are invisible but cost money
            - Setting to 0 disables thinking = saves ~40% on tokens!

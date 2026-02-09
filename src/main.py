@@ -498,8 +498,8 @@ async def pattern_scan_trigger(request: Request):
                                             # Phase C: Enhanced ghosting alert with partner context
                                             partner_streak = partner.streaks.current_streak
                                             partner_msg = (
-                                                f"🚨 **Accountability Partner Alert**\n\n"
-                                                f"Your partner **{user.name}** hasn't checked in for **{days_missing} days**.\n\n"
+                                                f"🚨 <b>Accountability Partner Alert</b>\n\n"
+                                                f"Your partner <b>{user.name}</b> hasn't checked in for <b>{days_missing} days</b>.\n\n"
                                                 f"📊 Their streak before ghosting: {user.streaks.current_streak} days\n"
                                                 f"📅 Last check-in: {last_checkin}\n\n"
                                                 f"This is serious. Consider reaching out to check on them:\n"
@@ -599,7 +599,7 @@ async def reminder_first(request: Request):
                 
                 # Send friendly first reminder
                 message = (
-                    f"🔔 **Daily Check-In Time!**\n\n"
+                    f"🔔 <b>Daily Check-In Time!</b>\n\n"
                     f"Hey {user.name}! It's 9 PM - time for your daily check-in.\n\n"
                     f"🔥 Current streak: {user.streaks.current_streak} days\n"
                     f"🎯 Mode: {user.constitution_mode.title()}\n\n"
@@ -609,7 +609,8 @@ async def reminder_first(request: Request):
                 
                 await bot_manager.bot.send_message(
                     chat_id=user.telegram_id,
-                    text=message
+                    text=message,
+                    parse_mode='HTML'
                 )
                 
                 # Mark reminder as sent
@@ -679,7 +680,7 @@ async def reminder_second(request: Request):
                 
                 # Send nudge reminder
                 message = (
-                    f"👋 **Still There?**\n\n"
+                    f"👋 <b>Still There?</b>\n\n"
                     f"Hey {user.name}, your daily check-in is waiting!\n\n"
                     f"🔥 Don't break your {user.streaks.current_streak}-day streak\n"
                     f"⏰ Check-in closes at midnight\n\n"
@@ -688,7 +689,8 @@ async def reminder_second(request: Request):
                 
                 await bot_manager.bot.send_message(
                     chat_id=user.telegram_id,
-                    text=message
+                    text=message,
+                    parse_mode='HTML'
                 )
                 
                 # Mark reminder as sent
@@ -758,7 +760,7 @@ async def reminder_third(request: Request):
                 
                 # Send urgent reminder with streak shield info
                 message = (
-                    f"⚠️ **URGENT: Check-In Closing Soon!**\n\n"
+                    f"⚠️ <b>URGENT: Check-In Closing Soon!</b>\n\n"
                     f"⏰ Only 2 hours left until midnight!\n"
                     f"🔥 Your {user.streaks.current_streak}-day streak is at risk\n\n"
                 )
@@ -775,13 +777,14 @@ async def reminder_third(request: Request):
                     )
                 
                 message += (
-                    f"**Don't let one missed day undo {user.streaks.current_streak} days of work.**\n\n"
+                    f"<b>Don't let one missed day undo {user.streaks.current_streak} days of work.</b>\n\n"
                     f"Check in NOW: /checkin"
                 )
                 
                 await bot_manager.bot.send_message(
                     chat_id=user.telegram_id,
-                    text=message
+                    text=message,
+                    parse_mode='HTML'
                 )
                 
                 # Mark reminder as sent
@@ -819,7 +822,7 @@ async def reminder_tz_aware(request: Request):
     """
     Timezone-aware unified reminder endpoint (Phase B).
     
-    **Architecture:**
+    <b>Architecture:</b>
     Instead of 3 fixed IST endpoints, this single endpoint is called
     by Cloud Scheduler every 15 minutes. Each invocation:
     
@@ -829,17 +832,17 @@ async def reminder_tz_aware(request: Request):
     3. Sends the appropriate reminder (first/second/third) based on
        which target time matched
     
-    **Why 15-minute intervals?**
+    <b>Why 15-minute intervals?</b>
     - Timezone offsets come in 15/30/45/60 minute increments
     - 15 minutes captures all offsets without duplication
     - Cloud Scheduler fires 96 times/day (cheap & reliable)
     
-    **Why keep the old endpoints?**
+    <b>Why keep the old endpoints?</b>
     - Backward compatibility during migration
     - Fallback if the new system has issues
     - Can be deprecated once bucket system is proven
     
-    **Reminder tiers (in user's local time):**
+    <b>Reminder tiers (in user's local time):</b>
     - 21:00 → First reminder (friendly)
     - 21:30 → Second reminder (nudge)
     - 22:00 → Third reminder (urgent)
@@ -908,7 +911,7 @@ async def reminder_tz_aware(request: Request):
                     # Build message based on tier
                     if tier_name == "first":
                         message = (
-                            f"🔔 **Daily Check-In Time!**\n\n"
+                            f"🔔 <b>Daily Check-In Time!</b>\n\n"
                             f"Hey {user.name}! It's 9 PM — time for your daily check-in.\n\n"
                             f"🔥 Current streak: {user.streaks.current_streak} days\n"
                             f"🎯 Mode: {user.constitution_mode.title()}\n\n"
@@ -917,7 +920,7 @@ async def reminder_tz_aware(request: Request):
                         )
                     elif tier_name == "second":
                         message = (
-                            f"👋 **Still There?**\n\n"
+                            f"👋 <b>Still There?</b>\n\n"
                             f"Hey {user.name}, your daily check-in is waiting!\n\n"
                             f"🔥 Don't break your {user.streaks.current_streak}-day streak\n"
                             f"⏰ Check-in closes at midnight\n\n"
@@ -925,7 +928,7 @@ async def reminder_tz_aware(request: Request):
                         )
                     else:  # third
                         message = (
-                            f"⚠️ **URGENT: Check-In Closing Soon!**\n\n"
+                            f"⚠️ <b>URGENT: Check-In Closing Soon!</b>\n\n"
                             f"⏰ Only 2 hours left until midnight!\n"
                             f"🔥 Your {user.streaks.current_streak}-day streak is at risk\n\n"
                         )
@@ -937,13 +940,14 @@ async def reminder_tz_aware(request: Request):
                         else:
                             message += f"🛡️ No streak shields remaining — this is critical!\n\n"
                         message += (
-                            f"**Don't let one missed day undo {user.streaks.current_streak} days of work.**\n\n"
+                            f"<b>Don't let one missed day undo {user.streaks.current_streak} days of work.</b>\n\n"
                             f"Check in NOW: /checkin"
                         )
                     
                     await bot_manager.bot.send_message(
                         chat_id=user.telegram_id,
-                        text=message
+                        text=message,
+                        parse_mode='HTML'
                     )
                     
                     firestore_service.set_reminder_sent(user.user_id, user_today, tier_name)
@@ -986,14 +990,14 @@ async def reset_quick_checkins(request: Request):
     """
     Reset quick check-in counters every Monday 12:00 AM IST (Phase 3E).
     
-    **Purpose:**
+    <b>Purpose:</b>
     - Quick check-ins limited to 2 per week
     - Counter resets every Monday to give users a fresh start
     - Tracks history of which dates were used
     
-    **Triggered by:** Cloud Scheduler (weekly, Monday 00:00 IST)
+    <b>Triggered by:</b> Cloud Scheduler (weekly, Monday 00:00 IST)
     
-    **Process:**
+    <b>Process:</b>
     1. Get all users
     2. Reset quick_checkin_count to 0
     3. Clear quick_checkin_used_dates (optional: keep for history)
@@ -1072,19 +1076,19 @@ async def weekly_report_trigger(request: Request):
     
     Called by Cloud Scheduler every Sunday 9:00 AM IST.
     
-    **Process:**
+    <b>Process:</b>
     1. Iterate over all active users
     2. For each user: generate 4 graphs + AI insights
     3. Send report via Telegram (text + 4 images)
     4. Return aggregate results
     
-    **Performance Considerations:**
+    <b>Performance Considerations:</b>
     - Reports are generated sequentially (Telegram rate limits: 30 msg/s)
     - Each report takes ~5-15 seconds (graph generation + LLM call)
     - For 10 users: ~2.5 minutes total
     - Cloud Run timeout: 300s (5 minutes) - sufficient for 20+ users
     
-    **Cost:**
+    <b>Cost:</b>
     - Graph generation: $0.00 (matplotlib)
     - AI insights: ~$0.003/month (300 tokens × 40 reports)
     - Cloud Scheduler: $0.10/month per job

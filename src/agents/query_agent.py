@@ -4,7 +4,7 @@ Query Agent - Natural Language Data Queries
 
 Phase 3E: Handles user queries about their historical data.
 
-**Purpose:**
+<b>Purpose:</b>
 Users want to ask questions like:
 - "What's my average compliance this month?"
 - "When did I last miss training?"
@@ -17,12 +17,12 @@ Without the Query Agent, users would need to:
 
 With Query Agent: Just ask in natural language, get instant answer.
 
-**Architecture:**
+<b>Architecture:</b>
 1. Classify query intent (what data user wants)
 2. Fetch relevant data from Firestore
 3. Generate natural language response using Gemini
 
-**Query Types Supported:**
+<b>Query Types Supported:</b>
 - compliance_average: Average compliance over time period
 - streak_info: Current/longest streak information
 - training_history: Workout completion history
@@ -32,17 +32,17 @@ With Query Agent: Just ask in natural language, get instant answer.
 
 Key Concepts:
 -------------
-1. **Intent Classification**: Use LLM to understand what user is asking
+1. <b>Intent Classification</b>: Use LLM to understand what user is asking
    - "what's my" → wants a stat
    - "when did" → wants historical event
    - "show me" → wants data visualization/summary
 
-2. **Data Aggregation**: Fetch and compute stats
+2. <b>Data Aggregation</b>: Fetch and compute stats
    - Average: mean([values])
    - Count: len([items matching criteria])
    - Percentiles: Compare to other users
 
-3. **Natural Language Generation**: Convert numbers → human-readable
+3. <b>Natural Language Generation</b>: Convert numbers → human-readable
    - Input: {"avg_compliance": 87, "days": 26}
    - Output: "Your average compliance this month is 87% over 26 days."
 """
@@ -65,14 +65,14 @@ class QueryAgent:
     """
     Handles natural language queries about user data (Phase 3E).
     
-    **Process Flow:**
+    <b>Process Flow:</b>
     1. Receive query via LangGraph state
     2. Classify query intent using Gemini
     3. Fetch relevant data from Firestore
     4. Generate natural language response
     5. Return updated state with response
     
-    **Example Interaction:**
+    <b>Example Interaction:</b>
     User: "What's my average compliance this month?"
     
     Step 1: Classify → "compliance_average"
@@ -80,7 +80,7 @@ class QueryAgent:
     Step 3: Generate → "Your average compliance this month is 87%.
                        Breakdown: Days tracked: 26/31, 100% days: 12..."
     
-    **Integration:**
+    <b>Integration:</b>
     - Supervisor routes messages with query keywords to QueryAgent
     - QueryAgent returns response in state.response
     - Main application sends response via Telegram
@@ -106,7 +106,7 @@ class QueryAgent:
         """
         Process user query and generate response.
         
-        **Workflow:**
+        <b>Workflow:</b>
         1. Classify query intent (what type of data they want)
         2. Fetch relevant data from Firestore
         3. Generate natural language response using Gemini
@@ -168,7 +168,7 @@ class QueryAgent:
         """
         Classify query intent using Gemini.
         
-        **Classification Categories:**
+        <b>Classification Categories:</b>
         - compliance_average: Questions about average/overall compliance
         - streak_info: Questions about streaks (longest, current, etc.)
         - training_history: Questions about workout history
@@ -177,7 +177,7 @@ class QueryAgent:
         - goal_progress: Questions about career/goal progress
         - unknown: Can't classify (fallback)
         
-        **Why Use LLM for Classification:**
+        <b>Why Use LLM for Classification:</b>
         Users ask questions in many ways:
         - "What's my average compliance?" → compliance_average
         - "How am I doing overall?" → compliance_average (same intent, different words!)
@@ -207,7 +207,7 @@ Categories:
 - goal_progress: Questions about career goals, June 2026 targets, progress tracking
 - unknown: Can't classify or not a data query
 
-**Examples:**
+<b>Examples:</b>
 - "What's my average compliance this month?" → compliance_average
 - "How am I doing?" → compliance_average
 - "Show me my longest streak" → streak_info
@@ -217,7 +217,7 @@ Categories:
 - "Am I on track for June goals?" → goal_progress
 - "Hello how are you?" → unknown
 
-**Return ONLY the category name (no explanation).**
+<b>Return ONLY the category name (no explanation).</b>
 
 Category:"""
 
@@ -249,7 +249,7 @@ Category:"""
         """
         Fetch relevant data from Firestore based on query type.
         
-        **Data Sources:**
+        <b>Data Sources:</b>
         - User profile: Streak data, career mode, settings
         - Check-ins: Historical check-in records (7, 30, or 90 days)
         - Patterns: Detected violation patterns
@@ -418,15 +418,15 @@ Category:"""
         """
         Generate natural language response from data.
         
-        **Goal:** Convert raw numbers into human-readable, encouraging response.
+        <b>Goal:</b> Convert raw numbers into human-readable, encouraging response.
         
-        **Response Structure:**
+        <b>Response Structure:</b>
         1. Direct answer to question
         2. Breakdown with specific numbers
         3. Context (percentile, trend, comparison)
         4. Encouragement or suggestion
         
-        **Why Use LLM:**
+        <b>Why Use LLM:</b>
         - Numbers → Natural language ("87%" → "a strong 87%")
         - Context-aware phrasing ("top 20%" vs "room for improvement")
         - Encouraging tone without being generic
@@ -449,16 +449,16 @@ Category:"""
             # Build prompt for Gemini
             prompt = f"""Generate a helpful response to this user query.
 
-**User Query:** "{query}"
+<b>User Query:</b> "{query}"
 
-**Query Type:** {query_type}
+<b>Query Type:</b> {query_type}
 
-**Data:**
+<b>Data:</b>
 {json.dumps(data, indent=2)}
 
-**Task:** Generate a concise, helpful response (max 200 words).
+<b>Task:</b> Generate a concise, helpful response (max 200 words).
 
-**Requirements:**
+<b>Requirements:</b>
 1. Answer the question directly
 2. Include specific numbers from data
 3. Add context (percentiles, trends, comparisons)
@@ -466,13 +466,13 @@ Category:"""
 5. Use emojis sparingly (1-2 only)
 6. Format with markdown for readability
 
-**Response Style:**
+<b>Response Style:</b>
 - Friendly but data-focused
 - Specific (use actual numbers, not vague terms)
 - Encouraging without being generic
 - Actionable (suggest next steps if relevant)
 
-**Examples of Good Responses:**
+<b>Examples of Good Responses:</b>
 
 Query: "What's my average compliance?"
 Response: "📊 Your average compliance this month is 87%.
@@ -497,7 +497,7 @@ Recent training:
 
 Consistency: 80% this week (4/5 workout days)"
 
-**Your Response:**"""
+<b>Your Response:</b>"""
 
             response = await self.llm.generate_text(
                 prompt=prompt,

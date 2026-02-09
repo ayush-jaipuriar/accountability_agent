@@ -4,27 +4,27 @@ Export Service - CSV, JSON, PDF Data Export
 
 Phase 3F: Allows users to export all their check-in data in multiple formats.
 
-**Architecture Pattern: Strategy Pattern**
+<b>Architecture Pattern: Strategy Pattern</b>
 - Single entry point (export_data) delegates to format-specific functions
 - Each format (CSV, JSON, PDF) is an isolated function
 - Easy to add new formats (e.g., Excel) without modifying existing code
 
-**Supported Formats:**
+<b>Supported Formats:</b>
 1. CSV  - Machine-readable, Excel/Google Sheets compatible
 2. JSON - Complete data with nested structures, developer-friendly
 3. PDF  - Human-readable formatted report with summary statistics
 
-**File Delivery:**
+<b>File Delivery:</b>
 - Files are generated in memory (BytesIO) to avoid disk I/O on Cloud Run
 - Sent via Telegram's document upload API
 - Files are ephemeral (not stored in Cloud Storage)
 
-**Why No pandas?**
+<b>Why No pandas?</b>
 - CSV module from stdlib is sufficient for flat tabular data
 - Avoids a heavy dependency (~30MB) for a simple export
 - Keeps Docker image small and deploy times fast
 
-**Cost: $0.00** (all open-source libraries, no API calls)
+<b>Cost: $0.00</b> (all open-source libraries, no API calls)
 """
 
 import csv
@@ -46,11 +46,11 @@ def generate_csv_export(checkins: List[DailyCheckIn], user: User) -> io.BytesIO:
     """
     Generate CSV export of all check-in data.
     
-    **CSV Structure:**
+    <b>CSV Structure:</b>
     One row per check-in with columns for all Tier 1 items,
     compliance score, responses, and metadata.
     
-    **Why BytesIO?**
+    <b>Why BytesIO?</b>
     Cloud Run is stateless - no persistent filesystem. BytesIO keeps
     the file in memory, which is passed directly to Telegram's API.
     
@@ -136,14 +136,14 @@ def generate_json_export(checkins: List[DailyCheckIn], user: User) -> io.BytesIO
     """
     Generate JSON export with complete nested data structures.
     
-    **JSON Structure:**
+    <b>JSON Structure:</b>
     {
         "export_metadata": { ... },
         "user_profile": { ... },
         "check_ins": [ { date, tier1: {...}, responses: {...}, ... } ]
     }
     
-    **Why include metadata?**
+    <b>Why include metadata?</b>
     JSON exports are often consumed by scripts or APIs. Including
     metadata (export date, total count, date range) makes the file
     self-documenting and easier to process programmatically.
@@ -245,14 +245,14 @@ def generate_pdf_export(checkins: List[DailyCheckIn], user: User) -> io.BytesIO:
     """
     Generate formatted PDF report with summary statistics.
     
-    **PDF Layout:**
+    <b>PDF Layout:</b>
     1. Header: Title + user info + export date
     2. Summary Statistics: Total check-ins, avg compliance, streak info
     3. Tier 1 Performance: Completion rates for each non-negotiable
     4. Month-by-Month Breakdown: Table with monthly averages
     5. Recent Check-Ins: Last 14 days detail table
     
-    **Why ReportLab?**
+    <b>Why ReportLab?</b>
     - Open source ($0 cost)
     - Pure Python (no system dependencies like wkhtmltopdf)
     - Fine-grained control over layout
@@ -495,7 +495,7 @@ async def export_user_data(
     """
     Main entry point for data export.
     
-    **Strategy Pattern:**
+    <b>Strategy Pattern:</b>
     This function acts as a dispatcher - it receives the desired format
     and delegates to the appropriate generator function. This makes it
     easy to add new formats without modifying existing code.

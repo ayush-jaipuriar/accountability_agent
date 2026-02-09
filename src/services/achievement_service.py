@@ -5,10 +5,10 @@ Handles the gamification layer for user retention and motivation.
 
 Key Concepts:
 --------------
-1. **Behavioral Psychology**: Uses operant conditioning through intermittent rewards
-2. **Progressive Disclosure**: Achievements revealed as user progresses
-3. **Social Proof**: Rarity tiers create aspirational comparison
-4. **Intrinsic Motivation**: Transforms external streaks into internal identity
+1. <b>Behavioral Psychology</b>: Uses operant conditioning through intermittent rewards
+2. <b>Progressive Disclosure</b>: Achievements revealed as user progresses
+3. <b>Social Proof</b>: Rarity tiers create aspirational comparison
+4. <b>Intrinsic Motivation</b>: Transforms external streaks into internal identity
 
 Architecture:
 -------------
@@ -280,7 +280,7 @@ class AchievementService:
         
         Theory:
         -------
-        Streak achievements use **progressive goal-setting**:
+        Streak achievements use <b>progressive goal-setting</b>:
         - Early goals are easy (1, 7 days) - high success rate creates momentum
         - Middle goals are challenging (30, 90 days) - require sustained effort
         - Late goals are aspirational (180, 365 days) - identity-forming
@@ -330,7 +330,7 @@ class AchievementService:
         
         Theory:
         -------
-        Performance achievements use **excellence benchmarking**:
+        Performance achievements use <b>excellence benchmarking</b>:
         - Not just showing up, but performing at 100%
         - Creates higher standard than just consistency
         - Research: High performers motivated by excellence, not just completion
@@ -409,7 +409,7 @@ class AchievementService:
         
         Theory:
         -------
-        Special achievements create **narrative moments**:
+        Special achievements create <b>narrative moments</b>:
         - Comeback King: Celebrates resilience (growth mindset)
         - Shield Master: Rewards strategic use of safety nets
         - These create stories users tell themselves and others
@@ -542,7 +542,7 @@ class AchievementService:
         
         Theory:
         -------
-        Celebration messages use **positive reinforcement psychology**:
+        Celebration messages use <b>positive reinforcement psychology</b>:
         1. Immediate acknowledgment (🎉 ACHIEVEMENT UNLOCKED!)
         2. Specific accomplishment (icon + name + description)
         3. Social context (rarity tier messaging)
@@ -564,9 +564,9 @@ class AchievementService:
             Formatted celebration message (multi-line string)
         
         Example Output:
-            🎉 **ACHIEVEMENT UNLOCKED!**
+            🎉 <b>ACHIEVEMENT UNLOCKED!</b>
             
-            🏆 **Month Master**
+            🏆 <b>Month Master</b>
             30 consecutive days - Top 10% territory
             
             You've built a 30-day streak! 🔥
@@ -578,8 +578,8 @@ class AchievementService:
         
         # Base celebration (lines 1-3)
         message = (
-            f"🎉 **ACHIEVEMENT UNLOCKED!**\n\n"
-            f"{achievement.icon} **{achievement.name}**\n"
+            f"🎉 <b>ACHIEVEMENT UNLOCKED!</b>\n\n"
+            f"{achievement.icon} <b>{achievement.name}</b>\n"
             f"{achievement.description}\n\n"
         )
         
@@ -644,8 +644,8 @@ class AchievementService:
         -----------------------------------------------------
         Humans determine self-worth through social comparison. Percentile rankings
         create two psychological effects:
-        1. **Upward Comparison:** "I'm in top 10%, want to reach top 5%" (motivation)
-        2. **Status Signaling:** "I'm better than 90% of users" (self-esteem)
+        1. <b>Upward Comparison:</b> "I'm in top 10%, want to reach top 5%" (motivation)
+        2. <b>Status Signaling:</b> "I'm better than 90% of users" (self-esteem)
         
         Algorithm:
         ----------
@@ -722,10 +722,10 @@ class AchievementService:
         
         Theory - Why Percentiles Work:
         -------------------------------
-        1. **Concrete Status:** "Top 10%" is clearer than "you're doing well"
-        2. **Aspirational:** Creates desire to reach next tier (Top 10% → Top 5%)
-        3. **Validation:** Confirms user's effort is exceptional
-        4. **Social Identity:** Becomes part of self-concept ("I'm a top performer")
+        1. <b>Concrete Status:</b> "Top 10%" is clearer than "you're doing well"
+        2. <b>Aspirational:</b> Creates desire to reach next tier (Top 10% → Top 5%)
+        3. <b>Validation:</b> Confirms user's effort is exceptional
+        4. <b>Social Identity:</b> Becomes part of self-concept ("I'm a top performer")
         
         Privacy Design:
         ---------------
@@ -755,7 +755,7 @@ class AchievementService:
             Social proof message string, or None if not applicable
         
         Example Output:
-            "📊 You're in the **TOP 10%** of users with a 45-day streak! 🌟"
+            "📊 You're in the <b>TOP 10%</b> of users with a 45-day streak! 🌟"
         """
         streak = user.streaks.current_streak
         
@@ -774,19 +774,19 @@ class AchievementService:
         # Generate message based on percentile tier
         if percentile >= 99:
             # TOP 1% - Legendary status
-            return f"📊 You're in the **TOP 1%** of users with a {streak}-day streak! 👑"
+            return f"📊 You're in the <b>TOP 1%</b> of users with a {streak}-day streak! 👑"
         
         elif percentile >= 95:
             # TOP 5% - Elite territory
-            return f"📊 You're in the **TOP 5%** of users with a {streak}-day streak! 💎"
+            return f"📊 You're in the <b>TOP 5%</b> of users with a {streak}-day streak! 💎"
         
         elif percentile >= 90:
             # TOP 10% - Excellent performance
-            return f"📊 You're in the **TOP 10%** of users with a {streak}-day streak! 🌟"
+            return f"📊 You're in the <b>TOP 10%</b> of users with a {streak}-day streak! 🌟"
         
         elif percentile >= 75:
             # TOP 25% - Above average
-            return f"📊 You're in the **TOP 25%** of users with a {streak}-day streak! 🏅"
+            return f"📊 You're in the <b>TOP 25%</b> of users with a {streak}-day streak! 🏅"
         
         else:
             # <75th percentile - Still encouraging

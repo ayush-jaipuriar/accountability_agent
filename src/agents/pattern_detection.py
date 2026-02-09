@@ -15,55 +15,55 @@ Example:
 
 The 9 Patterns We Detect (Phase 3D Complete):
 ----------------------------------------------
-**Phase 1-2 Patterns (Original 5):**
+<b>Phase 1-2 Patterns (Original 5):</b>
 
-1. **Sleep Degradation** (HIGH severity)
+1. <b>Sleep Degradation</b> (HIGH severity)
    - Trigger: <6 hours for 3+ consecutive nights
    - Violates: Physical Sovereignty
    - Risk: Cascading failure (sleep → training → productivity → spiral)
 
-2. **Training Abandonment** (MEDIUM severity)
+2. <b>Training Abandonment</b> (MEDIUM severity)
    - Trigger: 3+ missed training days in a row (excluding rest days)
    - Violates: Physical Sovereignty
    - Risk: Fitness regression, loss of discipline anchor
 
-3. **Porn Relapse Pattern** (CRITICAL severity)
+3. <b>Porn Relapse Pattern</b> (CRITICAL severity)
    - Trigger: 3+ violations in 7 days
    - Violates: Tier 1 Non-Negotiable (absolute rule)
    - Risk: Full relapse into addiction cycle
 
-4. **Compliance Decline** (MEDIUM severity)
+4. <b>Compliance Decline</b> (MEDIUM severity)
    - Trigger: <70% compliance for 3+ consecutive days
    - Violates: Overall system discipline
    - Risk: Slow degradation of all standards
 
-5. **Deep Work Collapse** (CRITICAL severity - Phase 3D upgraded)
+5. <b>Deep Work Collapse</b> (CRITICAL severity - Phase 3D upgraded)
    - Trigger: <1.5 hours for 5+ days
    - Violates: Create Don't Consume + Career Goal
    - Risk: June 2026 goal (₹28-42 LPA) at risk, career progress stalls
    - Historical: Jan 2025 collapse → 3-month job search stall
 
-**Phase 3D Patterns (Advanced - NEW):**
+<b>Phase 3D Patterns (Advanced - NEW):</b>
 
-6. **Snooze Trap** (WARNING severity)
+6. <b>Snooze Trap</b> (WARNING severity)
    - Trigger: Waking >30min late for 3+ consecutive days
    - Violates: Constitution Interrupt Pattern 2
    - Risk: Rushed mornings → missed deep work → discipline erosion
    - Data: Optional (wake_time in check-in metadata)
 
-7. **Consumption Vortex** (WARNING severity)
+7. <b>Consumption Vortex</b> (WARNING severity)
    - Trigger: >3 hours daily consumption for 5+ days
    - Violates: Principle 2 (Create Don't Consume)
    - Risk: Creator → consumer shift, time waste, career stall
    - Data: Optional (consumption_hours in check-in responses)
 
-8. **Relationship Interference** (CRITICAL severity - NEW)
+8. <b>Relationship Interference</b> (CRITICAL severity - NEW)
    - Trigger: Boundary violations correlate (>70%) with sleep/training failures
    - Violates: Principle 5 (Fear of Loss is Not a Reason to Stay)
    - Risk: Toxic relationship pattern, 6-month spiral (historical: Feb-July 2025)
    - Detection: Correlation-based (not simple threshold)
 
-9. **Ghosting** (ESCALATING severity - Phase 3B)
+9. <b>Ghosting</b> (ESCALATING severity - Phase 3B)
    - Trigger: Missing check-ins for 2+ consecutive days
    - Violates: Daily accountability commitment
    - Risk: Disappearance, streak loss, full system abandonment
@@ -71,40 +71,40 @@ The 9 Patterns We Detect (Phase 3D Complete):
 
 Key Concepts:
 -------------
-1. **Threshold-Based Detection**: Simple rules, no ML needed
+1. <b>Threshold-Based Detection</b>: Simple rules, no ML needed
    - If condition met → pattern detected
    - Example: sleep_hours < 6 for 3 days → sleep_degradation
 
-2. **Sliding Window Analysis**: Look at last N days
+2. <b>Sliding Window Analysis</b>: Look at last N days
    - Sleep: Last 3 days
    - Training: Last 3 days
    - Porn: Last 7 days
    - Compliance: Last 3 days
    - Deep Work: Last 5 days
 
-3. **Severity Levels**: Prioritize interventions
+3. <b>Severity Levels</b>: Prioritize interventions
    - CRITICAL: Immediate action required (porn relapse)
    - HIGH: Very important (sleep degradation)
    - MEDIUM: Important but not urgent
    - LOW: Worth monitoring
 
-4. **Evidence Collection**: Store data with pattern
+4. <b>Evidence Collection</b>: Store data with pattern
    - Not just "sleep degradation detected"
    - But "Average 5.3 hours over 3 days (Feb 1-3)"
    - Used to generate specific intervention messages
 
 Why These Thresholds?
 ---------------------
-- **3 consecutive days** (most patterns): 
+- <b>3 consecutive days</b> (most patterns): 
   - 1 day = might be accident
   - 2 days = could be coincidence
   - 3 days = emerging pattern
   
-- **7-day window** (porn relapse):
+- <b>7-day window</b> (porn relapse):
   - Addiction patterns work in weekly cycles
   - 3+ violations per week = relapse pattern
   
-- **5 days** (deep work):
+- <b>5 days</b> (deep work):
   - Longer window because deep work varies more day-to-day
   - Allows for occasional off days without false alarms
 """
@@ -399,23 +399,23 @@ class PatternDetectionAgent:
         Detect: Low deep work for 5+ days (Phase 3D Enhanced)
         Severity: CRITICAL (Upgraded from MEDIUM - directly impacts June 2026 career goal)
         
-        **Why CRITICAL Severity (Phase 3D Upgrade)?**
+        <b>Why CRITICAL Severity (Phase 3D Upgrade)?</b>
         - Constitution mandates 2+ hours deep work daily
         - June 2026 career goal (₹28-42 LPA) depends on daily skill building
         - Historical: Jan 2025 deep work collapse → 3-month job search stall
         - Without deep work: No LeetCode, no system design, no career progress
         
-        **Detection Logic:**
+        <b>Detection Logic:</b>
         - Threshold: <1.5 hours (75% of 2-hour target)
         - Window: 5+ consecutive days (not just busy week, systemic issue)
         - Uses existing Tier 1 deep_work data (no new data collection needed)
         
-        **Why 5 days instead of 3?**
+        <b>Why 5 days instead of 3?</b>
         - Deep work is more variable day-to-day
         - Some days have unavoidable meetings/interruptions
         - 5-day pattern = systemic issue requiring intervention
         
-        **Data Source:**
+        <b>Data Source:</b>
         Uses existing tier1_non_negotiables.deep_work (boolean)
         - deep_work=True → 2+ hours (target met)
         - deep_work=False → <2 hours (below target, estimate ~1 hour)
@@ -486,23 +486,23 @@ class PatternDetectionAgent:
         Detect: Waking >30min late for 3+ consecutive days (Phase 3D)
         Severity: WARNING
         
-        **Constitution Reference:**
+        <b>Constitution Reference:</b>
         From Section G - Interrupt Pattern 2: "The Snooze Trap"
         - Trigger: "Just 10 more minutes" thought
         - Consequence: 15min earlier bedtime per snooze
         - Warning: 3 snoozes/week = Maintenance Mode breakdown
         
-        **Why This Matters:**
+        <b>Why This Matters:</b>
         Snooze trap is an early warning sign that leads to:
         - Rushed mornings → no deep work → compliance decline
         - Sleep debt accumulation → physical recovery suffers
         - Discipline erosion → other habits start slipping
         
-        **Data Requirements:**
+        <b>Data Requirements:</b>
         - wake_time stored in check-in metadata
         - target_wake_time in user settings (default: 06:30 from constitution)
         
-        **Graceful Degradation:**
+        <b>Graceful Degradation:</b>
         If wake_time data not available → returns None (can't detect pattern)
         This is intentional: optional data enables optional pattern detection
         
@@ -571,7 +571,7 @@ class PatternDetectionAgent:
         """
         Calculate snooze duration in minutes.
         
-        **Theory - Time Difference Calculation:**
+        <b>Theory - Time Difference Calculation:</b>
         1. Parse time strings to datetime objects (HH:MM format)
         2. Calculate difference: actual - target
         3. Convert to minutes
@@ -608,26 +608,26 @@ class PatternDetectionAgent:
         Detect: >3 hours daily consumption for 5+ days (Phase 3D)
         Severity: WARNING
         
-        **Constitution Reference:**
+        <b>Constitution Reference:</b>
         From Section G - Interrupt Pattern 3: "The Consumption Vortex"
         - Trigger: Opening YouTube/Reddit without purpose
         - Warning: >2hrs/day consumption → AI flags
         - Quote: "You spent 12hrs on YouTube this week. What are you avoiding?"
         
-        **Why This Matters:**
+        <b>Why This Matters:</b>
         Consumption vortex indicates shift from creator → consumer:
         - Time that could go to skill building → wasted
         - Dopamine hijacking → makes deep work harder
         - Avoidance behavior → something being avoided
         
-        **Historical Context:**
+        <b>Historical Context:</b>
         Jan 2025: Consumption vortex → job search stalled → 3-month spiral
         
-        **Data Requirements:**
+        <b>Data Requirements:</b>
         - consumption_hours in check-in responses
         - User manually reports (optional)
         
-        **Graceful Degradation:**
+        <b>Graceful Degradation:</b>
         If consumption_hours not tracked → returns None
         Pattern detection is optional when data is optional
         
@@ -706,31 +706,31 @@ class PatternDetectionAgent:
         Detect: Boundary violations correlate with sleep/training failures (Phase 3D)
         Severity: CRITICAL
         
-        **Constitution Reference:**
+        <b>Constitution Reference:</b>
         From Section G - Interrupt Pattern 4: "The Boundary Violation (Relationship)"
         From Principle 5: "Fear of Loss is Not a Reason to Stay"
         - Trigger: Sacrificing sleep/study/training for relationship
         - Warning: 3 sacrifices/week = recurring toxic pattern
         
-        **What Makes This Pattern Critical?**
+        <b>What Makes This Pattern Critical?</b>
         Historical evidence from constitution:
         - Feb-July 2025: 6-month regression due to toxic relationship
         - Boundary violations → sleep/training failures → job search stall
         - Pattern ended in breakup anyway (loss feared happened regardless)
         
-        **Correlation-Based Detection:**
+        <b>Correlation-Based Detection:</b>
         Unlike other patterns (simple threshold), this detects CORRELATION:
         1. Count days where boundaries violated (Tier 1 item = False)
         2. Count days where boundaries violated AND (sleep OR training failed)
         3. Calculate correlation: interference_days / boundary_violation_days
         4. If correlation >70% → pattern exists
         
-        **Why 70% Threshold?**
+        <b>Why 70% Threshold?</b>
         - 5/7 boundary violations → 5 sleep/training failures = 71% correlation
         - Random coincidence unlikely at >70%
         - Constitution history shows this was consistent pattern
         
-        **Theory - Correlation vs Causation:**
+        <b>Theory - Correlation vs Causation:</b>
         We can't prove causation (did boundary violation CAUSE sleep failure?),
         but high correlation is sufficient for intervention:
         - If always happen together → pattern exists
@@ -824,28 +824,28 @@ class PatternDetectionAgent:
         """
         Detect missing check-ins with escalating severity (Phase 3B).
         
-        **What is Ghosting?**
+        <b>What is Ghosting?</b>
         User ignores triple reminders → doesn't check in → disappears for multiple days.
         
-        **Algorithm:**
+        <b>Algorithm:</b>
         1. Get user's last check-in date from Firestore
         2. Calculate days since last check-in (today - last_checkin_date)
         3. If days >= 2, create ghosting pattern
         4. Map days to severity level
         
-        **Severity Escalation:**
+        <b>Severity Escalation:</b>
         - Day 1: Grace period (triple reminders handle this) → No pattern
         - Day 2: "nudge" severity → Gentle reminder
         - Day 3: "warning" severity → Firm constitution reference
         - Day 4: "critical" severity → Historical pattern reference
         - Day 5+: "emergency" severity → Partner escalation
         
-        **Why Day 2 threshold?**
+        <b>Why Day 2 threshold?</b>
         - Day 1 is covered by Phase 3A triple reminders (9 PM, 9:30 PM, 10 PM)
         - Day 2 means user ignored ALL 3 reminders → intervention needed
         - Earlier detection = better chance of recovery
         
-        **Data Collected:**
+        <b>Data Collected:</b>
         - days_missing: Number of days since last check-in
         - last_checkin_date: When user last checked in
         - previous_streak: What streak they had (for motivation)
@@ -909,18 +909,18 @@ class PatternDetectionAgent:
         """
         Calculate days between last check-in and today.
         
-        **Why This Calculation?**
+        <b>Why This Calculation?</b>
         We need to know how many days user has been missing to:
         1. Determine if ghosting is happening (>= 2 days)
         2. Choose the right severity level
         3. Generate specific intervention message
         
-        **Date Math:**
+        <b>Date Math:</b>
         - last_checkin_date: "2026-02-02" (string from Firestore)
         - today: "2026-02-04" (current date in user's timezone)
         - difference: 2 days
         
-        **Why user's timezone instead of UTC?**
+        <b>Why user's timezone instead of UTC?</b>
         - "Today" for user depends on their timezone
         - Prevents off-by-one errors near midnight
         
@@ -955,33 +955,33 @@ class PatternDetectionAgent:
         """
         Map days missing to severity level.
         
-        **Severity Levels Explained:**
+        <b>Severity Levels Explained:</b>
         
-        1. **Day 2 → "nudge"**
+        1. <b>Day 2 → "nudge"</b>
            - User just missed one day
            - Could be accident, busy day, forgot
            - Message tone: Gentle, checking in
            - Example: "👋 Missed you yesterday! Everything okay?"
         
-        2. **Day 3 → "warning"**
+        2. <b>Day 3 → "warning"</b>
            - Pattern is emerging
            - Missed 2 days in a row → not random
            - Message tone: Firm, constitution reference
            - Example: "⚠️ 3 days missing. Constitution violation."
         
-        3. **Day 4 → "critical"**
+        3. <b>Day 4 → "critical"</b>
            - Serious situation
            - Historical pattern reference (Feb 2025 spiral)
            - Message tone: Urgent, evidence-based
            - Example: "🚨 4-day absence. Last time: 6-month spiral."
         
-        4. **Day 5+ → "emergency"**
+        4. <b>Day 5+ → "emergency"</b>
            - Emergency intervention
            - Partner notification triggered
            - Message tone: Alarm, social support activation
            - Example: "🔴 EMERGENCY. Contact accountability partner NOW."
         
-        **Why These Thresholds?**
+        <b>Why These Thresholds?</b>
         - Research shows intervention effectiveness drops after Day 7
         - Day 5 is inflection point where behavior becomes habit
         - Partner escalation at Day 5 adds social accountability

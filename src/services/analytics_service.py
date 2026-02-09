@@ -4,7 +4,7 @@ Analytics Service - Stats Calculation & Aggregation
 
 Phase 3E: Provides stats calculations for /weekly, /monthly, /yearly commands.
 
-**Purpose:**
+<b>Purpose:</b>
 Calculate summary statistics from historical check-in data:
 - Compliance averages and trends
 - Tier 1 item completion rates
@@ -12,13 +12,13 @@ Calculate summary statistics from historical check-in data:
 - Pattern detection counts
 - Achievement unlocks
 
-**Why a Separate Service:**
+<b>Why a Separate Service:</b>
 - Reusable logic across commands (weekly, monthly, yearly)
 - Centralized calculation algorithms
 - Easy to test and maintain
 - Can be used by dashboard, reports, or API endpoints
 
-**Key Functions:**
+<b>Key Functions:</b>
 - calculate_weekly_stats(): Last 7 days summary
 - calculate_monthly_stats(): Last 30 days summary
 - calculate_yearly_stats(): Year-to-date summary
@@ -39,7 +39,7 @@ def calculate_weekly_stats(user_id: str) -> Dict[str, Any]:
     """
     Calculate last 7 days statistics.
     
-    **Output Structure:**
+    <b>Output Structure:</b>
     - Compliance: Average, trend
     - Streaks: Current streak, check-in rate
     - Tier 1 Performance: Completion rates for each item
@@ -205,7 +205,7 @@ def calculate_yearly_stats(user_id: str) -> Dict[str, Any]:
     """
     Calculate year-to-date statistics.
     
-    **What's Different from Monthly:**
+    <b>What's Different from Monthly:</b>
     - All data since Jan 1 of current year
     - Monthly breakdown (Jan, Feb, Mar...)
     - Career progress tracking
