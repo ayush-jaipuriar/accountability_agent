@@ -386,7 +386,8 @@ class TelegramBotManager:
         await query.edit_message_text(
             f"✅ <b>{mode_emojis[selected_mode]} {selected_mode.title()} Mode Selected!</b>\n\n"
             f"Great choice. I've set your constitution to {selected_mode} mode.\n"
-            f"You can change this anytime with /mode"
+            f"You can change this anytime with /mode",
+            parse_mode='HTML'
         )
         
         # Step 3: Timezone Selection (2-level picker: confirm IST or pick region → city)
@@ -409,7 +410,8 @@ class TelegramBotManager:
         await context.bot.send_message(
             chat_id=user.id,
             text=timezone_message,
-            reply_markup=reply_markup
+            reply_markup=reply_markup,
+            parse_mode='HTML'
         )
         
         logger.info(f"✅ User {user_id} selected mode: {selected_mode}")
@@ -475,7 +477,8 @@ class TelegramBotManager:
             await query.edit_message_text(
                 "🌍 <b>Select Your Region:</b>\n\n"
                 "Pick the region closest to you, then you'll choose your city.",
-                reply_markup=reply_markup
+                reply_markup=reply_markup,
+                parse_mode='HTML'
             )
 
         elif query.data.startswith("tz_region_"):
@@ -501,7 +504,8 @@ class TelegramBotManager:
             await query.edit_message_text(
                 f"🏙️ <b>{region['label']} — Choose Your City:</b>\n\n"
                 f"Select the timezone closest to you:",
-                reply_markup=reply_markup
+                reply_markup=reply_markup,
+                parse_mode='HTML'
             )
 
         elif query.data == "tz_back":
@@ -520,7 +524,8 @@ class TelegramBotManager:
             await query.edit_message_text(
                 "🌍 <b>Select Your Region:</b>\n\n"
                 "Pick the region closest to you, then you'll choose your city.",
-                reply_markup=reply_markup
+                reply_markup=reply_markup,
+                parse_mode='HTML'
             )
 
         elif query.data.startswith("tz_set_"):
@@ -569,7 +574,8 @@ class TelegramBotManager:
             f"✅ <b>Timezone Updated!</b>\n\n"
             f"Your timezone is now: <b>{tz_display}</b> (`{timezone}`)\n\n"
             f"All reminders and date calculations will use this timezone.\n"
-            f"Your daily reminders will be sent at 9 PM in your new local time."
+            f"Your daily reminders will be sent at 9 PM in your new local time.",
+            parse_mode='HTML'
         )
         logger.info(f"🌍 User {user_id} changed timezone to {timezone}")
 
@@ -603,7 +609,8 @@ class TelegramBotManager:
 
         await query.edit_message_text(
             f"✅ <b>Timezone Set: {tz_display}</b>\n\n"
-            f"Your daily reminders will be sent at 9 PM in your local time."
+            f"Your daily reminders will be sent at 9 PM in your local time.",
+            parse_mode='HTML'
         )
 
         # Streak Mechanics Explanation
@@ -618,7 +625,8 @@ class TelegramBotManager:
 
         await context.bot.send_message(
             chat_id=user.id,
-            text=streak_message
+            text=streak_message,
+            parse_mode='HTML'
         )
 
         # First Check-In Prompt
@@ -637,7 +645,8 @@ class TelegramBotManager:
 
         await context.bot.send_message(
             chat_id=user.id,
-            text=first_checkin_message
+            text=first_checkin_message,
+            parse_mode='HTML'
         )
 
         logger.info(f"✅ Onboarding complete for user {user_id} (timezone: {timezone})")
@@ -1318,7 +1327,8 @@ class TelegramBotManager:
         
         if not requester or not accepter:
             await query.edit_message_text(
-                "❌ <b>Error:</b> One or both users not found."
+                "❌ <b>Error:</b> One or both users not found.",
+                parse_mode='HTML'
             )
             return
         
@@ -1339,7 +1349,8 @@ class TelegramBotManager:
         await query.edit_message_text(
             f"✅ <b>Partnership Confirmed!</b>\n\n"
             f"You and {requester.name} are now accountability partners.\n\n"
-            f"You'll be notified if they ghost for 5+ days, and vice versa."
+            f"You'll be notified if they ghost for 5+ days, and vice versa.",
+            parse_mode='HTML'
         )
         
         await context.bot.send_message(
@@ -1348,7 +1359,8 @@ class TelegramBotManager:
                 f"✅ <b>Partnership Confirmed!</b>\n\n"
                 f"{accepter.name} accepted your request!\n\n"
                 f"You're now accountability partners. 🤝"
-            )
+            ),
+            parse_mode='HTML'
         )
         
         logger.info(f"✅ Partnership confirmed: {requester_user_id} ↔️ {accepter_user_id}")
@@ -1372,12 +1384,14 @@ class TelegramBotManager:
         
         if not requester or not decliner:
             await query.edit_message_text(
-                "❌ <b>Error:</b> User not found."
+                "❌ <b>Error:</b> User not found.",
+                parse_mode='HTML'
             )
             return
         
         await query.edit_message_text(
-            "❌ <b>Partnership declined.</b>"
+            "❌ <b>Partnership declined.</b>",
+            parse_mode='HTML'
         )
         
         await context.bot.send_message(

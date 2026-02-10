@@ -468,7 +468,7 @@ async def pattern_scan_trigger(request: Request):
                             )
                             
                             # Send intervention via Telegram
-                            await bot_manager.send_message(
+                            await bot_manager.bot.send_message(
                                 chat_id=user.user_id,
                                 text=intervention_msg
                             )
@@ -511,9 +511,10 @@ async def pattern_scan_trigger(request: Request):
                                                 f"Use /partner_status to see full partner dashboard."
                                             )
                                             
-                                            await bot_manager.send_message(
+                                            await bot_manager.bot.send_message(
                                                 chat_id=partner.telegram_id,
-                                                text=partner_msg
+                                                text=partner_msg,
+                                                parse_mode='HTML'
                                             )
                                             
                                             logger.info(

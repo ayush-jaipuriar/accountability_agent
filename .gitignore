@@ -74,6 +74,11 @@ logs/
 tmp/
 temp/
 
+# Database Backups (may contain user data)
+backups/
+*.backup
+firestore_backup_*.json
+
 # Security - Additional patterns
 *.pem
 *.key
