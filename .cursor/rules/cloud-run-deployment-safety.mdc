@@ -1,0 +1,251 @@
+# Cloud Run Deployment Safety
+
+**Critical Rule:** This project has exactly ONE Cloud Run service, configured as a lightweight, cost-optimized instance. Never create duplicates. Never over-provision.
+
+## Active Service
+
+- **Service name:** `accountability-agent`
+- **Region:** `us-central1`
+- **URL:** `https://accountability-agent-450357249483.us-central1.run.app`
+- **Project:** `accountability-agent`
+
+## Required Instance Configuration
+
+This is a personal Telegram bot that handles a few webhook requests per day. The instance MUST stay lightweight and cost-optimized.
+
+### Mandatory Settings
+
+| Setting | Value | Reason |
+|---------|-------|--------|
+| **Memory** | `512Mi` | Sufficient for FastAPI + matplotlib graph generation |
+| **CPU** | `1` vCPU | Minimum for Cloud Run; more than enough for our workload |
+| **CPU Throttling** | `--cpu-throttling` (ON) | CPU only allocated during request processing, not while idle. This is the key cost saver. |
+| **Startup CPU Boost** | `--no-cpu-boost` (OFF) | No extra CPU during cold starts. Our app starts fast enough without it. |
+| **Min Instances** | `0` | Scale to zero when idle. We pay nothing when no requests are coming in. |
+| **Max Instances** | `3` | A personal bot never needs more than 1-2 concurrent instances. 3 is a safety margin. |
+| **Concurrency** | `80` | Requests per instance before scaling. Default is fine. |
+| **Timeout** | `300s` | 5 min request timeout for long AI operations. |
+
+### Why These Settings Matter (Cost Theory)
+
+Cloud Run billing has two CPU allocation modes:
+
+1. **CPU always allocated** (`--no-cpu-throttling`): You pay for CPU even when the instance is idle between requests. Meant for background processing, websockets, or long-running tasks. **Expensive for a webhook bot.**
+
+2. **CPU only during requests** (`--cpu-throttling`): CPU is allocated ONLY while a request is being processed. Between requests, the instance stays in memory (so no cold start) but you pay zero CPU cost. **This is what we use.**
+
+Combined with `--min-instances 0`, the service scales to zero when idle -- meaning you pay absolutely nothing overnight or during hours with no activity. A cold start takes ~3-5 seconds, which is acceptable for a Telegram bot (users won't notice).
+
+**Max instances = 3** caps your worst-case cost. Even if something triggers many requests simultaneously (e.g., a reminder cron hitting all users), you'll never spawn more than 3 instances.
+
+### Deploy Command Template
+
+Every deployment MUST include these flags:
+
+```bash
+gcloud run deploy accountability-agent \
+  --region us-central1 \
+  --memory 512Mi \
+  --cpu 1 \
+  --max-instances 3 \
+  --min-instances 0 \
+  --cpu-throttling \
+  --no-cpu-boost \
+  --concurrency 80 \
+  --timeout 300 \
+  --platform managed \
+  --allow-unauthenticated \
+  ...
+```
+
+### What NOT to Do
+
+```bash
+# ❌ NEVER use always-allocated CPU (expensive, unnecessary)
+--no-cpu-throttling
+
+# ❌ NEVER set min-instances > 0 (paying for idle instances)
+--min-instances 1
+
+# ❌ NEVER set max-instances > 5 (runaway scaling risk)
+--max-instances 20
+
+# ❌ NEVER increase memory beyond 512Mi (our app doesn't need it)
+--memory 1Gi
+
+# ❌ NEVER enable CPU boost (adds cost for marginal cold start improvement)
+--cpu-boost
+```
+
+## Before ANY Deployment
+
+### 1. Verify the existing service
+
+```bash
+# ALWAYS check what's currently running first:
+gcloud run services list --project accountability-agent
+```
+
+**Expected output:** Exactly ONE service (`accountability-agent` in `us-central1`).
+
+If you see more than one service, STOP and investigate before deploying.
+
+### 2. Deploy to the SAME region
+
+```bash
+# ✅ CORRECT: Always deploy to us-central1 (existing region)
+gcloud run deploy accountability-agent \
+  --region us-central1 \
+  ...
+
+# ❌ WRONG: Never deploy to a different region
+gcloud run deploy accountability-agent \
+  --region asia-south1 \   # This creates a SECOND service!
+  ...
+```
+
+### 3. Use the SAME service name
+
+```bash
+# ✅ CORRECT: Same name = updates existing service
+gcloud run deploy accountability-agent ...
+
+# ❌ WRONG: Different name = creates a NEW service
+gcloud run deploy constitution-agent ...
+gcloud run deploy accountability-agent-v2 ...
+```
+
+## Why Duplicates Are Dangerous
+
+1. **Cost:** Each service incurs separate billing even at 0 req/sec (cold start charges, idle instances).
+2. **Confusion:** Webhook can only point to one URL. The other service sits idle but still exists.
+3. **Security:** An orphaned service with stale code may have old vulnerabilities or outdated secrets.
+4. **Cleanup:** Forgetting to delete the old one wastes resources indefinitely.
+
+## How Duplicates Happen
+
+| Mistake | What happens |
+|---------|-------------|
+| Deploying to a different `--region` | Creates a second service with the same name in a new region |
+| Changing the service name in the deploy command | Creates an entirely new service |
+| Using `gcloud run deploy` from source without `--region` | May default to a different region than expected |
+
+## Deployment Checklist
+
+Before running `gcloud run deploy`:
+
+- [ ] Ran `gcloud run services list` to verify current state (exactly 1 service)
+- [ ] `--region us-central1` is specified explicitly
+- [ ] Service name is exactly `accountability-agent`
+- [ ] Instance config flags are included (`--memory 512Mi --cpu 1 --max-instances 3 --min-instances 0 --cpu-throttling --no-cpu-boost`)
+- [ ] No `--source .` without `--region` (region is always explicit)
+- [ ] After deploy, run `gcloud run services list` again to confirm still only 1 service
+- [ ] After deploy, verify instance config with `gcloud run services describe`
+
+## After Deployment
+
+```bash
+# 1. Verify only one service exists
+gcloud run services list --project accountability-agent
+
+# 2. Verify instance config is correct (512Mi, throttling on, max 3)
+gcloud run services describe accountability-agent --region us-central1 \
+  --format="yaml(spec.template.metadata.annotations,spec.template.spec.containers[0].resources)"
+
+# 3. Verify the webhook URL matches
+curl "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo"
+
+# 4. Health check
+curl https://accountability-agent-450357249483.us-central1.run.app/health
+```
+
+## If You Accidentally Create a Duplicate
+
+```bash
+# 1. Identify the duplicate
+gcloud run services list --project accountability-agent
+
+# 2. Verify which one has the active webhook
+curl "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo"
+
+# 3. Delete the UNUSED one (the one webhook does NOT point to)
+gcloud run services delete <service-name> --region <wrong-region> --quiet
+
+# 4. Verify only one remains
+gcloud run services list --project accountability-agent
+```
+
+## Cloud Scheduler Jobs
+
+All scheduler jobs MUST be in `us-central1` (same region as the Cloud Run service) and MUST target the correct service URL.
+
+### Active Jobs
+
+| Job | Schedule | Timezone | Endpoint | Purpose |
+|-----|----------|----------|----------|---------|
+| `reminder-tz-aware` | `*/15 * * * *` | UTC | `/cron/reminder_tz_aware` | Sends 9PM/9:30PM/10PM reminders in each user's local timezone |
+| `pattern-scan` | `0 */6 * * *` | UTC | `/trigger/pattern-scan` | Scans all users for behavioral patterns |
+| `reset-quick-checkins` | `0 0 * * 1` | Asia/Kolkata | `/cron/reset_quick_checkins` | Resets weekly quick check-in counts every Monday |
+| `weekly-report` | `0 9 * * 0` | Asia/Kolkata | `/trigger/weekly-report` | Generates weekly reports every Sunday 9 AM |
+
+### Base URL for ALL jobs
+
+```
+https://accountability-agent-450357249483.us-central1.run.app
+```
+
+### When Deploying or Changing Cloud Run
+
+If you change the Cloud Run service URL (e.g., redeploying to a different region), you MUST update ALL Cloud Scheduler jobs to point to the new URL. Otherwise the jobs will silently fail -- they'll get 404s or timeouts but won't raise visible errors.
+
+### Verifying Scheduler Jobs
+
+```bash
+# List all jobs (should be 4, all in us-central1)
+gcloud scheduler jobs list --location us-central1 --project accountability-agent
+
+# Verify no orphans in other regions
+gcloud scheduler jobs list --location asia-south1 --project accountability-agent
+# Expected: "Listed 0 items."
+
+# Check a job's target URL
+gcloud scheduler jobs describe reminder-tz-aware --location us-central1 --format="value(httpTarget.uri)"
+# Expected: https://accountability-agent-450357249483.us-central1.run.app/cron/reminder_tz_aware
+
+# Manually trigger a job to test
+gcloud scheduler jobs run reminder-tz-aware --location us-central1
+```
+
+### Why We Use 1 Timezone-Aware Job Instead of 3 Fixed-Time Jobs
+
+Phase 3A introduced timezone-aware reminders. Instead of 3 separate cron jobs firing at fixed IST times:
+- `reminder-first-job` at 9:00 PM IST (only works for IST users)
+- `reminder-second-job` at 9:30 PM IST
+- `reminder-third-job` at 10:00 PM IST
+
+We use a single job (`reminder-tz-aware`) that runs every 15 minutes. It checks: "For which timezones is it currently 9:00 PM / 9:30 PM / 10:00 PM?" and sends the appropriate reminder tier to users in those timezones. This supports 60+ timezones with a single cron job.
+
+## Historical Context
+
+**Duplicate service incident (Feb 10, 2026):**
+- Phase 1 was originally deployed to `asia-south1`
+- Later redeployment moved the service to `us-central1`
+- The old `asia-south1` service was never deleted
+- Both services existed simultaneously for days, wasting resources
+- Deleted the `asia-south1` orphan on Feb 10, 2026
+
+**Over-provisioning incident (Feb 10, 2026):**
+- Service had maxScale=20, startup CPU boost enabled
+- Far more than needed for a personal Telegram bot
+- Right-sized to maxScale=3, CPU throttling on, no CPU boost
+- Estimated cost savings: significant reduction from on-demand-only billing
+
+**Broken scheduler incident (Feb 11, 2026):**
+- All 6 Cloud Scheduler jobs were pointing to dead/wrong URLs
+- 5 jobs in `asia-south1` targeted the deleted `constitution-agent` service
+- 1 job in `us-central1` targeted `constitution-agent` instead of `accountability-agent`
+- Result: zero reminders sent for days, no pattern scans, no weekly reports
+- Fixed by deleting all broken jobs and recreating 4 jobs with correct URLs
+- Consolidated 3 fixed-time reminder jobs into 1 timezone-aware job
+
+**Prevention:** This rule exists to ensure none of these happen again.
