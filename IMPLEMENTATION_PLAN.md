@@ -1260,4 +1260,22 @@ Once Phase 1 testing is complete, we'll add:
 
 ---
 
+## Production Improvements - Phase 5: Automated Reports Every 3 Days (Feb 20, 2026)
+
+**Status:** COMPLETE  
+**Files modified:** `src/models/schemas.py`, `src/agents/reporting_agent.py`, `src/main.py`  
+**Detailed summary:** `PRODUCTION_IMPROVEMENTS_PHASE5.md`
+
+**What was implemented:**
+- Configurable `days` parameter on `generate_and_send_weekly_report()` and `_build_report_message()` (default 7, backward-compatible)
+- Per-user `last_report_date` field on `User` model for cooldown tracking
+- `min_gap_days` parameter on `send_weekly_reports_to_all()` to prevent report spam
+- New `POST /trigger/periodic-report?days=3&min_gap=3` endpoint
+- Existing `/trigger/weekly-report` endpoint unchanged (backward-compatible)
+- Cloud Scheduler config documented (daily 9 AM trigger with per-user 3-day cooldown)
+
+**Test results:** 10/10 passed (7 cooldown logic + 3 backward compatibility)
+
+---
+
 **You now have a fully functional MVP ready to test and deploy!**

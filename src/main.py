@@ -1178,6 +1178,60 @@ async def weekly_report_trigger(request: Request):
         raise HTTPException(500, f"Weekly report failed: {str(e)}")
 
 
+# ===== Phase 5: Periodic (3-Day) Report Trigger =====
+
+@app.post("/trigger/periodic-report")
+async def periodic_report_trigger(request: Request):
+    """
+    Trigger periodic report generation for all users.
+    
+    Designed to run every day via Cloud Scheduler.  Each user has a
+    ``last_report_date`` field; if fewer than ``REPORT_INTERVAL_DAYS``
+    have elapsed since that date the user is skipped.  This gives
+    every user a report roughly every 3 days without needing a
+    dedicated 3-day cron expression.
+    
+    Query parameters (optional):
+        days: reporting window size (default 3)
+        min_gap: minimum days between reports per user (default 3)
+    
+    Returns:
+        dict: Aggregate results (sent / cooldown / failed counts)
+    """
+    verify_cron_request(request)
+    
+    from src.agents.reporting_agent import send_weekly_reports_to_all
+    
+    days = int(request.query_params.get("days", "3"))
+    min_gap = int(request.query_params.get("min_gap", "3"))
+    
+    scheduler_header = request.headers.get("X-CloudScheduler-JobName")
+    logger.info(
+        "Periodic report triggered (days=%d, min_gap=%d) by: %s",
+        days, min_gap, scheduler_header or "manual"
+    )
+    
+    try:
+        results = await send_weekly_reports_to_all(
+            project_id=settings.gcp_project_id,
+            bot=bot_manager.bot,
+            days=days,
+            min_gap_days=min_gap,
+        )
+        
+        logger.info(
+            "Periodic reports complete: %d sent, %d cooldown, %d failed",
+            results["reports_sent"], results["reports_cooldown"],
+            results["reports_failed"]
+        )
+        
+        return results
+        
+    except Exception as e:
+        logger.error(f"❌ Periodic report trigger failed: {e}", exc_info=True)
+        raise HTTPException(500, f"Periodic report failed: {str(e)}")
+
+
 # ===== Error Handlers =====
 
 @app.exception_handler(Exception)

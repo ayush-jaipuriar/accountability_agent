@@ -183,27 +183,31 @@ def _build_report_message(
     checkins: List[DailyCheckIn],
     user: User,
     ai_insights: str,
+    days: int = 7,
 ) -> str:
     """
-    Build the text portion of the weekly report message.
+    Build the text portion of a report message.
     
-    This is sent alongside the 4 graph images as a Telegram message.
-    It provides the context and summary that the graphs visualize.
+    The ``days`` parameter controls the header label:
+    - 7 -> "Weekly Report"
+    - 3 -> "3-Day Report"
     
     Args:
-        checkins: Week's check-ins
+        checkins: Check-ins for the period
         user: User profile
         ai_insights: AI-generated insight text
+        days: Reporting window (for labels)
         
     Returns:
         Formatted Telegram message (HTML mode)
     """
     total = len(checkins)
+    period_label = "Weekly" if days == 7 else f"{days}-Day"
     
     if not checkins:
         return (
-            "<b>📊 Weekly Report</b>\n\n"
-            "No check-ins recorded this week.\n"
+            f"<b>📊 {period_label} Report</b>\n\n"
+            f"No check-ins recorded in the last {days} days.\n"
             "Start building your data with /checkin!"
         )
     
@@ -246,11 +250,11 @@ def _build_report_message(
     tier1_block = "\n".join(tier1_lines)
 
     message = (
-        f"<b>📊 Weekly Report</b>\n"
+        f"<b>📊 {period_label} Report</b>\n"
         f"<i>{week_start} → {week_end}</i>\n\n"
         
         f"<b>Quick Summary:</b>\n"
-        f"• Check-ins: {total}/7 days\n"
+        f"• Check-ins: {total}/{days} days\n"
         f"• Avg Compliance: {avg_compliance:.0f}%\n"
         f"• Trend: {trend}\n"
         f"• Best Day: {best_day.date} ({best_day.compliance_score:.0f}%)\n"
@@ -272,54 +276,53 @@ async def generate_and_send_weekly_report(
     user_id: str,
     project_id: str,
     bot,
+    days: int = 7,
 ) -> Dict[str, Any]:
     """
-    Generate and deliver a complete weekly report to a single user.
+    Generate and deliver a report to a single user.
     
-    <b>Full Report Pipeline:</b>
-    1. Fetch last 7 days of check-ins from Firestore
-    2. Generate 4 graphs using Visualization Service
-    3. Generate AI insights using LLM Service
-    4. Build summary message
-    5. Send message + 4 images via Telegram
+    The ``days`` parameter controls the reporting window:
+    - 7 (default): traditional weekly report
+    - 3: periodic 3-day report triggered by Cloud Scheduler
+    - Any positive integer works (data permitting)
     
-    <b>Error Handling Strategy:</b>
-    - If graph generation fails: Send text-only report (graceful degradation)
-    - If AI insights fail: Use template-based fallback
-    - If Telegram send fails: Log error, don't retry (next week's report will work)
+    After a successful send the user's ``last_report_date`` is updated
+    in Firestore so the periodic trigger can skip users who already
+    received a recent report.
     
     Args:
         user_id: User's Telegram ID
         project_id: GCP project ID for LLM
         bot: Telegram Bot instance for sending messages
+        days: Reporting window in days (default 7)
         
     Returns:
         Result dictionary with status and metadata
     """
+    period_label = "Weekly" if days == 7 else f"{days}-Day"
     result = {
         "user_id": user_id,
         "status": "unknown",
         "graphs_sent": 0,
         "error": None,
+        "period_days": days,
     }
     
     try:
-        # Step 1: Fetch user and check-ins
         user = firestore_service.get_user(user_id)
         if not user:
             result["status"] = "skipped"
             result["error"] = "User not found"
             return result
         
-        checkins = firestore_service.get_recent_checkins(user_id, days=7)
+        checkins = firestore_service.get_recent_checkins(user_id, days=days)
         
         if not checkins:
-            # Send a brief "no data" message instead of a full report
             await bot.send_message(
                 chat_id=user.telegram_id,
                 text=(
-                    "<b>📊 Weekly Report</b>\n\n"
-                    "No check-ins recorded this week.\n"
+                    f"<b>📊 {period_label} Report</b>\n\n"
+                    f"No check-ins recorded in the last {days} days.\n"
                     "Start building your data with /checkin!"
                 ),
                 parse_mode='HTML',
@@ -327,23 +330,16 @@ async def generate_and_send_weekly_report(
             result["status"] = "sent_empty"
             return result
         
-        # Step 2: Generate graphs
         graphs = generate_weekly_graphs(checkins)
-        
-        # Step 3: Generate AI insights
         ai_insights = await generate_ai_insights(checkins, user, project_id)
+        report_text = _build_report_message(checkins, user, ai_insights, days=days)
         
-        # Step 4: Build report message
-        report_text = _build_report_message(checkins, user, ai_insights)
-        
-        # Step 5: Send report text
         await bot.send_message(
             chat_id=user.telegram_id,
             text=report_text,
             parse_mode='HTML',
         )
         
-        # Step 6: Send graphs as photos
         graph_captions = {
             'sleep': '😴 Sleep Trend',
             'training': '💪 Training Frequency',
@@ -363,16 +359,24 @@ async def generate_and_send_weekly_report(
             except Exception as e:
                 logger.error(f"Failed to send {graph_name} graph to {user_id}: {e}")
         
+        # Record report delivery date so the periodic trigger can
+        # enforce a minimum gap between reports.
+        try:
+            today_str = datetime.utcnow().strftime("%Y-%m-%d")
+            firestore_service.update_user(user_id, {"last_report_date": today_str})
+        except Exception as e:
+            logger.warning(f"Could not update last_report_date for {user_id}: {e}")
+        
         result["status"] = "sent"
         logger.info(
-            f"✅ Weekly report sent to {user_id} ({user.name}): "
-            f"{result['graphs_sent']}/4 graphs"
+            "%s report sent to %s (%s): %d/4 graphs",
+            period_label, user_id, user.name, result["graphs_sent"]
         )
         
     except Exception as e:
         result["status"] = "failed"
         result["error"] = str(e)
-        logger.error(f"❌ Weekly report failed for {user_id}: {e}", exc_info=True)
+        logger.error(f"❌ {period_label} report failed for {user_id}: {e}", exc_info=True)
     
     return result
 
@@ -380,50 +384,64 @@ async def generate_and_send_weekly_report(
 async def send_weekly_reports_to_all(
     project_id: str,
     bot,
+    days: int = 7,
+    min_gap_days: int = 0,
 ) -> Dict[str, Any]:
     """
-    Send weekly reports to ALL active users.
+    Send reports to ALL active users.
     
-    Called by Cloud Scheduler endpoint every Sunday 9 AM IST.
-    
-    <b>Process:</b>
-    1. Get all active users
-    2. For each user, generate and send report
-    3. Aggregate results for logging
-    
-    <b>Why Sequential (not parallel)?</b>
-    - Telegram rate limits: 30 messages/second
-    - Graph generation is CPU-intensive
-    - Cloud Run has limited CPU (1-2 vCPUs)
-    - Sequential is simpler and more predictable
-    
-    For >50 users, we'd use Cloud Tasks for parallel execution.
+    ``days`` controls the reporting window (7 = weekly, 3 = periodic).
+    ``min_gap_days`` prevents spamming: if a user received a report
+    within the last ``min_gap_days``, they are skipped.  Set to 0
+    (default) to send unconditionally (backward-compatible with the
+    existing weekly Sunday trigger).
     
     Args:
         project_id: GCP project ID
         bot: Telegram Bot instance
+        days: Reporting window passed to each per-user report
+        min_gap_days: Minimum days since last report (0 = no check)
         
     Returns:
         Aggregate result with counts
     """
     all_users = firestore_service.get_all_users()
     
+    period_label = "Weekly" if days == 7 else f"{days}-day"
     results = {
         "total_users": len(all_users),
         "reports_sent": 0,
         "reports_empty": 0,
         "reports_failed": 0,
         "reports_skipped": 0,
+        "reports_cooldown": 0,
+        "period_days": days,
         "timestamp": datetime.utcnow().isoformat(),
     }
     
-    logger.info(f"📊 Starting weekly reports for {len(all_users)} users")
+    today = datetime.utcnow().date()
+    
+    logger.info(
+        "Starting %s reports for %d users (min_gap=%d days)",
+        period_label, len(all_users), min_gap_days
+    )
     
     for user in all_users:
+        # Cooldown check: skip if user got a report too recently
+        if min_gap_days > 0 and user.last_report_date:
+            try:
+                last = datetime.strptime(user.last_report_date, "%Y-%m-%d").date()
+                if (today - last).days < min_gap_days:
+                    results["reports_cooldown"] += 1
+                    continue
+            except (ValueError, TypeError):
+                pass  # malformed date -> send anyway
+        
         report_result = await generate_and_send_weekly_report(
             user_id=user.user_id,
             project_id=project_id,
             bot=bot,
+            days=days,
         )
         
         status = report_result.get("status", "unknown")
@@ -437,8 +455,9 @@ async def send_weekly_reports_to_all(
             results["reports_failed"] += 1
     
     logger.info(
-        f"📊 Weekly reports complete: {results['reports_sent']} sent, "
-        f"{results['reports_empty']} empty, {results['reports_failed']} failed"
+        "%s reports complete: %d sent, %d empty, %d cooldown, %d failed",
+        period_label, results["reports_sent"], results["reports_empty"],
+        results["reports_cooldown"], results["reports_failed"]
     )
     
     return results

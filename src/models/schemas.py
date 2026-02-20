@@ -127,6 +127,9 @@ class User(BaseModel):
     referred_by: Optional[str] = None        # User ID of the person who referred this user
     referral_code: Optional[str] = None      # Unique referral code for this user
     
+    # ===== Phase 5: Periodic Reports =====
+    last_report_date: Optional[str] = None   # YYYY-MM-DD of last sent report (prevents duplicates)
+    
     def to_firestore(self) -> dict:
         """
         Convert to Firestore-compatible dictionary.
@@ -170,7 +173,10 @@ class User(BaseModel):
             # Phase 3F: Social
             "leaderboard_opt_in": self.leaderboard_opt_in,
             "referred_by": self.referred_by,
-            "referral_code": self.referral_code
+            "referral_code": self.referral_code,
+            
+            # Phase 5: Periodic Reports
+            "last_report_date": self.last_report_date,
         }
     
     @classmethod

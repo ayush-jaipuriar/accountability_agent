@@ -294,9 +294,18 @@ class TestStatusCommand:
         user = _make_user(streak=10)
         mock_fs.get_user.return_value = user
 
-        # Mock recent check-ins
+        # Mock recent check-ins with proper tier1 attributes for analytics
         mock_checkin = MagicMock()
         mock_checkin.compliance_score = 85.0
+        mock_checkin.tier1_non_negotiables.sleep = True
+        mock_checkin.tier1_non_negotiables.sleep_hours = 7.5
+        mock_checkin.tier1_non_negotiables.training = True
+        mock_checkin.tier1_non_negotiables.deep_work = True
+        mock_checkin.tier1_non_negotiables.deep_work_hours = 2.0
+        mock_checkin.tier1_non_negotiables.skill_building = False
+        mock_checkin.tier1_non_negotiables.skill_building_hours = 0
+        mock_checkin.tier1_non_negotiables.zero_porn = True
+        mock_checkin.tier1_non_negotiables.boundaries = True
         mock_fs.get_recent_checkins.return_value = [mock_checkin] * 5
 
         # Mock today's check-in existence
