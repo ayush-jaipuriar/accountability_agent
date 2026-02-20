@@ -421,6 +421,20 @@ async def pattern_scan_trigger(request: Request):
         pattern_agent = get_pattern_detection_agent()
         intervention_agent = get_intervention_agent(settings.gcp_project_id)
         
+        # Per-severity cooldown: how many hours must pass before the same
+        # pattern type is re-sent to a user. This prevents the exact issue
+        # of "Training Abandonment" messages arriving every 6 hours.
+        # Rationale: critical patterns (porn relapse) need faster re-escalation,
+        # medium patterns (training) can wait 3 days, warnings even longer.
+        COOLDOWN_HOURS = {
+            "critical": 24,
+            "high": 48,
+            "medium": 72,
+            "warning": 96,
+            "nudge": 48,
+            "emergency": 12,
+        }
+        
         # Get all active users (checked in within last 7 days)
         # For now, we'll scan all users (Phase 1 doesn't have "active users" method)
         # In production, add get_active_users(days=7) to firestore_service
@@ -431,6 +445,8 @@ async def pattern_scan_trigger(request: Request):
         users_scanned = 0
         patterns_detected = 0
         interventions_sent = 0
+        skipped_cooldown = 0
+        patterns_resolved = 0
         errors = 0
         
         for user in all_users:
@@ -461,6 +477,20 @@ async def pattern_scan_trigger(request: Request):
                     # Generate and send intervention for each pattern
                     for pattern in patterns:
                         try:
+                            # Cooldown gate: skip if same pattern was sent recently.
+                            # Lookup the cooldown for this severity (default 48h).
+                            cooldown = COOLDOWN_HOURS.get(pattern.severity, 48)
+                            if firestore_service.has_recent_intervention(
+                                user.user_id, pattern.type, cooldown
+                            ):
+                                logger.info(
+                                    f"⏳ Cooldown active for {user.user_id}: "
+                                    f"{pattern.type} ({pattern.severity}, "
+                                    f"{cooldown}h window) — skipping"
+                                )
+                                skipped_cooldown += 1
+                                continue
+                            
                             # Generate intervention message
                             intervention_msg = await intervention_agent.generate_intervention(
                                 user_id=user.user_id,
@@ -529,7 +559,30 @@ async def pattern_scan_trigger(request: Request):
                         except Exception as e:
                             logger.error(f"❌ Failed to send intervention to {user.user_id}: {e}")
                             errors += 1
-                else:
+                
+                # Resolution: check if previously-flagged patterns are now gone.
+                # If a user had "training_abandonment" flagged but now trains
+                # consistently, mark those old interventions as resolved.
+                try:
+                    recent_interventions = firestore_service.get_recent_interventions(
+                        user.user_id, days=14
+                    )
+                    current_pattern_types = {p.type for p in patterns}
+                    previously_flagged = {
+                        i['pattern_type'] for i in recent_interventions
+                        if not i.get('resolved', False)
+                    }
+                    
+                    resolved_types = previously_flagged - current_pattern_types
+                    for pattern_type in resolved_types:
+                        count = firestore_service.resolve_interventions(
+                            user.user_id, pattern_type
+                        )
+                        patterns_resolved += count
+                except Exception as e:
+                    logger.error(f"❌ Resolution check failed for {user.user_id}: {e}")
+                
+                if not patterns:
                     logger.debug(f"User {user.user_id}: No patterns detected (compliant)")
             
             except Exception as e:
@@ -544,12 +597,15 @@ async def pattern_scan_trigger(request: Request):
             "users_scanned": users_scanned,
             "patterns_detected": patterns_detected,
             "interventions_sent": interventions_sent,
+            "skipped_cooldown": skipped_cooldown,
+            "patterns_resolved": patterns_resolved,
             "errors": errors
         }
         
         logger.info(
             f"✅ Pattern scan complete: {users_scanned} users scanned, "
-            f"{patterns_detected} patterns detected, {interventions_sent} interventions sent"
+            f"{patterns_detected} patterns detected, {interventions_sent} interventions sent, "
+            f"{skipped_cooldown} skipped (cooldown), {patterns_resolved} resolved"
         )
         
         return result

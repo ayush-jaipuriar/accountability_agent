@@ -736,6 +736,104 @@ class FirestoreService:
             logger.error(f"❌ Failed to fetch recent interventions: {e}")
             return []
     
+    def has_recent_intervention(
+        self,
+        user_id: str,
+        pattern_type: str,
+        cooldown_hours: int = 48
+    ) -> bool:
+        """
+        Check if an intervention for this pattern type was already sent
+        within the cooldown window. Used by pattern scan to prevent
+        duplicate alerts (e.g., sending "Training Abandonment" every 6 hours).
+        
+        Uses .limit(1) for efficiency -- we only need to know if at least
+        one matching document exists, not fetch all of them.
+        
+        Args:
+            user_id: User ID
+            pattern_type: Pattern type string (e.g., "training_abandonment")
+            cooldown_hours: Hours to look back (varies by severity)
+            
+        Returns:
+            True if same pattern_type was sent within cooldown window
+        """
+        try:
+            cutoff = datetime.utcnow() - timedelta(hours=cooldown_hours)
+            
+            interventions_ref = (
+                self.db.collection('interventions')
+                .document(user_id)
+                .collection('interventions')
+                .where(filter=FieldFilter('pattern_type', '==', pattern_type))
+                .where(filter=FieldFilter('sent_at', '>=', cutoff))
+                .limit(1)
+            )
+            
+            docs = list(interventions_ref.stream())
+            has_recent = len(docs) > 0
+            
+            if has_recent:
+                logger.debug(
+                    f"Cooldown active for {user_id}: {pattern_type} "
+                    f"(sent within last {cooldown_hours}h)"
+                )
+            
+            return has_recent
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to check recent intervention: {e}")
+            return False  # On error, allow the intervention (fail-open)
+    
+    def resolve_interventions(
+        self,
+        user_id: str,
+        pattern_type: str
+    ) -> int:
+        """
+        Mark all unresolved interventions for a pattern type as resolved.
+        
+        Called when the pattern scan detects that a previously-flagged pattern
+        is no longer present (e.g., user resumed training after a
+        "training_abandonment" alert). This closes the feedback loop -- the
+        user can see their patterns were acknowledged and resolved.
+        
+        Args:
+            user_id: User ID
+            pattern_type: Pattern type to resolve
+            
+        Returns:
+            Count of interventions marked as resolved
+        """
+        try:
+            interventions_ref = (
+                self.db.collection('interventions')
+                .document(user_id)
+                .collection('interventions')
+                .where(filter=FieldFilter('pattern_type', '==', pattern_type))
+                .where(filter=FieldFilter('resolved', '==', False))
+            )
+            
+            resolved_count = 0
+            for doc in interventions_ref.stream():
+                doc.reference.update({
+                    'resolved': True,
+                    'resolved_at': datetime.utcnow()
+                })
+                resolved_count += 1
+            
+            if resolved_count > 0:
+                logger.info(
+                    f"✅ Resolved {resolved_count} intervention(s) for "
+                    f"{user_id}: {pattern_type}"
+                )
+            
+            return resolved_count
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to resolve interventions: {e}")
+            return 0
+    
     # ===== Phase 3A: Reminder System =====
     
     def get_users_without_checkin_today(self, today_date: str) -> List[User]:
