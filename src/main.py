@@ -1232,6 +1232,49 @@ async def periodic_report_trigger(request: Request):
         raise HTTPException(500, f"Periodic report failed: {str(e)}")
 
 
+# ===== Admin Broadcast Endpoint =====
+
+@app.post("/admin/broadcast")
+async def admin_broadcast(request: Request):
+    """
+    Send a one-time announcement message to all registered users.
+
+    Protected by admin_id query parameter (same auth as /admin/metrics).
+    Iterates over all users and sends via Telegram Bot API.
+    """
+    admin_id = request.query_params.get("admin_id", "")
+    admin_ids = [aid.strip() for aid in settings.admin_telegram_ids.split(",") if aid.strip()]
+
+    if not admin_ids or admin_id not in admin_ids:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    body = await request.json()
+    message = body.get("message", "")
+
+    if not message:
+        raise HTTPException(status_code=400, detail="Missing 'message' in request body")
+
+    all_users = firestore_service.get_all_users()
+    sent = 0
+    failed = 0
+
+    for user in all_users:
+        try:
+            await bot_manager.bot.send_message(
+                chat_id=user.telegram_id,
+                text=message,
+                parse_mode="HTML",
+            )
+            sent += 1
+            logger.info("Broadcast sent to user %s", user.user_id)
+        except Exception as e:
+            failed += 1
+            logger.error("Broadcast failed for user %s: %s", user.user_id, e)
+
+    logger.info("Broadcast complete: %d sent, %d failed out of %d users", sent, failed, len(all_users))
+    return {"total_users": len(all_users), "sent": sent, "failed": failed}
+
+
 # ===== Error Handlers =====
 
 @app.exception_handler(Exception)
