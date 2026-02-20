@@ -25,7 +25,9 @@ from telegram.ext import (
     MessageHandler,
     filters
 )
+import difflib
 import logging
+from typing import Optional, Tuple
 
 from src.config import settings
 from src.services.firestore_service import firestore_service
@@ -66,6 +68,127 @@ class TelegramBotManager:
         self._register_handlers()
         
         logger.info("✅ Telegram bot initialized")
+    
+    # All registered slash-command names (used for fuzzy matching)
+    REGISTERED_COMMANDS = [
+        "start", "help", "status", "mode", "checkin", "quickcheckin",
+        "use_shield", "set_partner", "partner_status", "unlink_partner",
+        "achievements", "career", "weekly", "monthly", "yearly",
+        "export", "report", "leaderboard", "rank", "invite", "refer",
+        "brag", "share", "resume", "correct", "timezone", "support",
+        "admin_status",
+    ]
+    
+    # Natural language phrases mapped to command names.
+    # Checked BEFORE the LLM supervisor to save API costs.
+    # Longest-match wins (more specific phrases take priority).
+    COMMAND_KEYWORDS = {
+        "partner_status": [
+            "partner status", "how is my partner", "partner update",
+            "accountability partner", "partner doing", "my partner",
+        ],
+        "report": [
+            "give me a report", "weekly report", "show report",
+            "my report", "generate report",
+        ],
+        "status": [
+            "my status", "how am i doing", "show status",
+            "my dashboard",
+        ],
+        "checkin": [
+            "check in", "let me check in", "ready to check in",
+            "want to check in", "daily check",
+        ],
+        "help": [
+            "available commands", "what can you do",
+            "show commands", "list commands",
+        ],
+        "achievements": [
+            "my achievements", "show achievements", "my badges",
+        ],
+        "leaderboard": [
+            "leaderboard", "rankings", "how do i compare",
+        ],
+        "export": [
+            "export data", "download data", "export csv",
+        ],
+        "weekly": [
+            "weekly stats", "last week", "this week stats",
+        ],
+        "monthly": [
+            "monthly stats", "last month", "this month stats",
+        ],
+    }
+    
+    def _fuzzy_match_command(self, text: str) -> Tuple[Optional[str], float]:
+        """
+        Match a misspelled /command against registered commands using
+        SequenceMatcher (Ratcliff/Obershelp algorithm from stdlib).
+        
+        Returns (best_command_name, similarity_score) or (None, 0.0).
+        """
+        if not text.startswith('/'):
+            return None, 0.0
+        
+        # Extract the attempted command, strip / and any @bot suffix
+        attempted = text.split()[0].lstrip('/').split('@')[0].lower()
+        
+        best_match = None
+        best_score = 0.0
+        for cmd in self.REGISTERED_COMMANDS:
+            score = difflib.SequenceMatcher(None, attempted, cmd).ratio()
+            if score > best_score:
+                best_score = score
+                best_match = cmd
+        
+        return best_match, best_score
+    
+    def _get_command_handler_map(self) -> dict:
+        """Map command names to their handler methods for programmatic dispatch."""
+        from src.bot.stats_commands import weekly_command, monthly_command, yearly_command
+        return {
+            "start": self.start_command,
+            "help": self.help_command,
+            "status": self.status_command,
+            "mode": self.mode_command,
+            "use_shield": self.use_shield_command,
+            "set_partner": self.set_partner_command,
+            "partner_status": self.partner_status_command,
+            "unlink_partner": self.unlink_partner_command,
+            "achievements": self.achievements_command,
+            "career": self.career_command,
+            "export": self.export_command,
+            "report": self.report_command,
+            "leaderboard": self.leaderboard_command,
+            "invite": self.invite_command,
+            "share": self.share_command,
+            "resume": self.resume_command,
+            "correct": self.correct_command,
+            "timezone": self.timezone_command,
+            "support": self.support_command,
+            "admin_status": self.admin_status_command,
+            "weekly": weekly_command,
+            "monthly": monthly_command,
+            "yearly": yearly_command,
+        }
+    
+    def _match_command_keywords(self, message: str) -> Optional[str]:
+        """
+        Match a natural-language message against the keyword-to-command map.
+        Prefers the longest keyword match for specificity (e.g., "partner status"
+        beats "status" when the message says "show partner status").
+        """
+        msg_lower = message.lower().strip()
+        
+        best_match = None
+        best_length = 0
+        for command, keywords in self.COMMAND_KEYWORDS.items():
+            for keyword in keywords:
+                if keyword in msg_lower and len(keyword) > best_length:
+                    best_match = command
+                    best_length = len(keyword)
+        
+        return best_match
     
     def _register_handlers(self) -> None:
         """
@@ -155,6 +278,19 @@ class TelegramBotManager:
         self.application.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_general_message),
             group=1  # Lower priority ensures ConversationHandler processes /checkin first
+        )
+        
+        # Fuzzy command matching: catch any unrecognized /command at group 2.
+        # All valid CommandHandlers (group 0) run first; this only fires when
+        # no handler matched the slash-command.
+        self.application.add_handler(
+            MessageHandler(filters.COMMAND, self.handle_unknown_command),
+            group=2
+        )
+        
+        # Callback for fuzzy-match "Did you mean /X?" inline buttons
+        self.application.add_handler(
+            CallbackQueryHandler(self.fuzzy_command_callback, pattern="^fuzzy_cmd:")
         )
         
         logger.info("✅ Command handlers registered")
@@ -2505,6 +2641,83 @@ class TelegramBotManager:
                 "your long-term goals remain."
             )
     
+    # ===== Fuzzy Command Matching Handler =====
+    
+    AUTO_EXECUTE_THRESHOLD = 0.85
+    SUGGEST_THRESHOLD = 0.60
+    
+    async def handle_unknown_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Catch-all for unrecognized slash-commands (group 2).
+        
+        Uses difflib.SequenceMatcher to find the closest registered command:
+          - score >= 0.85 : auto-execute (obvious typo, e.g. /staus -> /status)
+          - 0.60 <= score < 0.85 : suggest with inline button
+          - score < 0.60 : generic "unknown command" + show /help
+        """
+        message_text = update.message.text
+        user_id = str(update.effective_user.id)
+        
+        best_cmd, score = self._fuzzy_match_command(message_text)
+        
+        logger.info(
+            "Fuzzy match for %s from %s: best=%s score=%.2f",
+            message_text, user_id, best_cmd, score
+        )
+        
+        if best_cmd and score >= self.AUTO_EXECUTE_THRESHOLD:
+            handler_map = self._get_command_handler_map()
+            handler = handler_map.get(best_cmd)
+            if handler:
+                await update.message.reply_text(
+                    f"Auto-correcting to /{best_cmd}..."
+                )
+                await handler(update, context)
+                return
+        
+        if best_cmd and score >= self.SUGGEST_THRESHOLD:
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton(
+                    f"Yes, run /{best_cmd}",
+                    callback_data=f"fuzzy_cmd:{best_cmd}"
+                )]
+            ])
+            await update.message.reply_text(
+                f"I don't recognize that command. Did you mean /{best_cmd}?",
+                reply_markup=keyboard
+            )
+            return
+        
+        await update.message.reply_text(
+            "I don't recognize that command.\n\n"
+            "Type /help to see all available commands."
+        )
+    
+    async def fuzzy_command_callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle inline button press from fuzzy-match suggestion."""
+        query = update.callback_query
+        await query.answer()
+        
+        cmd_name = query.data.replace("fuzzy_cmd:", "")
+        handler_map = self._get_command_handler_map()
+        handler = handler_map.get(cmd_name)
+        
+        if handler:
+            await query.message.reply_text(f"Running /{cmd_name}...")
+            await handler(update, context)
+        else:
+            await query.message.reply_text(
+                "Sorry, something went wrong. Try typing the command directly."
+            )
+    
     # ===== Phase 3B: General Message Handler =====
     
     async def handle_general_message(
@@ -2553,6 +2766,20 @@ class TelegramBotManager:
                 intervention_context=intervention_ctx
             )
             return
+        
+        # Keyword shortcut: match natural-language phrases to commands
+        # BEFORE calling the LLM supervisor (saves API costs).
+        matched_cmd = self._match_command_keywords(message_text)
+        if matched_cmd:
+            logger.info(
+                "Keyword match for '%s' -> /%s (skipping LLM)",
+                message_text[:50], matched_cmd
+            )
+            handler_map = self._get_command_handler_map()
+            handler = handler_map.get(matched_cmd)
+            if handler:
+                await handler(update, context)
+                return
         
         # Rate limit check — AI-powered tier (Gemini API calls)
         if not await self._check_rate_limit(update, "query"):
