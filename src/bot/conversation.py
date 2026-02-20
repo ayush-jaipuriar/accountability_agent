@@ -218,6 +218,66 @@ async def start_checkin(
     context.user_data['mode'] = user.constitution_mode
     context.user_data['timezone'] = user_tz  # Phase B: Store for rest of conversation
     
+    # Fetch yesterday's check-in for contextual memory.
+    # This powers three things downstream:
+    #   1. A recall intro message ("Yesterday you planned to...")
+    #   2. An adapted Q2 question referencing yesterday's priority
+    #   3. AI feedback that compares today vs yesterday's commitments
+    from datetime import timedelta as td
+    yesterday_date_str = (
+        datetime.strptime(checkin_date, "%Y-%m-%d") - td(days=1)
+    ).strftime("%Y-%m-%d")
+    yesterday_checkin = firestore_service.get_checkin(user_id, yesterday_date_str)
+    
+    if yesterday_checkin and yesterday_checkin.responses:
+        yesterday_data = {
+            'date': yesterday_checkin.date,
+            'compliance_score': yesterday_checkin.compliance_score,
+            'rating': yesterday_checkin.responses.rating,
+            'rating_reason': yesterday_checkin.responses.rating_reason,
+            'tomorrow_priority': yesterday_checkin.responses.tomorrow_priority,
+            'tomorrow_obstacle': yesterday_checkin.responses.tomorrow_obstacle,
+            'challenges': yesterday_checkin.responses.challenges,
+            'tier1': {
+                'sleep': yesterday_checkin.tier1_non_negotiables.sleep,
+                'training': yesterday_checkin.tier1_non_negotiables.training,
+                'deep_work': yesterday_checkin.tier1_non_negotiables.deep_work,
+                'skill_building': yesterday_checkin.tier1_non_negotiables.skill_building,
+                'zero_porn': yesterday_checkin.tier1_non_negotiables.zero_porn,
+                'boundaries': yesterday_checkin.tier1_non_negotiables.boundaries,
+            }
+        }
+        context.user_data['yesterday_checkin'] = yesterday_data
+        
+        # Build recall intro message
+        intro_parts = []
+        if yesterday_data.get('tomorrow_priority'):
+            intro_parts.append(
+                f"You planned to focus on: <b>{yesterday_data['tomorrow_priority']}</b>"
+            )
+        if yesterday_data.get('tomorrow_obstacle'):
+            intro_parts.append(
+                f"Anticipated obstacle: <i>{yesterday_data['tomorrow_obstacle']}</i>"
+            )
+        tier1_results = yesterday_data.get('tier1', {})
+        failures = [
+            k.replace('_', ' ') for k, v in tier1_results.items() if not v
+        ]
+        if failures:
+            intro_parts.append(f"Missed yesterday: {', '.join(failures)}")
+        if yesterday_data.get('rating'):
+            intro_parts.append(f"Self-rating: {yesterday_data['rating']}/10")
+        
+        if intro_parts:
+            recall_msg = (
+                "📋 <b>Yesterday's Recap:</b>\n"
+                + "\n".join(f"• {p}" for p in intro_parts)
+                + "\n\nLet's see how today went..."
+            )
+            await update.message.reply_text(recall_msg, parse_mode='HTML')
+    else:
+        context.user_data['yesterday_checkin'] = None
+    
     # Phase 3E: Set quick check-in flag if /quickcheckin was used
     if is_quick_checkin:
         context.user_data['checkin_type'] = 'quick'
@@ -455,14 +515,28 @@ async def handle_tier1_response(
             return ConversationHandler.END
         else:
             # Normal check-in: Move to Q2
-            await query.message.reply_text(
-                "📋 Question 2/4\n\n"
-                "Challenges & Handling:\n"
-                "What challenges did you face today? How did you handle them?\n\n"
-                "📝 Type your response (10-500 characters).\n\n"
-                "Example: 'Urge to watch porn around 10 PM. Went for a walk and texted friend instead.'",
-                parse_mode=None  # No markdown formatting
-            )
+            # If yesterday's check-in had a stated priority, reference it
+            # so the user reflects on whether they followed through.
+            yesterday = context.user_data.get('yesterday_checkin')
+            if yesterday and yesterday.get('tomorrow_priority'):
+                priority = yesterday['tomorrow_priority']
+                q2_text = (
+                    f"📋 <b>Question 2/4</b>\n\n"
+                    f"<b>Challenges & Reflection:</b>\n"
+                    f"Yesterday you planned to focus on:\n"
+                    f"<b>\"{priority}\"</b>\n\n"
+                    f"How did that go? What challenges did you face today?\n\n"
+                    f"📝 Type your response (10-500 characters)."
+                )
+            else:
+                q2_text = (
+                    "📋 <b>Question 2/4</b>\n\n"
+                    "<b>Challenges & Handling:</b>\n"
+                    "What challenges did you face today? How did you handle them?\n\n"
+                    "📝 Type your response (10-500 characters).\n\n"
+                    "Example: 'Urge to watch porn around 10 PM. Went for a walk and texted friend instead.'"
+                )
+            await query.message.reply_text(q2_text, parse_mode='HTML')
             return Q2_CHALLENGES
     
     # Still need more answers - keep buttons visible
@@ -740,7 +814,8 @@ async def finish_checkin(
                 self_rating=context.user_data['rating'],
                 rating_reason=context.user_data['rating_reason'],
                 tomorrow_priority=context.user_data['tomorrow_priority'],
-                tomorrow_obstacle=context.user_data['tomorrow_obstacle']
+                tomorrow_obstacle=context.user_data['tomorrow_obstacle'],
+                yesterday_checkin=context.user_data.get('yesterday_checkin'),
             )
             
             # Build final message with header and AI feedback

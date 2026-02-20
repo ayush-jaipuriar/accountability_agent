@@ -112,7 +112,8 @@ class CheckInAgent:
         self_rating: int,
         rating_reason: str,
         tomorrow_priority: str,
-        tomorrow_obstacle: str
+        tomorrow_obstacle: str,
+        yesterday_checkin: dict = None,
     ) -> str:
         """
         Generate personalized check-in feedback using AI
@@ -161,7 +162,8 @@ class CheckInAgent:
                 tomorrow_priority=tomorrow_priority,
                 tomorrow_obstacle=tomorrow_obstacle,
                 constitution_excerpt=constitution_excerpt,
-                recent_checkins=recent_checkins
+                recent_checkins=recent_checkins,
+                yesterday_checkin=yesterday_checkin,
             )
             
             # Generate feedback with Gemini
@@ -306,14 +308,30 @@ class CheckInAgent:
             # Get last N check-ins
             checkins = firestore_service.get_recent_checkins(user_id, days=days)
             
-            # Extract key metrics
+            # Extract metrics AND qualitative data. The trend analysis
+            # only uses compliance_score, but the feedback prompt now
+            # uses challenges/priorities/tier1 for yesterday comparisons.
             recent_data = []
             for checkin in checkins:
-                recent_data.append({
+                entry = {
                     'date': checkin.date,
                     'compliance_score': checkin.compliance_score,
-                    'rating': checkin.responses.rating if hasattr(checkin, 'responses') else None
-                })
+                    'rating': None,
+                }
+                if hasattr(checkin, 'responses') and checkin.responses:
+                    entry['rating'] = checkin.responses.rating
+                    entry['challenges'] = checkin.responses.challenges
+                    entry['rating_reason'] = checkin.responses.rating_reason
+                    entry['tomorrow_priority'] = checkin.responses.tomorrow_priority
+                    entry['tomorrow_obstacle'] = checkin.responses.tomorrow_obstacle
+                if hasattr(checkin, 'tier1_non_negotiables') and checkin.tier1_non_negotiables:
+                    t1 = checkin.tier1_non_negotiables
+                    entry['tier1'] = {
+                        'sleep': t1.sleep, 'training': t1.training,
+                        'deep_work': t1.deep_work, 'skill_building': t1.skill_building,
+                        'zero_porn': t1.zero_porn, 'boundaries': t1.boundaries,
+                    }
+                recent_data.append(entry)
             
             return recent_data
             
@@ -383,7 +401,8 @@ class CheckInAgent:
         tomorrow_priority: str,
         tomorrow_obstacle: str,
         constitution_excerpt: str,
-        recent_checkins: List[Dict]
+        recent_checkins: List[Dict],
+        yesterday_checkin: dict = None,
     ) -> str:
         """
         Build the feedback generation prompt for Gemini
@@ -480,6 +499,7 @@ CONSTITUTION PRINCIPLES (reference these):
 ------------------------------------------
 {constitution_excerpt}
 
+{self._build_yesterday_section(yesterday_checkin)}
 GENERATE FEEDBACK (150-250 words):
 ----------------------------------
 Write feedback that:
@@ -525,6 +545,45 @@ FORMAT: Paragraphs, not bullet points
 Feedback:"""
 
         return prompt
+    
+    def _build_yesterday_section(self, yesterday_checkin: dict = None) -> str:
+        """
+        Build the YESTERDAY'S CONTEXT section for the feedback prompt.
+        
+        When present, this gives the AI specific instructions to compare
+        today's results against what the user committed to yesterday.
+        This is what transforms generic feedback into personal accountability.
+        """
+        if not yesterday_checkin:
+            return ""
+        
+        yc = yesterday_checkin
+        tier1_str = ""
+        if yc.get('tier1'):
+            items = []
+            for k, v in yc['tier1'].items():
+                status = "done" if v else "MISSED"
+                items.append(f"{k.replace('_', ' ')}: {status}")
+            tier1_str = ", ".join(items)
+        
+        return f"""YESTERDAY'S CONTEXT (CRITICAL - REFERENCE THIS IN YOUR FEEDBACK):
+------------------------------------------------------------------
+Yesterday's compliance: {yc.get('compliance_score', 'N/A')}%
+Yesterday's self-rating: {yc.get('rating', 'N/A')}/10
+Yesterday's reason: "{yc.get('rating_reason', 'N/A')}"
+Yesterday's priority for today: "{yc.get('tomorrow_priority', 'N/A')}"
+Yesterday's anticipated obstacle: "{yc.get('tomorrow_obstacle', 'N/A')}"
+Yesterday's challenges: "{yc.get('challenges', 'N/A')}"
+Yesterday's Tier 1: {tier1_str}
+
+INSTRUCTIONS FOR USING YESTERDAY'S CONTEXT:
+- Compare today's Tier 1 results against yesterday's stated intentions
+- If they said they'd fix X but X is STILL failed today: call them out DIRECTLY, reference their exact words
+- If they said obstacle Y would be a problem and it was: acknowledge the struggle but push for a concrete plan
+- If they improved on what they committed to improve: praise the follow-through specifically
+- If they said they'd rate themselves higher today but didn't: note the gap between intention and action
+
+"""
     
     def _fallback_feedback(self, compliance_score: int, current_streak: int) -> str:
         """
