@@ -530,3 +530,215 @@ def _estimate_percentile(compliance: float) -> int:
         return 40  # Top 60%
     else:
         return 20  # Top 80%
+
+
+# ===== Phase 4: Deeper Per-Metric Tracking =====
+
+TIER1_METRICS = ["sleep", "training", "deep_work", "skill_building", "zero_porn", "boundaries"]
+
+METRIC_LABELS = {
+    "sleep": "Sleep 7h+",
+    "training": "Training",
+    "deep_work": "Deep Work",
+    "skill_building": "Skill Building",
+    "zero_porn": "Zero Porn",
+    "boundaries": "Boundaries",
+}
+
+METRIC_EMOJIS = {
+    "sleep": "😴",
+    "training": "💪",
+    "deep_work": "🧠",
+    "skill_building": "📚",
+    "zero_porn": "🚫",
+    "boundaries": "🛡️",
+}
+
+
+def calculate_metric_streaks(checkins: List[DailyCheckIn]) -> Dict[str, int]:
+    """
+    Calculate current consecutive-day streak for each Tier 1 metric.
+
+    Walks the check-in list (assumed newest-first) and counts how many
+    consecutive days each metric was completed from the most recent day.
+    The streak breaks on the first missed day.
+
+    Returns dict mapping metric name -> current streak length.
+    """
+    sorted_by_date = sorted(checkins, key=lambda c: c.date, reverse=True)
+    streaks = {m: 0 for m in TIER1_METRICS}
+
+    for metric in TIER1_METRICS:
+        for c in sorted_by_date:
+            val = getattr(c.tier1_non_negotiables, metric, False)
+            if val:
+                streaks[metric] += 1
+            else:
+                break
+
+    return streaks
+
+
+def calculate_metric_trends(
+    checkins: List[DailyCheckIn],
+    days: int = 7,
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Week-over-week trend for each Tier 1 metric.
+
+    Splits the check-ins into two halves (recent vs older) and computes
+    the change in completion rate between them. This gives a directional
+    signal: is each metric improving, declining, or stable?
+
+    Args:
+        checkins: All available check-ins (should be >= 2*days for comparison)
+        days: Window size for the "current" period (default 7)
+
+    Returns:
+        Dict[metric_name, {"current_pct": float, "previous_pct": float,
+                           "change": float, "direction": str}]
+    """
+    sorted_asc = sorted(checkins, key=lambda c: c.date)
+    current = sorted_asc[-days:] if len(sorted_asc) >= days else sorted_asc
+    previous = sorted_asc[-(2 * days):-days] if len(sorted_asc) >= 2 * days else []
+
+    trends = {}
+    for metric in TIER1_METRICS:
+        cur_count = sum(1 for c in current if getattr(c.tier1_non_negotiables, metric, False))
+        cur_pct = (cur_count / len(current) * 100) if current else 0
+
+        if previous:
+            prev_count = sum(1 for c in previous if getattr(c.tier1_non_negotiables, metric, False))
+            prev_pct = (prev_count / len(previous) * 100) if previous else 0
+        else:
+            prev_pct = cur_pct
+
+        change = cur_pct - prev_pct
+        if change > 10:
+            direction = "up"
+        elif change < -10:
+            direction = "down"
+        else:
+            direction = "stable"
+
+        trends[metric] = {
+            "current_pct": cur_pct,
+            "previous_pct": prev_pct,
+            "change": change,
+            "direction": direction,
+        }
+
+    return trends
+
+
+def format_metric_dashboard(
+    checkins_7d: List[DailyCheckIn],
+    checkins_30d: List[DailyCheckIn],
+) -> str:
+    """
+    Build a comprehensive per-metric dashboard string (HTML) for Telegram.
+
+    Sections:
+    1. 7-day completion bar for each Tier 1 metric
+    2. 7-day vs previous-7-day trend arrows
+    3. 30-day completion rates
+    4. Per-metric streaks (from 30-day data)
+
+    Returns an HTML-formatted string ready for Telegram parse_mode='HTML'.
+    """
+    tier1_7d = _calculate_tier1_stats(checkins_7d) if checkins_7d else {}
+    tier1_30d = _calculate_tier1_stats(checkins_30d) if checkins_30d else {}
+    trends_7d = calculate_metric_trends(checkins_30d, days=7) if len(checkins_30d) >= 7 else {}
+    streaks = calculate_metric_streaks(checkins_30d) if checkins_30d else {}
+
+    parts = ["<b>📊 Metrics Dashboard</b>\n"]
+
+    # Section 1: 7-day snapshot
+    parts.append("<b>Last 7 Days:</b>")
+    if not checkins_7d:
+        parts.append("  No check-ins recorded.\n")
+    else:
+        for metric in TIER1_METRICS:
+            emoji = METRIC_EMOJIS[metric]
+            label = METRIC_LABELS[metric]
+            stats = tier1_7d.get(metric, {})
+            pct = stats.get("pct", 0)
+            days_done = stats.get("days", 0)
+            total = stats.get("total", 0)
+
+            bar = _pct_bar(pct)
+            trend_info = trends_7d.get(metric, {})
+            arrow = _direction_arrow(trend_info.get("direction", "stable"))
+            change = trend_info.get("change", 0)
+            change_str = f"+{change:.0f}%" if change >= 0 else f"{change:.0f}%"
+
+            parts.append(
+                f"  {emoji} {label}: {bar} {pct:.0f}% ({days_done}/{total}) {arrow}{change_str}"
+            )
+        parts.append("")
+
+    # Section 2: 30-day overview
+    parts.append("<b>Last 30 Days:</b>")
+    if not checkins_30d:
+        parts.append("  No data.\n")
+    else:
+        for metric in TIER1_METRICS:
+            emoji = METRIC_EMOJIS[metric]
+            label = METRIC_LABELS[metric]
+            stats = tier1_30d.get(metric, {})
+            pct = stats.get("pct", 0)
+            days_done = stats.get("days", 0)
+            total = stats.get("total", 0)
+            parts.append(f"  {emoji} {label}: {pct:.0f}% ({days_done}/{total})")
+        parts.append("")
+
+    # Section 3: Per-metric streaks
+    parts.append("<b>Current Streaks:</b>")
+    for metric in TIER1_METRICS:
+        emoji = METRIC_EMOJIS[metric]
+        label = METRIC_LABELS[metric]
+        streak_val = streaks.get(metric, 0)
+        if streak_val > 0:
+            parts.append(f"  {emoji} {label}: {streak_val} day{'s' if streak_val != 1 else ''}")
+        else:
+            parts.append(f"  {emoji} {label}: ---")
+
+    return "\n".join(parts)
+
+
+def format_status_tier1_breakdown(checkins_7d: List[DailyCheckIn]) -> str:
+    """
+    Compact Tier 1 breakdown section for the /status command.
+
+    Shows a single-line per metric: emoji + label + completion fraction.
+    Designed to be appended to the existing status message.
+    """
+    if not checkins_7d:
+        return ""
+
+    tier1 = _calculate_tier1_stats(checkins_7d)
+    lines = ["<b>Tier 1 Breakdown (7d):</b>"]
+    for metric in TIER1_METRICS:
+        emoji = METRIC_EMOJIS[metric]
+        label = METRIC_LABELS[metric]
+        stats = tier1.get(metric, {})
+        pct = stats.get("pct", 0)
+        days_done = stats.get("days", 0)
+        total = stats.get("total", 0)
+        lines.append(f"  {emoji} {label}: {days_done}/{total} ({pct:.0f}%)")
+    return "\n".join(lines)
+
+
+def _pct_bar(pct: float, width: int = 5) -> str:
+    """Render a tiny text progress bar: [███░░] style."""
+    filled = round(pct / 100 * width)
+    empty = width - filled
+    return "[" + "█" * filled + "░" * empty + "]"
+
+
+def _direction_arrow(direction: str) -> str:
+    if direction == "up":
+        return "↗️"
+    elif direction == "down":
+        return "↘️"
+    return "→"

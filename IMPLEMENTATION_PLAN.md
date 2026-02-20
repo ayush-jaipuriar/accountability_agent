@@ -1244,4 +1244,20 @@ Once Phase 1 testing is complete, we'll add:
 
 ---
 
+## Production Improvements - Phase 4: Deeper Per-Metric Tracking (Feb 20, 2026)
+
+**Status:** COMPLETE  
+**Files modified:** `src/services/analytics_service.py`, `src/bot/telegram_bot.py`, `src/agents/reporting_agent.py`  
+**Detailed summary:** `PRODUCTION_IMPROVEMENTS_PHASE4.md`
+
+**What was implemented:**
+- New `/metrics` command with 7d/30d completion rates, trend arrows, and per-metric streaks
+- Enhanced `/status` with Tier 1 breakdown (per-metric completion fractions)
+- Enhanced weekly report with Tier 1 breakdown section and per-metric trend data in AI prompt
+- 6 new utility functions in analytics_service.py (streaks, trends, dashboard formatting)
+
+**Test results:** All logic tests passed (streaks, trends, progress bars, formatting)
+
+---
+
 **You now have a fully functional MVP ready to test and deploy!**

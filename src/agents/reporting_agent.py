@@ -85,6 +85,20 @@ async def generate_ai_insights(
     best_day = max(checkins, key=lambda c: c.compliance_score)
     worst_day = min(checkins, key=lambda c: c.compliance_score)
     
+    # Per-metric week-over-week trends (Phase 4)
+    from src.services.analytics_service import calculate_metric_trends, METRIC_LABELS
+    all_checkins = firestore_service.get_recent_checkins(user.user_id, days=14)
+    trends = calculate_metric_trends(all_checkins, days=7)
+
+    trend_lines = []
+    for metric, info in trends.items():
+        label = METRIC_LABELS.get(metric, metric)
+        arrow = "up" if info["direction"] == "up" else ("down" if info["direction"] == "down" else "stable")
+        trend_lines.append(
+            f"  {label}: {info['current_pct']:.0f}% (prev week {info['previous_pct']:.0f}%, {arrow})"
+        )
+    trends_block = "\n".join(trend_lines) if trend_lines else "  No trend data"
+
     # Build compact prompt
     prompt = f"""You are an accountability coach analyzing a user's weekly performance.
 Generate exactly 2-3 sentences of specific, actionable insight.
@@ -101,10 +115,15 @@ This Week's Data:
 - Best Day: {best_day.date} ({best_day.compliance_score:.0f}%)
 - Worst Day: {worst_day.date} ({worst_day.compliance_score:.0f}%)
 
+Per-Metric Trends (vs previous week):
+{trends_block}
+
 Rules:
 - Reference SPECIFIC numbers from the data above
+- If a metric is trending down, call it out directly
+- If a metric is trending up, acknowledge the improvement
 - Highlight the biggest strength AND one area to improve
-- Keep it under 60 words total
+- Keep it under 80 words total
 - Be encouraging but honest
 - Do NOT use emojis"""
 
@@ -210,6 +229,22 @@ def _build_report_message(
     week_start = sorted_checkins[0].date
     week_end = sorted_checkins[-1].date
     
+    # Phase 4: Per-metric breakdown for report
+    from src.services.analytics_service import (
+        _calculate_tier1_stats, TIER1_METRICS, METRIC_LABELS, METRIC_EMOJIS
+    )
+    tier1 = _calculate_tier1_stats(checkins)
+    tier1_lines = []
+    for metric in TIER1_METRICS:
+        emoji = METRIC_EMOJIS[metric]
+        label = METRIC_LABELS[metric]
+        stats = tier1.get(metric, {})
+        pct = stats.get("pct", 0)
+        days_done = stats.get("days", 0)
+        total_d = stats.get("total", 0)
+        tier1_lines.append(f"  {emoji} {label}: {days_done}/{total_d} ({pct:.0f}%)")
+    tier1_block = "\n".join(tier1_lines)
+
     message = (
         f"<b>📊 Weekly Report</b>\n"
         f"<i>{week_start} → {week_end}</i>\n\n"
@@ -220,6 +255,9 @@ def _build_report_message(
         f"• Trend: {trend}\n"
         f"• Best Day: {best_day.date} ({best_day.compliance_score:.0f}%)\n"
         f"• Streak: {user.streaks.current_streak} days 🔥\n\n"
+        
+        f"<b>Tier 1 Breakdown:</b>\n"
+        f"{tier1_block}\n\n"
         
         f"<b>💡 AI Insights:</b>\n"
         f"<i>{ai_insights}</i>\n\n"

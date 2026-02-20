@@ -71,7 +71,7 @@ class TelegramBotManager:
     
     # All registered slash-command names (used for fuzzy matching)
     REGISTERED_COMMANDS = [
-        "start", "help", "status", "mode", "checkin", "quickcheckin",
+        "start", "help", "status", "metrics", "mode", "checkin", "quickcheckin",
         "use_shield", "set_partner", "partner_status", "unlink_partner",
         "achievements", "career", "weekly", "monthly", "yearly",
         "export", "report", "leaderboard", "rank", "invite", "refer",
@@ -118,6 +118,10 @@ class TelegramBotManager:
         "monthly": [
             "monthly stats", "last month", "this month stats",
         ],
+        "metrics": [
+            "my metrics", "show metrics", "metric dashboard",
+            "per metric", "detailed metrics", "tier 1 breakdown",
+        ],
     }
     
     def _fuzzy_match_command(self, text: str) -> Tuple[Optional[str], float]:
@@ -150,6 +154,7 @@ class TelegramBotManager:
             "start": self.start_command,
             "help": self.help_command,
             "status": self.status_command,
+            "metrics": self.metrics_command,
             "mode": self.mode_command,
             "use_shield": self.use_shield_command,
             "set_partner": self.set_partner_command,
@@ -206,6 +211,7 @@ class TelegramBotManager:
         self.application.add_handler(CommandHandler("start", self.start_command))
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("status", self.status_command))
+        self.application.add_handler(CommandHandler("metrics", self.metrics_command))
         self.application.add_handler(CommandHandler("mode", self.mode_command))
         
         # Phase 3A: Streak shield command
@@ -911,15 +917,21 @@ class TelegramBotManager:
             f"<b>📅 Last 7 Days:</b>\n"
             f"• Check-ins completed: {len(recent_checkins)}/7\n"
             f"• Average compliance: {avg_compliance:.1f}%\n\n"
-            f"<b>✅ Today:</b>\n"
         )
+        
+        # Tier 1 per-metric breakdown (Phase 4)
+        from src.services.analytics_service import format_status_tier1_breakdown
+        tier1_section = format_status_tier1_breakdown(recent_checkins)
+        if tier1_section:
+            status_text += tier1_section + "\n\n"
+        
+        status_text += "<b>✅ Today:</b>\n"
         
         if checked_in_today:
             status_text += "• ✅ Check-in complete!\n"
         else:
             status_text += "• ⏳ Check-in pending (use /checkin)\n"
         
-        # Add encouragement based on streak
         if user.streaks.current_streak >= 30:
             status_text += "\n🚀 You're on fire! Keep it up!"
         elif user.streaks.current_streak >= 7:
@@ -929,8 +941,37 @@ class TelegramBotManager:
         else:
             status_text += "\n🎯 Ready to start a new streak? Use /checkin"
         
+        status_text += "\n\n<i>Use /metrics for detailed trends and streaks.</i>"
+        
         await update.message.reply_text(status_text, parse_mode='HTML')
         logger.info(f"✅ /status command from {user_id}")
+    
+    async def metrics_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle /metrics command -- detailed per-metric tracking dashboard.
+
+        Shows 7-day and 30-day completion rates, week-over-week trend
+        arrows, and per-metric streaks for every Tier 1 non-negotiable.
+        """
+        user_id = str(update.effective_user.id)
+
+        user = firestore_service.get_user(user_id)
+        if not user:
+            from src.utils.ux import ErrorMessages
+            await update.message.reply_text(ErrorMessages.user_not_found(), parse_mode='HTML')
+            return
+
+        checkins_7d = firestore_service.get_recent_checkins(user_id, days=7)
+        checkins_30d = firestore_service.get_recent_checkins(user_id, days=30)
+
+        from src.services.analytics_service import format_metric_dashboard
+        dashboard = format_metric_dashboard(checkins_7d, checkins_30d)
+        await update.message.reply_text(dashboard, parse_mode='HTML')
+        logger.info(f"✅ /metrics command from {user_id}")
     
     async def mode_command(
         self,
