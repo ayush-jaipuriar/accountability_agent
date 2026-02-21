@@ -141,11 +141,14 @@ def test_skill_building_question_adapts_to_mode():
 def test_multiple_patterns_can_detect_simultaneously():
     """Test that multiple patterns can be detected at same time without conflicts."""
     
+    today = datetime.utcnow()
+    d = lambda n: (today - timedelta(days=n)).strftime("%Y-%m-%d")
+    
     # Create check-ins that trigger multiple patterns
     checkins = [
         # Trigger multiple patterns simultaneously
         create_test_checkin(
-            date="2026-02-01",
+            date=d(4),
             sleep=False, sleep_hours=5.5,      # Sleep degradation
             training=False,                     # Training abandonment
             deep_work=False, deep_work_hours=1.0,  # Deep work collapse
@@ -154,7 +157,7 @@ def test_multiple_patterns_can_detect_simultaneously():
             consumption_hours=4.5               # Consumption vortex
         ),
         create_test_checkin(
-            date="2026-02-02",
+            date=d(3),
             sleep=False, sleep_hours=5.2,
             training=False,
             deep_work=False, deep_work_hours=0.5,
@@ -163,7 +166,7 @@ def test_multiple_patterns_can_detect_simultaneously():
             consumption_hours=5.0
         ),
         create_test_checkin(
-            date="2026-02-03",
+            date=d(2),
             sleep=False, sleep_hours=5.8,
             training=False,
             deep_work=False, deep_work_hours=1.2,
@@ -172,12 +175,12 @@ def test_multiple_patterns_can_detect_simultaneously():
             consumption_hours=4.0
         ),
         create_test_checkin(
-            date="2026-02-04",
+            date=d(1),
             deep_work=False, deep_work_hours=1.0,
             consumption_hours=3.5
         ),
         create_test_checkin(
-            date="2026-02-05",
+            date=d(0),
             deep_work=False, deep_work_hours=0.8,
             consumption_hours=4.2
         )
@@ -205,27 +208,29 @@ def test_multiple_patterns_can_detect_simultaneously():
 def test_patterns_with_missing_optional_data():
     """Test that patterns work when optional data (wake_time, consumption_hours) missing."""
     
+    today = datetime.utcnow()
+    d = lambda n: (today - timedelta(days=n)).strftime("%Y-%m-%d")
+    
     # Create check-ins WITHOUT optional data
     checkins = [
         create_test_checkin(
-            date="2026-02-01",
+            date=d(4),
             deep_work=False, deep_work_hours=1.0
-            # No wake_time, no consumption_hours
         ),
         create_test_checkin(
-            date="2026-02-02",
+            date=d(3),
             deep_work=False, deep_work_hours=0.8
         ),
         create_test_checkin(
-            date="2026-02-03",
+            date=d(2),
             deep_work=False, deep_work_hours=1.2
         ),
         create_test_checkin(
-            date="2026-02-04",
+            date=d(1),
             deep_work=False, deep_work_hours=1.1
         ),
         create_test_checkin(
-            date="2026-02-05",
+            date=d(0),
             deep_work=False, deep_work_hours=0.9
         )
     ]
@@ -278,15 +283,18 @@ def test_relationship_interference_correlation_threshold():
     
     agent = PatternDetectionAgent()
     
+    today = datetime.utcnow()
+    d = lambda n: (today - timedelta(days=n)).strftime("%Y-%m-%d")
+    
     # Test Case 1: Exactly 70% correlation (should NOT trigger)
     checkins_70 = [
-        create_test_checkin(date="2026-02-01", boundaries=False, sleep=False),  # Interference
-        create_test_checkin(date="2026-02-02", boundaries=False, sleep=False),  # Interference
-        create_test_checkin(date="2026-02-03", boundaries=False, sleep=False),  # Interference
-        create_test_checkin(date="2026-02-04", boundaries=False, sleep=False),  # Interference
-        create_test_checkin(date="2026-02-05", boundaries=False, sleep=False),  # Interference
-        create_test_checkin(date="2026-02-06", boundaries=False, sleep=False),  # Interference
-        create_test_checkin(date="2026-02-07", boundaries=False, sleep=False),  # Interference (7/7 = 100%)
+        create_test_checkin(date=d(6), boundaries=False, sleep=False),  # Interference
+        create_test_checkin(date=d(5), boundaries=False, sleep=False),  # Interference
+        create_test_checkin(date=d(4), boundaries=False, sleep=False),  # Interference
+        create_test_checkin(date=d(3), boundaries=False, sleep=False),  # Interference
+        create_test_checkin(date=d(2), boundaries=False, sleep=False),  # Interference
+        create_test_checkin(date=d(1), boundaries=False, sleep=False),  # Interference
+        create_test_checkin(date=d(0), boundaries=False, sleep=False),  # Interference (7/7 = 100%)
     ]
     
     patterns_70 = agent.detect_patterns(checkins_70)
@@ -301,13 +309,13 @@ def test_relationship_interference_correlation_threshold():
     # Test Case 2: 71% correlation (should trigger)
     # 5 violations, 5 interferences = 100% (>70%)
     checkins_71 = [
-        create_test_checkin(date="2026-02-01", boundaries=False, sleep=False),  # Interference
-        create_test_checkin(date="2026-02-02", boundaries=False, training=False),  # Interference
-        create_test_checkin(date="2026-02-03", boundaries=True, sleep=True),  # OK
-        create_test_checkin(date="2026-02-04", boundaries=False, sleep_hours=6.0),  # Interference
-        create_test_checkin(date="2026-02-05", boundaries=False, training=False),  # Interference
-        create_test_checkin(date="2026-02-06", boundaries=False, sleep_hours=6.5),  # Interference
-        create_test_checkin(date="2026-02-07", boundaries=True, training=True),  # OK
+        create_test_checkin(date=d(6), boundaries=False, sleep=False),  # Interference
+        create_test_checkin(date=d(5), boundaries=False, training=False),  # Interference
+        create_test_checkin(date=d(4), boundaries=True, sleep=True),  # OK
+        create_test_checkin(date=d(3), boundaries=False, sleep_hours=6.0),  # Interference
+        create_test_checkin(date=d(2), boundaries=False, training=False),  # Interference
+        create_test_checkin(date=d(1), boundaries=False, sleep_hours=6.5),  # Interference
+        create_test_checkin(date=d(0), boundaries=True, training=True),  # OK
     ]
     
     patterns_71 = agent.detect_patterns(checkins_71)
@@ -327,9 +335,9 @@ def test_pattern_scan_performance():
     """Test that pattern detection completes in reasonable time."""
     import time
     
-    # Create 7 days of check-ins
+    today = datetime.utcnow()
     checkins = [
-        create_test_checkin(date=f"2026-02-0{i+1}") 
+        create_test_checkin(date=(today - timedelta(days=6-i)).strftime("%Y-%m-%d")) 
         for i in range(7)
     ]
     

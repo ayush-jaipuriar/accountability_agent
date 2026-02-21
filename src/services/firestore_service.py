@@ -747,8 +747,12 @@ class FirestoreService:
         within the cooldown window. Used by pattern scan to prevent
         duplicate alerts (e.g., sending "Training Abandonment" every 6 hours).
         
-        Uses .limit(1) for efficiency -- we only need to know if at least
-        one matching document exists, not fetch all of them.
+        Implementation note: Firestore compound queries (equality on one
+        field + range on another) require a composite index. Rather than
+        depend on a manually-created index, we query only by sent_at
+        (single-field range -- always works) and filter pattern_type in
+        Python. The subcollection is small (tens of docs per user) so
+        client-side filtering is negligible.
         
         Args:
             user_id: User ID
@@ -760,30 +764,27 @@ class FirestoreService:
         """
         try:
             cutoff = datetime.utcnow() - timedelta(hours=cooldown_hours)
-            
+
             interventions_ref = (
                 self.db.collection('interventions')
                 .document(user_id)
                 .collection('interventions')
-                .where(filter=FieldFilter('pattern_type', '==', pattern_type))
                 .where(filter=FieldFilter('sent_at', '>=', cutoff))
-                .limit(1)
             )
-            
-            docs = list(interventions_ref.stream())
-            has_recent = len(docs) > 0
-            
-            if has_recent:
-                logger.debug(
-                    f"Cooldown active for {user_id}: {pattern_type} "
-                    f"(sent within last {cooldown_hours}h)"
-                )
-            
-            return has_recent
+
+            for doc in interventions_ref.stream():
+                if doc.to_dict().get('pattern_type') == pattern_type:
+                    logger.info(
+                        "Cooldown active for %s: %s (sent within last %dh)",
+                        user_id, pattern_type, cooldown_hours
+                    )
+                    return True
+
+            return False
             
         except Exception as e:
-            logger.error(f"❌ Failed to check recent intervention: {e}")
-            return False  # On error, allow the intervention (fail-open)
+            logger.error("Failed to check recent intervention: %s", e)
+            return False
     
     def resolve_interventions(
         self,

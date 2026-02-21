@@ -187,9 +187,9 @@ class TestPhase1CooldownFirestore:
     def test_has_recent_intervention_true(self, firestore_svc):
         """Returns True when a matching intervention exists within cooldown window."""
         mock_doc = MagicMock()
+        mock_doc.to_dict.return_value = {"pattern_type": "training_abandonment"}
         coll = MagicMock()
         coll.where.return_value = coll
-        coll.limit.return_value = coll
         coll.stream.return_value = [mock_doc]
 
         firestore_svc.db.collection.return_value.document.return_value.collection.return_value = coll
@@ -197,17 +197,40 @@ class TestPhase1CooldownFirestore:
         result = firestore_svc.has_recent_intervention("111", "training_abandonment", 48)
         assert result is True
 
-    def test_has_recent_intervention_false(self, firestore_svc):
-        """Returns False when no matching intervention found in cooldown window."""
+    def test_has_recent_intervention_false_no_docs(self, firestore_svc):
+        """Returns False when no interventions found in cooldown window."""
         coll = MagicMock()
         coll.where.return_value = coll
-        coll.limit.return_value = coll
         coll.stream.return_value = []
 
         firestore_svc.db.collection.return_value.document.return_value.collection.return_value = coll
 
         result = firestore_svc.has_recent_intervention("111", "training_abandonment", 48)
         assert result is False
+
+    def test_has_recent_intervention_false_wrong_pattern(self, firestore_svc):
+        """Returns False when docs exist but none match the target pattern_type."""
+        mock_doc = MagicMock()
+        mock_doc.to_dict.return_value = {"pattern_type": "sleep_degradation"}
+        coll = MagicMock()
+        coll.where.return_value = coll
+        coll.stream.return_value = [mock_doc]
+
+        firestore_svc.db.collection.return_value.document.return_value.collection.return_value = coll
+
+        result = firestore_svc.has_recent_intervention("111", "training_abandonment", 48)
+        assert result is False
+
+    def test_has_recent_intervention_uses_single_where(self, firestore_svc):
+        """Query should use only one .where() call (sent_at range), not two."""
+        coll = MagicMock()
+        coll.where.return_value = coll
+        coll.stream.return_value = []
+
+        firestore_svc.db.collection.return_value.document.return_value.collection.return_value = coll
+
+        firestore_svc.has_recent_intervention("111", "training_abandonment", 48)
+        assert coll.where.call_count == 1, "Should use exactly 1 .where() to avoid composite index"
 
     def test_has_recent_intervention_error_failopen(self, firestore_svc):
         """On Firestore error, fail-open (return False) so interventions still send."""
@@ -250,6 +273,51 @@ class TestPhase1CooldownFirestore:
         firestore_svc.db.collection.side_effect = Exception("oops")
         count = firestore_svc.resolve_interventions("111", "training_abandonment")
         assert count == 0
+
+
+class TestPhase1StalenessGuard:
+    """Pattern detection should skip stale check-in data (> 7 days old)."""
+
+    def test_stale_checkins_skipped(self):
+        """Check-ins older than 7 days should produce no patterns."""
+        with patch('src.services.firestore_service.firestore.Client'):
+            from src.agents.pattern_detection import PatternDetectionAgent
+            agent = PatternDetectionAgent.__new__(PatternDetectionAgent)
+
+            old_date = (datetime.utcnow() - timedelta(days=10)).strftime("%Y-%m-%d")
+            checkins = [
+                _make_checkin(old_date, training=False, sleep=False),
+            ] * 3
+            patterns = agent.detect_patterns(checkins)
+            assert patterns == []
+
+    def test_fresh_checkins_detected(self):
+        """Check-ins within 7 days should still trigger detection."""
+        with patch('src.services.firestore_service.firestore.Client'):
+            from src.agents.pattern_detection import PatternDetectionAgent
+            agent = PatternDetectionAgent.__new__(PatternDetectionAgent)
+
+            recent_date = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+            checkins = [
+                _make_checkin(recent_date, training=False),
+            ] * 3
+            patterns = agent.detect_patterns(checkins)
+            pattern_types = [p.type for p in patterns]
+            assert "training_abandonment" in pattern_types
+
+    def test_boundary_7_days_included(self):
+        """Check-ins exactly 7 days old should still be processed."""
+        with patch('src.services.firestore_service.firestore.Client'):
+            from src.agents.pattern_detection import PatternDetectionAgent
+            agent = PatternDetectionAgent.__new__(PatternDetectionAgent)
+
+            boundary_date = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%d")
+            checkins = [
+                _make_checkin(boundary_date, training=False),
+            ] * 3
+            patterns = agent.detect_patterns(checkins)
+            pattern_types = [p.type for p in patterns]
+            assert "training_abandonment" in pattern_types
 
 
 # =====================================================================

@@ -186,7 +186,21 @@ class PatternDetectionAgent:
         if not checkins:
             logger.info("No check-ins provided, skipping pattern detection")
             return []
-        
+
+        newest = checkins[-1]
+        try:
+            newest_date = datetime.strptime(newest.date, "%Y-%m-%d")
+            days_old = (datetime.utcnow() - newest_date).days
+            if days_old > 7:
+                logger.info(
+                    "Newest check-in is %d days old (%s) — skipping "
+                    "check-in-based detection (ghosting detector handles this)",
+                    days_old, newest.date,
+                )
+                return []
+        except (ValueError, AttributeError):
+            pass
+
         logger.info(f"Running pattern detection on {len(checkins)} check-ins")
         
         patterns = []
