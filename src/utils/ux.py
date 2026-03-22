@@ -500,6 +500,7 @@ def generate_help_text() -> str:
         f"<b>{EMOJI['partner']} Partner:</b>\n"
         f"/set_partner @user - Link accountability partner\n"
         f"/partner_status - View partner's dashboard\n"
+        f"/partner_notifications - Toggle daily partner check-in alerts\n"
         f"/unlink_partner - Remove partner\n\n"
         
         f"<b>{EMOJI['emotional']} Support & Natural Language:</b>\n"

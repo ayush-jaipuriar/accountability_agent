@@ -113,6 +113,7 @@ class User(BaseModel):
     # ===== Phase 3B: Emotional Support & Accountability =====
     accountability_partner_id: Optional[str] = None       # Linked user ID for accountability
     accountability_partner_name: Optional[str] = None     # Partner's display name
+    partner_checkin_notifications_enabled: bool = True    # Shared pair setting for daily check-in notifications
     
     # ===== Phase 3C: Gamification =====
     achievements: List[str] = Field(default_factory=list)  # Unlocked achievement IDs
@@ -161,6 +162,7 @@ class User(BaseModel):
             # Phase 3B: Accountability
             "accountability_partner_id": self.accountability_partner_id,
             "accountability_partner_name": self.accountability_partner_name,
+            "partner_checkin_notifications_enabled": self.partner_checkin_notifications_enabled,
             
             # Phase 3C: Gamification
             "achievements": self.achievements,

@@ -393,6 +393,34 @@ class TestUnlinkPartnerCommand:
         assert bot_manager._mock_fs.set_accountability_partner.call_count == 2
 
 
+class TestPartnerNotificationsCommand:
+    @pytest.mark.asyncio
+    async def test_show_toggle_ui(self, bot_manager):
+        user = _make_user(user_id="111", accountability_partner_id="222")
+        partner = _make_user(user_id="222", telegram_id=222, name="Partner")
+        bot_manager._mock_fs.get_user.side_effect = [user, partner]
+        update = _make_update(text="/partner_notifications")
+        context = _make_context()
+
+        await bot_manager.partner_notifications_command(update, context)
+
+        text = update.message.reply_text.call_args[0][0]
+        assert "Partner Check-In Notifications" in text
+
+    @pytest.mark.asyncio
+    async def test_direct_toggle_updates_both_users(self, bot_manager):
+        user = _make_user(user_id="111", accountability_partner_id="222")
+        partner = _make_user(user_id="222", telegram_id=222, name="Partner")
+        bot_manager._mock_fs.get_user.side_effect = [user, partner]
+        update = _make_update(text="/partner_notifications off")
+        context = _make_context(args=["off"])
+
+        await bot_manager.partner_notifications_command(update, context)
+
+        assert bot_manager._mock_fs.update_user.call_count == 2
+        context.bot.send_message.assert_called_once()
+
+
 class TestAchievementsCommand:
     @pytest.mark.asyncio
     async def test_no_achievements(self, bot_manager):
@@ -542,6 +570,15 @@ class TestAdminStatusCommand:
 
 
 class TestGeneralMessageHandler:
+    @pytest.mark.asyncio
+    async def test_post_checkin_message_is_suppressed_once(self, bot_manager):
+        update = _make_update(text="Tomorrow I need to regain momentum")
+        context = _make_context(user_data={"suppress_general_message_once": True})
+
+        await bot_manager.handle_general_message(update, context)
+
+        update.message.reply_text.assert_not_called()
+
     @pytest.mark.asyncio
     async def test_checkin_intent(self, bot_manager):
         update = _make_update(text="I want to check in")

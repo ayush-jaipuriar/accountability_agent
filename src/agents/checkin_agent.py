@@ -75,6 +75,7 @@ from src.services.constitution_service import constitution_service
 from src.config import settings
 from src.models.schemas import Tier1NonNegotiables
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 
@@ -292,6 +293,128 @@ class CheckInAgent:
                 feedback += "Keep up the momentum!"
             
             return feedback
+
+    def should_offer_support_guidance(
+        self,
+        tier1: Tier1NonNegotiables,
+        self_rating: int,
+        rating_reason: str,
+        challenges: str,
+        recent_checkins: Optional[List[Dict]] = None,
+        compliance_score: Optional[int] = None,
+    ) -> bool:
+        """
+        Decide whether a check-in deserves a short support section.
+
+        The goal is to catch genuine stress/overwhelm signals without turning
+        every imperfect day into an unsolicited emotional-support response.
+        """
+        text = f"{rating_reason} {challenges}".lower()
+        explicit_patterns = [
+            r"\bstress(?:ed)?\b",
+            r"\banxious\b",
+            r"\banxiety\b",
+            r"\boverwhelm(?:ed|ing)?\b",
+            r"\bburn(?:ed)? out\b",
+            r"\bpanic(?:king|ked)?\b",
+            r"\bdrained\b",
+            r"\bexhausted\b",
+            r"\bno momentum\b",
+            r"\black of momentum\b",
+        ]
+        explicit_hits = sum(
+            1 for pattern in explicit_patterns if re.search(pattern, text)
+        )
+
+        score = 0
+        if explicit_hits:
+            score += 2 + min(explicit_hits - 1, 1)
+
+        if self_rating <= 4:
+            score += 2
+        elif self_rating <= 6:
+            score += 1
+
+        if not tier1.sleep:
+            score += 1
+        if not tier1.deep_work:
+            score += 1
+        if not tier1.training:
+            score += 0.5
+
+        if compliance_score is not None and compliance_score < 70:
+            score += 1
+
+        if recent_checkins:
+            trend = self._analyze_trend(recent_checkins, compliance_score or 0)
+            if "declining" in trend or "struggling" in trend:
+                score += 1
+
+        # Explicit emotional language should usually be enough when paired with
+        # at least one other signal. Inferred support needs a higher bar.
+        if explicit_hits and score >= 3:
+            return True
+
+        return score >= 4
+
+    async def generate_support_guidance(
+        self,
+        user_id: str,
+        tier1: Tier1NonNegotiables,
+        compliance_score: int,
+        self_rating: int,
+        rating_reason: str,
+        challenges: str,
+        current_streak: int,
+        recent_checkins: Optional[List[Dict]] = None,
+    ) -> str:
+        """
+        Generate a short LLM-based support section for difficult check-ins.
+
+        This is intentionally compact and action-oriented so it can live inside
+        the main check-in response instead of showing up as a separate message.
+        """
+        recent_checkins = recent_checkins or self._get_recent_checkins(user_id, days=7)
+        trend = self._analyze_trend(recent_checkins, compliance_score)
+
+        prompt = f"""Write a short support add-on for a daily check-in response.
+
+CHECK-IN SIGNALS:
+- Compliance: {compliance_score}%
+- Self-rating: {self_rating}/10
+- Rating reason: "{rating_reason}"
+- Challenges: "{challenges}"
+- Sleep met: {tier1.sleep}
+- Training done: {tier1.training}
+- Deep work done: {tier1.deep_work}
+- Skill building done: {tier1.skill_building}
+- Current streak: {current_streak} days
+- Recent trend: {trend}
+
+TASK:
+- Write 70-120 words max.
+- Give calm, specific guidance tied to today's signals.
+- Focus on one concrete next step for tonight or tomorrow.
+- Mention stress/overwhelm ONLY if the user's wording clearly supports it.
+
+DO NOT:
+- Do not use therapy scripts like "I hear you" or "your feelings are valid."
+- Do not use numbered CBT steps.
+- Do not ask multiple questions.
+- Do not repeat generic lines like "stress is a signal, not weakness."
+
+STYLE:
+- Direct, grounded, supportive.
+- Written as a short in-line coaching note for the main check-in summary.
+
+Return only the support note text."""
+
+        guidance = await self.llm.generate_text(
+            prompt=prompt,
+            max_output_tokens=220,
+            temperature=0.5
+        )
+        return guidance.strip()
     
     def _get_recent_checkins(self, user_id: str, days: int = 7) -> List[Dict]:
         """
@@ -536,6 +659,8 @@ TONE REQUIREMENTS:
 - Like a coach who knows the athlete well
 - Use emojis sparingly (🔥, ✅, 💪, 🎯 only)
 - Focus on BEHAVIOR, not feelings
+- Do not turn this into therapy or emotional-support scripting
+- Do not write "I hear you", "your feelings are valid", or long stress/anxiety coaching
 - NO: "Great job!", "Keep it up!", "You're amazing!"
 - YES: Specific observations, data, actionable guidance
 

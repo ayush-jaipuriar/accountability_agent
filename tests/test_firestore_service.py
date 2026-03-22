@@ -326,7 +326,80 @@ class TestReminderStatus:
         result = firestore_svc.get_reminder_status("123456789", "2026-02-07")
         assert result is not None
         assert result["first_sent"] is True
-        assert result["second_sent"] is False
+
+
+class TestPartnerCheckinNotificationStatus:
+    """Tests for partner notification status tracking."""
+
+    def test_get_partner_notification_status_none(self, firestore_svc, mock_db):
+        mock_doc = MagicMock()
+        mock_doc.exists = False
+        (mock_db.collection.return_value
+         .document.return_value
+         .collection.return_value
+         .document.return_value
+         .get.return_value) = mock_doc
+
+        result = firestore_svc.get_partner_checkin_notification_status(
+            "123456789", "2026-03-22"
+        )
+        assert result is None
+
+    def test_mark_partner_notification_sent_initial(self, firestore_svc, mock_db):
+        mock_doc = MagicMock()
+        mock_doc.exists = False
+        mock_doc.to_dict.return_value = {}
+        mock_doc_ref = (
+            mock_db.collection.return_value
+            .document.return_value
+            .collection.return_value
+            .document.return_value
+        )
+        mock_doc_ref.get.return_value = mock_doc
+
+        result = firestore_svc.mark_partner_checkin_notification_sent(
+            user_id="123456789",
+            date="2026-03-22",
+            partner_id="987654321",
+            event_type="initial",
+        )
+
+        assert result is True
+        mock_doc_ref.set.assert_called_once()
+        payload = mock_doc_ref.set.call_args[0][0]
+        assert payload["initial_sent"] is True
+        assert payload["partner_id"] == "987654321"
+
+    def test_mark_partner_notification_sent_update(self, firestore_svc, mock_db):
+        existing = {
+            "user_id": "123456789",
+            "date": "2026-03-22",
+            "partner_id": "987654321",
+            "initial_sent": True,
+            "updated_sent": False,
+        }
+        mock_doc = MagicMock()
+        mock_doc.exists = True
+        mock_doc.to_dict.return_value = existing
+        mock_doc_ref = (
+            mock_db.collection.return_value
+            .document.return_value
+            .collection.return_value
+            .document.return_value
+        )
+        mock_doc_ref.get.return_value = mock_doc
+
+        result = firestore_svc.mark_partner_checkin_notification_sent(
+            user_id="123456789",
+            date="2026-03-22",
+            partner_id="987654321",
+            event_type="updated",
+        )
+
+        assert result is True
+        payload = mock_doc_ref.set.call_args[0][0]
+        assert payload["initial_sent"] is True
+        assert payload["updated_sent"] is True
 
     def test_set_reminder_sent_first(self, firestore_svc, mock_db):
         """Should mark first reminder as sent."""

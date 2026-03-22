@@ -46,6 +46,7 @@ from src.utils.timezone_utils import get_current_date_ist, get_checkin_date, get
 from src.utils.compliance import calculate_compliance_score, format_compliance_message
 from src.utils.streak import update_streak_data, format_streak_message
 from src.agents.checkin_agent import get_checkin_agent
+from src.services.partner_notification_service import send_partner_checkin_notification
 from src.config import settings
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,24 @@ logger = logging.getLogger(__name__)
 
 # ===== Conversation States =====
 Q1_TIER1, Q2_CHALLENGES, Q3_RATING, Q4_TOMORROW = range(4)
+
+
+async def _notify_sender_if_partner_delivery_failed(message, notification_result) -> None:
+    """
+    Tell the sender only when partner delivery truly failed.
+
+    We stay quiet for normal skip cases like "no partner", "disabled", or
+    "already sent" because those are expected and shouldn't clutter check-ins.
+    """
+    if notification_result.get("reason") == "partner_missing":
+        await message.reply_text(
+            "ℹ️ Your check-in was saved, but partner notification could not be delivered "
+            "because your linked partner account could not be found."
+        )
+    elif notification_result.get("reason") == "delivery_failed":
+        await message.reply_text(
+            "ℹ️ Your check-in was saved, but partner notification could not be delivered."
+        )
 
 
 # ===== Phase 3D: Career Mode Adaptive Questions =====
@@ -705,7 +724,8 @@ async def handle_tomorrow_response(
     # Store responses
     context.user_data['tomorrow_priority'] = priority
     context.user_data['tomorrow_obstacle'] = obstacle
-    
+    context.user_data['suppress_general_message_once'] = True
+
     # Finish check-in
     await finish_checkin(update, context)
     
@@ -803,6 +823,7 @@ async def finish_checkin(
         try:
             # Get CheckIn Agent
             checkin_agent = get_checkin_agent(settings.gcp_project_id)
+            recent_checkins = checkin_agent._get_recent_checkins(user_id, days=7)
             
             # Generate personalized feedback with AI
             ai_feedback = await checkin_agent.generate_feedback(
@@ -817,6 +838,29 @@ async def finish_checkin(
                 tomorrow_obstacle=context.user_data['tomorrow_obstacle'],
                 yesterday_checkin=context.user_data.get('yesterday_checkin'),
             )
+
+            support_guidance = None
+            if checkin_agent.should_offer_support_guidance(
+                tier1=tier1,
+                self_rating=context.user_data['rating'],
+                rating_reason=context.user_data['rating_reason'],
+                challenges=context.user_data['challenges'],
+                recent_checkins=recent_checkins,
+                compliance_score=compliance_score,
+            ):
+                try:
+                    support_guidance = await checkin_agent.generate_support_guidance(
+                        user_id=user_id,
+                        tier1=tier1,
+                        compliance_score=compliance_score,
+                        self_rating=context.user_data['rating'],
+                        rating_reason=context.user_data['rating_reason'],
+                        challenges=context.user_data['challenges'],
+                        current_streak=streak_updates['current_streak'],
+                        recent_checkins=recent_checkins,
+                    )
+                except Exception as e:
+                    logger.error(f"Support guidance generation failed, skipping: {e}")
             
             # Build final message with header and AI feedback
             feedback_parts = []
@@ -846,6 +890,9 @@ async def finish_checkin(
                         logger.info(f"📊 Added social proof for user {user_id}")
             except Exception as e:
                 logger.error(f"⚠️ Social proof generation failed (non-critical): {e}")
+
+            if support_guidance:
+                feedback_parts.append(f"\n---\n\n💙 <b>Support Focus</b>\n{support_guidance}")
             
             feedback_parts.append(f"\n---\n\n🎯 See you tomorrow at 9 PM!")
             
@@ -895,6 +942,15 @@ async def finish_checkin(
             final_message = "\n".join(feedback_parts)
         
         await update.message.reply_text(final_message, parse_mode='HTML')
+
+        partner_notification = await send_partner_checkin_notification(
+            bot=context.bot,
+            sender=user,
+            tier1=tier1,
+            date=date,
+            fallback_sender_name=update.effective_user.first_name,
+        )
+        await _notify_sender_if_partner_delivery_failed(update.message, partner_notification)
         
         # ===== PHASE 3C: Achievement System Integration =====
         # Check for newly unlocked achievements after streak update
@@ -1161,6 +1217,16 @@ async def finish_checkin_quick(
             await query.message.reply_text(final_message, parse_mode='HTML')
         else:
             await update.message.reply_text(final_message, parse_mode='HTML')
+
+        partner_notification = await send_partner_checkin_notification(
+            bot=context.bot,
+            sender=user,
+            tier1=tier1,
+            date=date,
+            fallback_sender_name=update.effective_user.first_name,
+        )
+        target_message = query.message if query else update.message
+        await _notify_sender_if_partner_delivery_failed(target_message, partner_notification)
         
         logger.info(
             f"⚡ Quick check-in completed for {user_id}: {compliance_score}% compliance, "

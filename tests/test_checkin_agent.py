@@ -10,7 +10,11 @@ import os
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.agents.checkin_agent import get_checkin_agent, reset_checkin_agent
+os.environ.setdefault("TELEGRAM_BOT_TOKEN", "test-token")
+os.environ.setdefault("TELEGRAM_CHAT_ID", "123456")
+os.environ.setdefault("ENVIRONMENT", "production")
+
+from src.agents.checkin_agent import CheckInAgent, get_checkin_agent, reset_checkin_agent
 from src.models.schemas import Tier1NonNegotiables
 from src.config import settings
 
@@ -284,6 +288,52 @@ async def test_feedback_token_cost(checkin_agent):
     
     # Output should be roughly 150-250 words = 200-350 tokens
     assert estimated_output_tokens < 500, "Output too long (token budget exceeded)"
+
+
+def test_support_guidance_requires_strong_signal():
+    agent = CheckInAgent.__new__(CheckInAgent)
+    tier1 = Tier1NonNegotiables(
+        sleep=False,
+        training=True,
+        deep_work=False,
+        skill_building=False,
+        zero_porn=True,
+        boundaries=True,
+    )
+
+    should_offer = agent.should_offer_support_guidance(
+        tier1=tier1,
+        self_rating=4,
+        rating_reason="Feeling overwhelmed and stuck with no momentum today.",
+        challenges="Work felt stressful and I could not regain focus.",
+        recent_checkins=[],
+        compliance_score=50,
+    )
+
+    assert should_offer is True
+
+
+def test_support_guidance_skips_normal_imperfect_days():
+    agent = CheckInAgent.__new__(CheckInAgent)
+    tier1 = Tier1NonNegotiables(
+        sleep=True,
+        training=False,
+        deep_work=True,
+        skill_building=False,
+        zero_porn=True,
+        boundaries=True,
+    )
+
+    should_offer = agent.should_offer_support_guidance(
+        tier1=tier1,
+        self_rating=7,
+        rating_reason="Decent day overall, just missed training because of meetings.",
+        challenges="A packed schedule reduced flexibility but nothing too serious.",
+        recent_checkins=[],
+        compliance_score=66,
+    )
+
+    assert should_offer is False
 
 
 if __name__ == "__main__":

@@ -31,6 +31,10 @@ from typing import Optional, Tuple
 
 from src.config import settings
 from src.services.firestore_service import firestore_service
+from src.services.partner_notification_service import (
+    get_preferred_first_name,
+    send_partner_checkin_notification,
+)
 from src.models.schemas import User, get_current_date_ist
 from src.utils.metrics import metrics
 from src.utils.rate_limiter import rate_limiter
@@ -73,6 +77,7 @@ class TelegramBotManager:
     REGISTERED_COMMANDS = [
         "start", "help", "status", "metrics", "mode", "checkin", "quickcheckin",
         "use_shield", "set_partner", "partner_status", "unlink_partner",
+        "partner_notifications",
         "achievements", "career", "weekly", "monthly", "yearly",
         "export", "report", "leaderboard", "rank", "invite", "refer",
         "brag", "share", "resume", "correct", "timezone", "support",
@@ -160,6 +165,7 @@ class TelegramBotManager:
             "set_partner": self.set_partner_command,
             "partner_status": self.partner_status_command,
             "unlink_partner": self.unlink_partner_command,
+            "partner_notifications": self.partner_notifications_command,
             "achievements": self.achievements_command,
             "career": self.career_command,
             "export": self.export_command,
@@ -221,6 +227,7 @@ class TelegramBotManager:
         self.application.add_handler(CommandHandler("set_partner", self.set_partner_command))
         self.application.add_handler(CommandHandler("partner_status", self.partner_status_command))
         self.application.add_handler(CommandHandler("unlink_partner", self.unlink_partner_command))
+        self.application.add_handler(CommandHandler("partner_notifications", self.partner_notifications_command))
         
         # Phase 3C: Achievement system commands
         self.application.add_handler(CommandHandler("achievements", self.achievements_command))
@@ -277,6 +284,7 @@ class TelegramBotManager:
         # Phase 3B: Partner request callbacks
         self.application.add_handler(CallbackQueryHandler(self.accept_partner_callback, pattern="^accept_partner:"))
         self.application.add_handler(CallbackQueryHandler(self.decline_partner_callback, pattern="^decline_partner:"))
+        self.application.add_handler(CallbackQueryHandler(self.partner_notifications_callback, pattern="^partner_notify_"))
         
         # Phase 3B: General message handler for emotional support and queries
         # This catches all non-command text messages
@@ -1521,12 +1529,21 @@ class TelegramBotManager:
             partner_id=requester_user_id,
             partner_name=requester.name
         )
+        firestore_service.update_user(
+            requester_user_id,
+            {"partner_checkin_notifications_enabled": True}
+        )
+        firestore_service.update_user(
+            accepter_user_id,
+            {"partner_checkin_notifications_enabled": True}
+        )
         
         # Notify both users
         await query.edit_message_text(
             f"✅ <b>Partnership Confirmed!</b>\n\n"
             f"You and {requester.name} are now accountability partners.\n\n"
-            f"You'll be notified if they ghost for 5+ days, and vice versa.",
+            f"Daily partner check-in notifications are ON by default for both of you.\n"
+            f"You'll also be notified if they ghost for 5+ days, and vice versa.",
             parse_mode='HTML'
         )
         
@@ -1535,7 +1552,8 @@ class TelegramBotManager:
             text=(
                 f"✅ <b>Partnership Confirmed!</b>\n\n"
                 f"{accepter.name} accepted your request!\n\n"
-                f"You're now accountability partners. 🤝"
+                f"You're now accountability partners. 🤝\n\n"
+                f"Daily partner check-in notifications are ON by default."
             ),
             parse_mode='HTML'
         )
@@ -1740,6 +1758,155 @@ class TelegramBotManager:
         )
         
         logger.info(f"✅ Partnership unlinked: {user_id} ↔️ {partner.user_id}")
+
+    async def _set_partner_notifications_for_pair(
+        self,
+        user: User,
+        partner: User,
+        enabled: bool,
+    ) -> None:
+        """Mirror the shared pair setting onto both linked user documents."""
+        firestore_service.update_user(
+            user.user_id,
+            {"partner_checkin_notifications_enabled": enabled},
+        )
+        firestore_service.update_user(
+            partner.user_id,
+            {"partner_checkin_notifications_enabled": enabled},
+        )
+
+    async def partner_notifications_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        View or change the pair setting for partner check-in notifications.
+        """
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+
+        if not user:
+            await update.message.reply_text("❌ User not found. Please use /start first.")
+            return
+
+        if not user.accountability_partner_id:
+            await update.message.reply_text(
+                "❌ You don't have an accountability partner yet.\n\n"
+                "Link one with: /set_partner @username"
+            )
+            return
+
+        partner = firestore_service.get_user(user.accountability_partner_id)
+        if not partner:
+            await update.message.reply_text(
+                "❌ Your partner's account could not be found.\n"
+                "Use /unlink_partner to remove, then /set_partner to link a new one."
+            )
+            return
+
+        if context.args:
+            arg = context.args[0].lower()
+            if arg in {"on", "off"}:
+                await self._apply_partner_notifications_setting(
+                    user=user,
+                    partner=partner,
+                    enabled=(arg == "on"),
+                    reply_target=update.message,
+                    bot=context.bot,
+                )
+                return
+
+        enabled = getattr(user, "partner_checkin_notifications_enabled", True)
+        status = "ON" if enabled else "OFF"
+        next_action = "Turn Off" if enabled else "Turn On"
+        next_value = "off" if enabled else "on"
+
+        await update.message.reply_text(
+            f"👥 <b>Partner Check-In Notifications</b>\n\n"
+            f"Current status for you and {partner.name}: <b>{status}</b>\n\n"
+            f"When enabled, the first successful daily check-in sends your partner a short "
+            f"summary of sleep, training, deep work, and skill building.\n"
+            f"If you correct the check-in later, they receive one update.\n\n"
+            f"Use the button below to change this for both of you.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton(
+                    next_action,
+                    callback_data=f"partner_notify_{next_value}"
+                )
+            ]]),
+            parse_mode='HTML'
+        )
+
+    async def partner_notifications_callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle inline toggle for pair-level partner notifications."""
+        query = update.callback_query
+        await query.answer()
+
+        user_id = str(query.from_user.id)
+        user = firestore_service.get_user(user_id)
+
+        if not user or not user.accountability_partner_id:
+            await query.edit_message_text(
+                "❌ You don't have an active accountability partnership right now."
+            )
+            return
+
+        partner = firestore_service.get_user(user.accountability_partner_id)
+        if not partner:
+            await query.edit_message_text(
+                "❌ Your partner's account could not be found.\n"
+                "Use /unlink_partner to clean this up."
+            )
+            return
+
+        enabled = query.data.replace("partner_notify_", "") == "on"
+        await self._apply_partner_notifications_setting(
+            user=user,
+            partner=partner,
+            enabled=enabled,
+            reply_target=query,
+            bot=context.bot,
+        )
+
+    async def _apply_partner_notifications_setting(
+        self,
+        user: User,
+        partner: User,
+        enabled: bool,
+        reply_target,
+        bot: Bot,
+    ) -> None:
+        """Persist the shared setting and tell both partners what changed."""
+        await self._set_partner_notifications_for_pair(user, partner, enabled)
+
+        status_word = "ON" if enabled else "OFF"
+        actor_name = get_preferred_first_name(user)
+        partner_name = get_preferred_first_name(partner)
+
+        message = (
+            f"👥 <b>Partner check-in notifications are now {status_word}.</b>\n\n"
+            f"This setting applies to both you and {partner_name}."
+        )
+
+        if hasattr(reply_target, "edit_message_text"):
+            await reply_target.edit_message_text(message, parse_mode='HTML')
+        else:
+            await reply_target.reply_text(message, parse_mode='HTML')
+
+        partner_message = (
+            f"👥 <b>Partner check-in notifications are now {status_word}.</b>\n\n"
+            f"{actor_name} changed this setting, so it now applies to both of you."
+        )
+        await bot.send_message(
+            chat_id=partner.telegram_id,
+            text=partner_message,
+            parse_mode='HTML'
+        )
     
     # ===== Phase 3C: Achievement System Commands =====
     
@@ -2369,6 +2536,27 @@ class TelegramBotManager:
             success = firestore_service.update_checkin(user_id, date, firestore_update)
             
             if success:
+                sender = firestore_service.get_user(user_id)
+                if sender:
+                    partner_notification = await send_partner_checkin_notification(
+                        bot=context.bot,
+                        sender=sender,
+                        tier1=tier1,
+                        date=date,
+                        fallback_sender_name=update.effective_user.first_name,
+                        is_update=True,
+                    )
+                    if partner_notification.get("reason") == "partner_missing":
+                        await query.message.reply_text(
+                            "ℹ️ The correction was saved, but your partner could not be found "
+                            "so the update notification was not delivered."
+                        )
+                    elif partner_notification.get("reason") == "delivery_failed":
+                        await query.message.reply_text(
+                            "ℹ️ The correction was saved, but the partner update notification "
+                            "could not be delivered."
+                        )
+
                 # Clean up context
                 context.user_data.pop('correction_items', None)
                 context.user_data.pop('correction_date', None)
@@ -2794,6 +2982,10 @@ class TelegramBotManager:
         message_text = update.message.text
         
         logger.info(f"📩 General message from {user_id}: '{message_text[:50]}...'")
+
+        if context.user_data.pop('suppress_general_message_once', False):
+            logger.info(f"🛑 Suppressed post-checkin general routing for {user_id}")
+            return
         
         # Phase D: Check if user is in support mode (sent /support, now sending follow-up)
         if context.user_data.get('support_mode'):

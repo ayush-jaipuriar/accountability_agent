@@ -1198,7 +1198,83 @@ class FirestoreService:
             
         except Exception as e:
             logger.error(f"❌ Failed to set accountability partner: {e}")
-    
+
+    def get_partner_checkin_notification_status(
+        self,
+        user_id: str,
+        date: str
+    ) -> Optional[dict]:
+        """
+        Get partner check-in notification status for a user on a specific date.
+
+        This tracks whether the first daily notification and the correction
+        update were already sent to the accountability partner.
+        """
+        try:
+            status_ref = (
+                self.db.collection('partner_checkin_notifications')
+                .document(user_id)
+                .collection('dates')
+                .document(date)
+            )
+            doc = status_ref.get()
+            return doc.to_dict() if doc.exists else None
+        except Exception as e:
+            logger.error(f"❌ Failed to get partner notification status: {e}")
+            return None
+
+    def mark_partner_checkin_notification_sent(
+        self,
+        user_id: str,
+        date: str,
+        partner_id: str,
+        event_type: str
+    ) -> bool:
+        """
+        Mark a partner check-in notification as sent.
+
+        event_type:
+        - "initial": first successful daily notification
+        - "updated": correction update after the initial notification
+        """
+        try:
+            status_ref = (
+                self.db.collection('partner_checkin_notifications')
+                .document(user_id)
+                .collection('dates')
+                .document(date)
+            )
+
+            doc = status_ref.get()
+            status = doc.to_dict() if doc.exists else {
+                "user_id": user_id,
+                "date": date,
+                "partner_id": partner_id,
+                "initial_sent": False,
+                "updated_sent": False,
+                "created_at": datetime.utcnow(),
+            }
+
+            status["partner_id"] = partner_id
+            status["last_sent_at"] = datetime.utcnow()
+
+            if event_type == "updated":
+                status["updated_sent"] = True
+                status["updated_sent_at"] = datetime.utcnow()
+            else:
+                status["initial_sent"] = True
+                status["initial_sent_at"] = datetime.utcnow()
+
+            status_ref.set(status)
+            logger.info(
+                f"✅ Marked partner notification sent for {user_id} on {date} "
+                f"({event_type})"
+            )
+            return True
+        except Exception as e:
+            logger.error(f"❌ Failed to mark partner notification sent: {e}")
+            return False
+
     def store_emotional_interaction(
         self,
         user_id: str,
