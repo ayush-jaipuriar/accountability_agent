@@ -74,9 +74,7 @@ async def generate_ai_insights(
     # Pre-calculate metrics (don't send raw data to LLM)
     total = len(checkins)
     avg_compliance = mean([c.compliance_score for c in checkins])
-    sleep_hours_list = [c.tier1_non_negotiables.sleep_hours for c in checkins
-                        if c.tier1_non_negotiables.sleep_hours]
-    avg_sleep = mean(sleep_hours_list) if sleep_hours_list else 0
+    sleep_days = sum(1 for c in checkins if c.tier1_non_negotiables.sleep)
     
     training_days = sum(1 for c in checkins if c.tier1_non_negotiables.training)
     porn_free_days = sum(1 for c in checkins if c.tier1_non_negotiables.zero_porn)
@@ -108,7 +106,7 @@ User: {user.name} (Mode: {user.constitution_mode}, Streak: {user.streaks.current
 This Week's Data:
 - Check-ins: {total}/7 days
 - Avg Compliance: {avg_compliance:.0f}%
-- Avg Sleep: {avg_sleep:.1f} hours
+- Sleep 7h+: {sleep_days}/7 days
 - Training: {training_days}/7 days
 - Skill Building: {skill_building_days}/7 days
 - Porn-Free: {porn_free_days}/7 days
@@ -138,13 +136,13 @@ Rules:
     except Exception as e:
         logger.error(f"AI insights generation failed: {e}")
         # Fallback to template-based insights
-        return _generate_fallback_insights(checkins, avg_compliance, avg_sleep)
+        return _generate_fallback_insights(checkins, avg_compliance, sleep_days)
 
 
 def _generate_fallback_insights(
     checkins: List[DailyCheckIn],
     avg_compliance: float,
-    avg_sleep: float,
+    sleep_days: int,
 ) -> str:
     """
     Generate template-based insights when LLM is unavailable.
@@ -157,11 +155,12 @@ def _generate_fallback_insights(
     Args:
         checkins: Week's check-ins
         avg_compliance: Average compliance score
-        avg_sleep: Average sleep hours
+        sleep_days: Days with 7+ hours sleep
     
     Returns:
         Template-based insight string
     """
+    total = len(checkins) if checkins else 7
     parts = []
     
     if avg_compliance >= 90:
@@ -171,10 +170,10 @@ def _generate_fallback_insights(
     else:
         parts.append(f"Challenging week at {avg_compliance:.0f}% compliance - let's refocus.")
     
-    if avg_sleep < 7:
-        parts.append(f"Sleep averaged {avg_sleep:.1f}h - prioritize hitting 7+ hours.")
+    if sleep_days < total * 0.7:
+        parts.append(f"Sleep target met only {sleep_days}/{total} days - prioritize consistent bedtime.")
     else:
-        parts.append(f"Sleep on track at {avg_sleep:.1f}h average.")
+        parts.append(f"Sleep solid at {sleep_days}/{total} days on target.")
     
     return " ".join(parts)
 
@@ -341,7 +340,7 @@ async def generate_and_send_weekly_report(
         )
         
         graph_captions = {
-            'sleep': '😴 Sleep Trend',
+            'tier1_consistency': '📊 Tier 1 Consistency',
             'training': '💪 Training Frequency',
             'compliance': '📈 Compliance Scores',
             'radar': '🎯 Life Balance Radar',

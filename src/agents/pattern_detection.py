@@ -855,7 +855,7 @@ class PatternDetectionAgent:
         - Day 5+: "emergency" severity → Partner escalation
         
         <b>Why Day 2 threshold?</b>
-        - Day 1 is covered by Phase 3A triple reminders (9 PM, 9:30 PM, 10 PM)
+        - Day 1 is covered by Phase 3A triple reminders (9 PM, 10 PM, 11 PM)
         - Day 2 means user ignored ALL 3 reminders → intervention needed
         - Earlier detection = better chance of recovery
         

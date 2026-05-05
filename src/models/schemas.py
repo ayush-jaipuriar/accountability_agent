@@ -30,14 +30,14 @@ class ReminderTimes(BaseModel):
     
     Phase 3A: Triple reminder system
     - First: Friendly reminder (9:00 PM)
-    - Second: Nudge (9:30 PM)
-    - Third: Urgent reminder (10:00 PM)
+    - Second: Nudge (10:00 PM)
+    - Third: Urgent reminder (11:00 PM)
     
     Future: Per-user customizable times
     """
     first: str = "21:00"   # HH:MM format (9:00 PM)
-    second: str = "21:30"  # HH:MM format (9:30 PM)
-    third: str = "22:00"   # HH:MM format (10:00 PM)
+    second: str = "22:00"  # HH:MM format (10:00 PM)
+    third: str = "23:00"   # HH:MM format (11:00 PM)
 
 
 class StreakShields(BaseModel):

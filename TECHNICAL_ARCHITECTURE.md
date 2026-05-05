@@ -352,8 +352,8 @@ GET  /admin/metrics             → Full metrics (admin auth required)
 POST /webhook/telegram          → Telegram webhook receiver
 POST /trigger/pattern-scan      → Pattern detection scan (cron-protected)
 POST /cron/reminder_first       → 9:00 PM reminder (cron-protected)
-POST /cron/reminder_second      → 9:30 PM reminder (cron-protected)
-POST /cron/reminder_third       → 10:00 PM reminder (cron-protected)
+POST /cron/reminder_second      → 10:00 PM reminder (cron-protected)
+POST /cron/reminder_third       → 11:00 PM reminder (cron-protected)
 POST /cron/reminder_tz_aware    → Timezone-aware reminders (cron-protected, every 15min)
 POST /cron/reset_quick_checkins → Weekly quick check-in reset (cron-protected, Monday)
 POST /trigger/weekly-report     → Weekly report generation (cron-protected, Sunday)
@@ -1042,7 +1042,7 @@ Bot sends request to User B with [Accept] [Decline] buttons
 
 | Job | Schedule | Endpoint | Purpose |
 |-----|----------|----------|---------|
-| **TZ-Aware Reminders** | Every 15 min | `/cron/reminder_tz_aware` | Send reminders to users at 9 PM, 9:30 PM, 10 PM local time |
+| **TZ-Aware Reminders** | Every 15 min | `/cron/reminder_tz_aware` | Send reminders to users at 9 PM, 10 PM, 11 PM local time |
 | **Pattern Scan** | Every 6 hours | `/trigger/pattern-scan` | Detect negative patterns across all users |
 | **Weekly Report** | Sunday 9 AM | `/trigger/weekly-report` | Generate and send weekly performance reports |
 | **Quick Reset** | Monday 12 AM | `/cron/reset_quick_checkins` | Reset weekly quick check-in counters |
@@ -1052,8 +1052,8 @@ Bot sends request to User B with [Accept] [Decline] buttons
 | Job | Schedule | Endpoint |
 |-----|----------|----------|
 | First Reminder | 9:00 PM IST | `/cron/reminder_first` |
-| Second Reminder | 9:30 PM IST | `/cron/reminder_second` |
-| Third Reminder | 10:00 PM IST | `/cron/reminder_third` |
+| Second Reminder | 10:00 PM IST | `/cron/reminder_second` |
+| Third Reminder | 11:00 PM IST | `/cron/reminder_third` |
 
 ### Reminder System Architecture (Phase B)
 
@@ -1061,7 +1061,7 @@ Bot sends request to User B with [Accept] [Decline] buttons
 Cloud Scheduler → POST /cron/reminder_tz_aware (every 15 min)
     │
     ▼
-For each reminder tier (first=21:00, second=21:30, third=22:00):
+For each reminder tier (first=21:00, second=22:00, third=23:00):
     │
     ├── get_timezones_at_local_time(utc_now, target_hour, target_minute)
     │   → Returns list of matching IANA timezone IDs
@@ -1277,8 +1277,8 @@ Cloud Scheduler → POST /cron/reminder_tz_aware (every 15 min, e.g., 13:30 UTC)
     │   → Returns: ["Asia/Kolkata"] (IST = UTC+5:30, so 13:30+5:30 = 19:00 ❌ no match)
     │   → No users to remind at this time
     │
-    ├── Tier "second" (target: 21:30 local):
-    │   → get_timezones_at_local_time(13:30 UTC, 21, 30)
+    ├── Tier "second" (target: 22:00 local):
+    │   → get_timezones_at_local_time(13:30 UTC, 22, 0)
     │   → Returns: ["America/New_York"] (EST = UTC-5, so 13:30-5 = 08:30 ❌ no match)
     │   → No match either
     │

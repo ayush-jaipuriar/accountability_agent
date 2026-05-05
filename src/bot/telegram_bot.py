@@ -432,7 +432,7 @@ class TelegramBotManager:
                 f"through daily accountability.\n\n"
                 f"<b>What I do for you:</b>\n"
                 f"✅ Daily check-ins to track your progress\n"
-                f"✅ Smart reminders (9 PM, 9:30 PM, 10 PM)\n"
+                f"✅ Smart reminders (9 PM, 10 PM, 11 PM)\n"
                 f"✅ Personalized AI feedback on your performance\n"
                 f"✅ Pattern detection & proactive interventions\n"
                 f"✅ Streak tracking with protection shields\n"
@@ -546,8 +546,8 @@ class TelegramBotManager:
             f"I've defaulted your timezone to <b>Asia/Kolkata (IST)</b>.\n\n"
             f"Your daily reminders will be sent at:\n"
             f"• 1st reminder: 9:00 PM\n"
-            f"• 2nd reminder: 9:30 PM\n"
-            f"• 3rd reminder: 10:00 PM\n\n"
+            f"• 2nd reminder: 10:00 PM\n"
+            f"• 3rd reminder: 11:00 PM\n\n"
             f"Is IST your timezone?"
         )
         

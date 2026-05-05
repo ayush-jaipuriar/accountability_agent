@@ -27,7 +27,7 @@ import io
 from datetime import datetime, timedelta
 
 from src.services.visualization_service import (
-    generate_sleep_chart,
+    generate_tier1_consistency_chart,
     generate_training_chart,
     generate_compliance_chart,
     generate_domain_radar,
@@ -60,37 +60,35 @@ def is_valid_png(buffer: io.BytesIO) -> bool:
     return magic == b'\x89PNG\r\n\x1a\n'
 
 
-# ===== Sleep Chart Tests =====
+# ===== Tier 1 Consistency Chart Tests =====
 
-class TestSleepChart:
-    """Tests for sleep trend line chart."""
-    
+class TestTier1ConsistencyChart:
+    """Tests for Tier 1 consistency horizontal bar chart."""
+
     def test_returns_bytesio(self, sample_week_checkins):
-        """Sleep chart should return BytesIO buffer."""
-        result = generate_sleep_chart(sample_week_checkins)
+        """Tier 1 consistency chart should return BytesIO buffer."""
+        result = generate_tier1_consistency_chart(sample_week_checkins)
         assert isinstance(result, io.BytesIO)
-    
+
     def test_produces_valid_png(self, sample_week_checkins):
-        """Sleep chart should produce a valid PNG image."""
-        result = generate_sleep_chart(sample_week_checkins)
-        assert is_valid_png(result), "Sleep chart output is not valid PNG"
-    
+        """Tier 1 consistency chart should produce a valid PNG image."""
+        result = generate_tier1_consistency_chart(sample_week_checkins)
+        assert is_valid_png(result), "Tier 1 consistency chart output is not valid PNG"
+
     def test_image_has_reasonable_size(self, sample_week_checkins):
-        """Sleep chart should be a substantial image (not empty)."""
-        result = generate_sleep_chart(sample_week_checkins)
+        """Tier 1 consistency chart should be a substantial image (not empty)."""
+        result = generate_tier1_consistency_chart(sample_week_checkins)
         size = result.getbuffer().nbytes
-        assert size > 10_000, f"Sleep chart too small ({size} bytes)"
-    
+        assert size > 10_000, f"Tier 1 consistency chart too small ({size} bytes)"
+
     def test_handles_single_checkin(self, sample_checkin):
-        """Sleep chart should work with a single data point."""
-        result = generate_sleep_chart([sample_checkin])
+        """Tier 1 consistency chart should work with a single data point."""
+        result = generate_tier1_consistency_chart([sample_checkin])
         assert is_valid_png(result)
-    
-    def test_handles_zero_sleep_hours(self, sample_week_checkins):
-        """Chart should handle None/0 sleep hours without crashing."""
-        # Modify first checkin to have None sleep hours
-        sample_week_checkins[0].tier1_non_negotiables.sleep_hours = None
-        result = generate_sleep_chart(sample_week_checkins)
+
+    def test_handles_mixed_compliance(self, sample_week_checkins):
+        """Chart should handle mixed completion rates without crashing."""
+        result = generate_tier1_consistency_chart(sample_week_checkins)
         assert is_valid_png(result)
 
 
@@ -335,7 +333,7 @@ class TestGenerateWeeklyGraphs:
         """Should generate all 4 graph types."""
         result = generate_weekly_graphs(sample_week_checkins)
         assert len(result) == 4
-        assert set(result.keys()) == {'sleep', 'training', 'compliance', 'radar'}
+        assert set(result.keys()) == {'tier1_consistency', 'training', 'compliance', 'radar'}
     
     def test_all_graphs_are_valid_png(self, sample_week_checkins):
         """Each graph in the dict should be a valid PNG."""

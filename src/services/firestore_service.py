@@ -841,7 +841,7 @@ class FirestoreService:
         """
         Get all users who haven't completed check-in today.
         
-        Used by reminder system to send reminders at 9 PM, 9:30 PM, 10 PM.
+        Used by reminder system to send reminders at 9 PM, 10 PM, 11 PM.
         
         Args:
             today_date: Date in YYYY-MM-DD format

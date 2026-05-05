@@ -500,7 +500,8 @@ async def pattern_scan_trigger(request: Request):
                             # Send intervention via Telegram
                             await bot_manager.bot.send_message(
                                 chat_id=user.user_id,
-                                text=intervention_msg
+                                text=intervention_msg,
+                                parse_mode='HTML'
                             )
                             
                             interventions_sent += 1
@@ -701,11 +702,11 @@ async def reminder_first(request: Request):
 @app.post("/cron/reminder_second")
 async def reminder_second(request: Request):
     """
-    Second daily reminder at 9:30 PM IST (Phase 3A).
+    Second daily reminder at 10:00 PM IST (Phase 3A).
     
     Tone: Nudge - slightly more urgent
     
-    Triggered by Cloud Scheduler daily at 9:30 PM IST.
+    Triggered by Cloud Scheduler daily at 10:00 PM IST.
     Finds users who still haven't checked in after first reminder.
     
     Returns:
@@ -763,7 +764,7 @@ async def reminder_second(request: Request):
         result = {
             "status": "reminders_sent",
             "reminder_type": "second",
-            "time": "21:30 IST",
+            "time": "22:00 IST",
             "timestamp": datetime.utcnow().isoformat(),
             "users_without_checkin": len(users_without_checkin),
             "reminders_sent": reminders_sent,
@@ -781,11 +782,11 @@ async def reminder_second(request: Request):
 @app.post("/cron/reminder_third")
 async def reminder_third(request: Request):
     """
-    Third daily reminder at 10:00 PM IST (Phase 3A).
+    Third daily reminder at 11:00 PM IST (Phase 3A).
     
     Tone: Urgent - last chance to maintain streak
     
-    Triggered by Cloud Scheduler daily at 10:00 PM IST.
+    Triggered by Cloud Scheduler daily at 11:00 PM IST.
     Final reminder before midnight cutoff. Emphasizes streak protection.
     
     Returns:
@@ -857,7 +858,7 @@ async def reminder_third(request: Request):
         result = {
             "status": "reminders_sent",
             "reminder_type": "third",
-            "time": "22:00 IST",
+            "time": "23:00 IST",
             "timestamp": datetime.utcnow().isoformat(),
             "users_without_checkin": len(users_without_checkin),
             "reminders_sent": reminders_sent,
@@ -884,7 +885,7 @@ async def reminder_tz_aware(request: Request):
     by Cloud Scheduler every 15 minutes. Each invocation:
     
     1. Checks which of our catalog timezones are currently at 9:00 PM,
-       9:30 PM, or 10:00 PM (within 15-minute tolerance)
+       10:00 PM, or 11:00 PM (within 15-minute tolerance)
     2. Fetches users in those timezones who haven't checked in today
     3. Sends the appropriate reminder (first/second/third) based on
        which target time matched
@@ -901,8 +902,8 @@ async def reminder_tz_aware(request: Request):
     
     <b>Reminder tiers (in user's local time):</b>
     - 21:00 → First reminder (friendly)
-    - 21:30 → Second reminder (nudge)
-    - 22:00 → Third reminder (urgent)
+    - 22:00 → Second reminder (nudge)
+    - 23:00 → Third reminder (urgent)
     
     Returns:
         dict: Summary of timezones matched, users found, reminders sent
@@ -925,8 +926,8 @@ async def reminder_tz_aware(request: Request):
     # Define reminder tiers: (target_hour, target_minute, tier_name, message_generator)
     reminder_tiers = [
         (21, 0, "first"),
-        (21, 30, "second"),
-        (22, 0, "third"),
+        (22, 0, "second"),
+        (23, 0, "third"),
     ]
     
     total_sent = 0

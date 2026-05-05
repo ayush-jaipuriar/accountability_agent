@@ -211,7 +211,7 @@ class TestReminderFirst:
 
 
 class TestReminderSecond:
-    """Tests for POST /cron/reminder_second (9:30 PM IST)."""
+    """Tests for POST /cron/reminder_second (10:00 PM IST)."""
 
     async def test_sends_nudge_reminder(self, app_client, mock_services, test_user_obj):
         """Should send nudge-style reminder."""

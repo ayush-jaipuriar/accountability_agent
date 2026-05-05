@@ -618,6 +618,7 @@ Recent Trend: {trend}
 
 {recent_summary}
 
+{self._build_weekly_qualitative_section(recent_checkins)}
 CONSTITUTION PRINCIPLES (reference these):
 ------------------------------------------
 {constitution_excerpt}
@@ -639,9 +640,11 @@ Write feedback that:
    - If near personal best: Motivate to break it
    - Connect streak to identity/systems
 
-3. <b>PATTERN OBSERVATION</b> (1 sentence):
+3. <b>PATTERN OBSERVATION</b> (1-2 sentences):
    - Note the trend (improving/declining/consistent)
-   - Reference specific numbers if relevant
+   - Reference SPECIFIC recurring themes from the Weekly Qualitative Context above
+   - If the same challenge or obstacle appears multiple days: call it out explicitly
+   - If motivation/ratings are declining: note the pattern with specific dates
 
 4. <b>CONSTITUTION CONNECTION</b> (1-2 sentences):
    - Reference a relevant principle from constitution
@@ -709,7 +712,70 @@ INSTRUCTIONS FOR USING YESTERDAY'S CONTEXT:
 - If they said they'd rate themselves higher today but didn't: note the gap between intention and action
 
 """
-    
+
+    def _build_weekly_qualitative_section(self, recent_checkins: List[Dict]) -> str:
+        """
+        Build the WEEKLY QUALITATIVE CONTEXT section for the feedback prompt.
+
+        Includes all 7 days' qualitative data (challenges, rating reasons,
+        priorities, obstacles, tier1 breakdown) so the AI can spot patterns
+        like recurring stress, repeating obstacles, or declining motivation.
+        """
+        if not recent_checkins or len(recent_checkins) < 2:
+            return ""
+
+        lines = [
+            "WEEKLY QUALITATIVE CONTEXT (All 7 Days — Use for Pattern Recognition):",
+            "----------------------------------------------------------------------",
+        ]
+
+        # Format each day's entry
+        for i, checkin in enumerate(recent_checkins, 1):
+            day_label = "TODAY - MOST IMPORTANT" if i == len(recent_checkins) else f"Day {i}"
+            date_str = checkin.get('date', 'unknown')
+            score = checkin.get('compliance_score', 'N/A')
+            rating = checkin.get('rating', 'N/A')
+
+            lines.append(f"{day_label} ({date_str}): Score {score}%, Rating {rating}/10")
+
+            # Qualitative fields
+            challenges = checkin.get('challenges')
+            if challenges:
+                lines.append(f"  Challenges: \"{challenges}\"")
+
+            rating_reason = checkin.get('rating_reason')
+            if rating_reason:
+                lines.append(f"  Reason: \"{rating_reason}\"")
+
+            priority = checkin.get('tomorrow_priority')
+            if priority:
+                lines.append(f"  Priority: \"{priority}\"")
+
+            obstacle = checkin.get('tomorrow_obstacle')
+            if obstacle:
+                lines.append(f"  Obstacle: \"{obstacle}\"")
+
+            # Tier 1 breakdown
+            tier1 = checkin.get('tier1')
+            if tier1:
+                t1_items = []
+                for k, v in tier1.items():
+                    icon = "✅" if v else "❌"
+                    t1_items.append(f"{k.replace('_', ' ').title()} {icon}")
+                lines.append(f"  Tier 1: {', '.join(t1_items)}")
+
+            lines.append("")  # blank line between days
+
+        lines.append("INSTRUCTIONS FOR USING WEEKLY CONTEXT:")
+        lines.append("- Identify recurring themes across the week (e.g., \"stress\" mentioned 4 times)")
+        lines.append("- Note if the same obstacle appears repeatedly (e.g., \"phone addiction\" on 3 days)")
+        lines.append("- Compare today's priority vs what was actually achieved yesterday")
+        lines.append("- Reference specific patterns from the week, not just yesterday")
+        lines.append("- Give MORE weight to recent days, but don't ignore earlier signals")
+        lines.append("")
+
+        return "\n".join(lines)
+
     def _fallback_feedback(self, compliance_score: int, current_streak: int) -> str:
         """
         Fallback to Phase 1 hardcoded feedback if AI generation fails

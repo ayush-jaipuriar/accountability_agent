@@ -5,7 +5,7 @@ Visualization Service - Graph Generation for Weekly Reports
 Phase 3F: Generates 4 types of graphs for weekly visual reports.
 
 <b>Graph Types:</b>
-1. Sleep Trend (Line Chart) - Hours per night with target line
+1. Tier 1 Consistency (Horizontal Bar Chart) - Completion rate per non-negotiable
 2. Training Frequency (Bar Chart) - Workout/Rest/Missed per day
 3. Compliance Scores (Line + Trend) - Scores with linear regression
 4. Domain Radar (Polar Chart) - 5-axis balance visualization
@@ -113,81 +113,101 @@ def _figure_to_bytes(fig: plt.Figure) -> io.BytesIO:
     return buf
 
 
-# ===== Graph 1: Sleep Trend =====
+# ===== Graph 1: Tier 1 Consistency =====
 
-def generate_sleep_chart(checkins: List[DailyCheckIn]) -> io.BytesIO:
+def generate_tier1_consistency_chart(checkins: List[DailyCheckIn]) -> io.BytesIO:
     """
-    Generate sleep trend line chart for the week.
-    
+    Generate Tier 1 Consistency horizontal bar chart.
+
     <b>Visual Design:</b>
-    - Line chart with data points (circle markers)
-    - Green horizontal line at 7-hour target
-    - Color-coded zones: Green (>=7h), Yellow (6-7h), Red (<6h)
-    - Data labels on each point showing exact hours
-    - Average line as dashed indicator
-    
-    <b>Theory: Why Color Zones?</b>
-    Color zones provide instant visual feedback. The user doesn't need
-    to read numbers - they can instantly see "mostly green = good week"
-    or "lots of red = sleep needs attention." This leverages the
-    pre-attentive processing of color in visual perception.
-    
+    - Horizontal stacked bar chart with 6 bars (one per non-negotiable)
+    - Green segment = completed days, Red segment = missed days
+    - Percentage label at the end of each bar
+    - Sorted by completion rate (highest first) for instant prioritization
+
+    <b>Theory: Why Horizontal Bars for Tier 1?</b>
+    Unlike sleep (which we never collect as hours), Tier 1 items are
+    binary yes/no. A horizontal bar shows, at a glance, which habits
+    are solid and which are slipping. Sorting by completion rate means
+    the user immediately sees their weakest area at the bottom.
+
     Args:
-        checkins: List of check-ins (should be 7 days, sorted by date ascending)
-        
+        checkins: List of check-ins (should be 7 days, sorted by date)
+
     Returns:
         BytesIO buffer with PNG image
     """
-    fig, ax = _setup_figure("Sleep Trend (Last 7 Days)")
-    
-    # Extract sleep data
-    dates = []
-    hours = []
-    for c in sorted(checkins, key=lambda x: x.date):
-        dates.append(c.date[-5:])  # "MM-DD" format for compact labels
-        h = c.tier1_non_negotiables.sleep_hours
-        hours.append(h if h is not None else 0)
-    
-    x = range(len(dates))
-    
-    # Color-coded zones (background fill)
-    ax.axhspan(7, 12, alpha=0.08, color=COLORS['success'], label='Good (≥7h)')
-    ax.axhspan(6, 7, alpha=0.08, color=COLORS['warning'], label='Warning (6-7h)')
-    ax.axhspan(0, 6, alpha=0.08, color=COLORS['danger'], label='Danger (<6h)')
-    
-    # Target line
-    ax.axhline(y=7, linestyle='--', color=COLORS['success'], alpha=0.7, linewidth=1.5, label='Target: 7h')
-    
-    # Data line with color-coded markers
-    point_colors = []
-    for h in hours:
-        if h >= 7:
-            point_colors.append(COLORS['success'])
-        elif h >= 6:
-            point_colors.append(COLORS['warning'])
-        else:
-            point_colors.append(COLORS['danger'])
-    
-    ax.plot(x, hours, color=COLORS['primary'], linewidth=2.5, zorder=3)
-    for xi, hi, color in zip(x, hours, point_colors):
-        ax.scatter(xi, hi, color=color, s=80, zorder=4, edgecolors='white', linewidth=1.5)
-        ax.annotate(f'{hi:.1f}h', (xi, hi), textcoords="offset points",
-                    xytext=(0, 12), ha='center', fontsize=9, fontweight='bold',
-                    color=color)
-    
-    # Average line
-    avg_hours = sum(hours) / len(hours) if hours else 0
-    ax.axhline(y=avg_hours, linestyle=':', color=COLORS['muted'], alpha=0.8, linewidth=1)
-    ax.text(len(x) - 0.5, avg_hours + 0.2, f'Avg: {avg_hours:.1f}h',
-            fontsize=9, color=COLORS['muted'], ha='right')
-    
-    # Labels
-    ax.set_xticks(x)
-    ax.set_xticklabels(dates, rotation=0)
-    ax.set_ylabel('Hours', fontsize=FONT_SIZE, color=COLORS['text'])
-    ax.set_ylim(max(0, min(hours) - 1), max(hours) + 1.5)
-    ax.legend(loc='upper left', fontsize=8, framealpha=0.9)
-    
+    total_days = len(checkins) if checkins else 1
+
+    # Count completions per Tier 1 item
+    items = [
+        ('Sleep 7h+', 'sleep'),
+        ('Training', 'training'),
+        ('Deep Work', 'deep_work'),
+        ('Skill Building', 'skill_building'),
+        ('Zero Porn', 'zero_porn'),
+        ('Boundaries', 'boundaries'),
+    ]
+
+    stats = []
+    for label, attr in items:
+        completed = sum(1 for c in checkins if getattr(c.tier1_non_negotiables, attr))
+        missed = total_days - completed
+        rate = (completed / total_days) * 100 if total_days else 0
+        stats.append((label, completed, missed, rate))
+
+    # Sort by completion rate descending (best habits at top)
+    stats.sort(key=lambda x: x[3], reverse=True)
+
+    fig, ax = _setup_figure("Tier 1 Consistency (Last 7 Days)")
+
+    y_positions = range(len(stats))
+    bar_height = 0.55
+
+    for i, (label, completed, missed, rate) in enumerate(stats):
+        y = i
+
+        # Completed segment (green)
+        if completed > 0:
+            ax.barh(y, completed, height=bar_height, color=COLORS['success'],
+                    edgecolor='white', linewidth=1, left=0)
+
+        # Missed segment (red)
+        if missed > 0:
+            ax.barh(y, missed, height=bar_height, color=COLORS['danger'],
+                    edgecolor='white', linewidth=1, left=completed)
+
+        # Percentage label
+        ax.text(total_days + 0.15, y, f'{rate:.0f}%',
+                va='center', ha='left', fontsize=11, fontweight='bold',
+                color=COLORS['text'])
+
+        # Count label inside bar (if space permits)
+        if completed > 0:
+            ax.text(completed / 2, y, f'{completed}',
+                    va='center', ha='center', fontsize=10, fontweight='bold',
+                    color='white')
+
+    # Y-axis labels
+    ax.set_yticks(list(y_positions))
+    ax.set_yticklabels([s[0] for s in stats], fontsize=FONT_SIZE, color=COLORS['text'])
+
+    # X-axis
+    ax.set_xlim(0, total_days + 1.2)
+    ax.set_xticks(range(total_days + 1))
+    ax.set_xlabel('Days', fontsize=FONT_SIZE, color=COLORS['text'])
+
+    # Legend
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor=COLORS['success'], label='Completed'),
+        Patch(facecolor=COLORS['danger'], label='Missed'),
+    ]
+    ax.legend(handles=legend_elements, loc='lower right', fontsize=9)
+
+    # Invert y-axis so highest completion is at top
+    ax.invert_yaxis()
+
     plt.tight_layout()
     return _figure_to_bytes(fig)
 
@@ -465,7 +485,7 @@ def generate_weekly_graphs(checkins: List[DailyCheckIn]) -> Dict[str, io.BytesIO
     Returns:
         Dictionary mapping graph name to BytesIO buffer:
         {
-            'sleep': BytesIO,
+            'tier1_consistency': BytesIO,
             'training': BytesIO,
             'compliance': BytesIO,
             'radar': BytesIO,
@@ -474,7 +494,7 @@ def generate_weekly_graphs(checkins: List[DailyCheckIn]) -> Dict[str, io.BytesIO
     graphs = {}
     
     graph_generators = {
-        'sleep': ('Sleep Trend', generate_sleep_chart),
+        'tier1_consistency': ('Tier 1 Consistency', generate_tier1_consistency_chart),
         'training': ('Training Frequency', generate_training_chart),
         'compliance': ('Compliance Scores', generate_compliance_chart),
         'radar': ('Domain Radar', generate_domain_radar),

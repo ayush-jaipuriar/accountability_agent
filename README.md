@@ -73,7 +73,7 @@ All data is stored in Firestore with the following collections:
 | `users/` | User profiles, streaks, timezone, career mode, achievements, partner links |
 | `daily_checkins/{user_id}/checkins/{date}` | Individual check-in records with Tier 1 responses, compliance scores |
 | `interventions/` | Pattern-triggered intervention messages sent to users |
-| `reminder_status/` | Tracks which reminders (9 PM, 9:30 PM, 10 PM) have been sent per user per day |
+| `reminder_status/` | Tracks which reminders (9 PM, 10 PM, 11 PM) have been sent per user per day |
 | `partner_checkin_notifications/` | Tracks whether the first and updated partner notifications were already sent for a user/date pair |
 | `emotional_interactions/` | Logged emotional support conversations |
 | `patterns/` | Detected pattern records for longitudinal analysis |
@@ -139,8 +139,8 @@ This phase turned the original single-user bot into a multi-user product with ti
 
 **Triple reminder system:**
 - 9:00 PM local time -- Friendly reminder
-- 9:30 PM local time -- Nudge
-- 10:00 PM local time -- Urgent reminder
+- 10:00 PM local time -- Nudge
+- 11:00 PM local time -- Urgent reminder
 
 **Timezone-aware scheduling:** A cron endpoint (`/cron/reminder_tz_aware`) runs every 15 minutes. It buckets users by their IANA timezone and sends reminders at the correct local time -- supporting 60+ timezones worldwide.
 

@@ -51,7 +51,7 @@ Your phone buzzes. Not an annoying generic notification — a personalized messa
 >
 > Use /checkin to start!
 
-Didn't respond? You'll get a nudge at 9:30. Still nothing? An urgent reminder at 10:00 PM that tells you exactly how many days of work you're about to throw away.
+Didn't respond? You'll get a nudge at 10:00. Still nothing? An urgent reminder at 11:00 PM that tells you exactly how many days of work you're about to throw away.
 
 The reminder system respects your timezone. Whether you're in Mumbai, New York, or Tokyo, you get reminded at 9 PM *your time*.
 
@@ -382,7 +382,7 @@ The agent supports 60+ timezones across every continent. During onboarding (or a
 
 All reminders, date calculations, streak logic, and check-in cutoffs respect your local timezone. A check-in at 1 AM counts for the previous day (3 AM cutoff rule). A user in Tokyo and a user in London both get their reminders at 9 PM local time.
 
-**Under the hood:** The reminder system uses a bucket-based architecture. A Cloud Scheduler job runs every 15 minutes. It calculates which IANA timezones are currently at 9:00 PM, 9:30 PM, or 10:00 PM, fetches users in those timezones from Firestore, and sends the appropriate reminder tier. This means adding a new timezone is zero-effort — it's automatically included in the next scan.
+**Under the hood:** The reminder system uses a bucket-based architecture. A Cloud Scheduler job runs every 15 minutes. It calculates which IANA timezones are currently at 9:00 PM, 10:00 PM, or 11:00 PM, fetches users in those timezones from Firestore, and sends the appropriate reminder tier. This means adding a new timezone is zero-effort — it's automatically included in the next scan.
 
 ---
 
@@ -555,7 +555,7 @@ You check in every night. The streak builds. You unlock First Step (Day 1), then
 
 ### Week 2 — The First Test
 
-Day 10, you almost skip. You're tired. The 9 PM reminder pings. You ignore it. 9:30, the nudge comes. 10 PM — "URGENT: Your 10-day streak is at risk." You do the check-in. It takes 2 minutes. You're glad you did.
+Day 10, you almost skip. You're tired. The 9 PM reminder pings. You ignore it. 10 PM, the nudge comes. 11 PM — "URGENT: Your 10-day streak is at risk." You do the check-in. It takes 2 minutes. You're glad you did.
 
 ### Week 3 — The Pattern
 

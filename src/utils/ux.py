@@ -508,9 +508,9 @@ def generate_help_text() -> str:
         f"Just type naturally!\n"
         f"• 'What's my compliance this month?'\n"
         f"• 'I'm feeling stressed'\n"
-        f"• 'Show my sleep trend'\n\n"
+        f"• 'Show my Tier 1 consistency'\n\n"
         
-        f"<i>{EMOJI['clock']} Reminders at 9 PM, 9:30 PM, 10 PM in your local time</i>"
+        f"<i>{EMOJI['clock']} Reminders at 9 PM, 10 PM, 11 PM in your local time</i>"
     )
 
 
