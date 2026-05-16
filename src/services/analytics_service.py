@@ -759,3 +759,138 @@ def _direction_arrow(direction: str) -> str:
     elif direction == "down":
         return "↘️"
     return "→"
+
+
+# ===== P3.2: Mood & Energy Analytics =====
+
+def calculate_mood_energy_stats(checkins: List[DailyCheckIn]) -> Dict[str, Any]:
+    """
+    Calculate mood and energy statistics from check-ins.
+
+    Returns averages, trends, and correlation signals.
+    """
+    energy_ratings = [
+        c.responses.energy_rating for c in checkins
+        if c.responses.energy_rating is not None
+    ]
+    mood_ratings = [
+        c.responses.mood_rating for c in checkins
+        if c.responses.mood_rating is not None
+    ]
+
+    if not energy_ratings or not mood_ratings:
+        return {"has_data": False}
+
+    return {
+        "has_data": True,
+        "energy": {
+            "avg": mean(energy_ratings),
+            "min": min(energy_ratings),
+            "max": max(energy_ratings),
+            "count": len(energy_ratings),
+        },
+        "mood": {
+            "avg": mean(mood_ratings),
+            "min": min(mood_ratings),
+            "max": max(mood_ratings),
+            "count": len(mood_ratings),
+        },
+    }
+
+
+def calculate_mood_correlations(checkins: List[DailyCheckIn]) -> Dict[str, Any]:
+    """
+    Calculate Pearson correlations between habits and mood/energy.
+
+    Returns correlation coefficients and best combination insights.
+    """
+    from statistics import correlation
+
+    # Filter check-ins that have both mood and energy data
+    valid = [
+        c for c in checkins
+        if c.responses.energy_rating is not None
+        and c.responses.mood_rating is not None
+    ]
+
+    if len(valid) < 5:
+        return {"has_data": False, "reason": "Need at least 5 check-ins with mood/energy data"}
+
+    result = {"has_data": True, "n": len(valid)}
+
+    def _safe_correlation(x, y):
+        try:
+            return correlation(x, y)
+        except Exception:
+            return None
+
+    # Sleep hours → mood correlation
+    sleep_mood_pairs = [
+        (c.tier1_non_negotiables.sleep_hours, c.responses.mood_rating)
+        for c in valid
+        if c.tier1_non_negotiables.sleep_hours is not None
+    ]
+    if len(sleep_mood_pairs) >= 5:
+        sleep_hours, moods = zip(*sleep_mood_pairs)
+        result["sleep_mood_correlation"] = _safe_correlation(sleep_hours, moods)
+
+    # Sleep hours → energy correlation
+    sleep_energy_pairs = [
+        (c.tier1_non_negotiables.sleep_hours, c.responses.energy_rating)
+        for c in valid
+        if c.tier1_non_negotiables.sleep_hours is not None
+    ]
+    if len(sleep_energy_pairs) >= 5:
+        sleep_hours, energies = zip(*sleep_energy_pairs)
+        result["sleep_energy_correlation"] = _safe_correlation(sleep_hours, energies)
+
+    # Training → energy correlation (training is boolean, use point-biserial approximation)
+    training_energy_pairs = [
+        (1.0 if c.tier1_non_negotiables.training else 0.0, c.responses.energy_rating)
+        for c in valid
+    ]
+    if len(training_energy_pairs) >= 5:
+        training_vals, energies = zip(*training_energy_pairs)
+        result["training_energy_correlation"] = _safe_correlation(training_vals, energies)
+
+    # Deep work hours → mood correlation
+    dw_mood_pairs = [
+        (c.tier1_non_negotiables.deep_work_hours, c.responses.mood_rating)
+        for c in valid
+        if c.tier1_non_negotiables.deep_work_hours is not None
+    ]
+    if len(dw_mood_pairs) >= 5:
+        dw_hours, moods = zip(*dw_mood_pairs)
+        result["deep_work_mood_correlation"] = _safe_correlation(dw_hours, moods)
+
+    # Best combination: find highest mood days and see what they have in common
+    sorted_by_mood = sorted(valid, key=lambda c: c.responses.mood_rating or 0, reverse=True)
+    top_third = sorted_by_mood[:max(1, len(sorted_by_mood) // 3)]
+
+    best_combo = []
+    if all(c.tier1_non_negotiables.sleep for c in top_third):
+        best_combo.append("sleep")
+    if all(c.tier1_non_negotiables.training for c in top_third):
+        best_combo.append("training")
+    if all(c.tier1_non_negotiables.deep_work for c in top_third):
+        best_combo.append("deep_work")
+
+    result["best_combination"] = best_combo
+    result["top_mood_avg"] = mean(c.responses.mood_rating for c in top_third)
+
+    return result
+
+
+def format_mood_energy_summary(checkins: List[DailyCheckIn]) -> str:
+    """Format mood/energy stats for display in /metrics or reports."""
+    stats = calculate_mood_energy_stats(checkins)
+    if not stats.get("has_data"):
+        return ""
+
+    lines = [
+        "",
+        "<b>🧠 Mood & Energy (7d):</b>",
+        f"  ⚡ Avg Energy: {stats['energy']['avg']:.1f}/10",
+        f"  😊 Avg Mood: {stats['mood']['avg']:.1f}/10",
+    ]
+    return "\n".join(lines)

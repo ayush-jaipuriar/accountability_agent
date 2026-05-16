@@ -298,6 +298,101 @@ class ConstitutionService:
         self._load_constitution()
         logger.info("♻️ Constitution reloaded from disk")
 
+    def format_constitution_with_stats(
+        self,
+        user_name: str,
+        current_mode: str,
+        streak_days: int,
+        avg_sleep: float = 0.0,
+        avg_deep_work: float = 0.0,
+        avg_skill_building: float = 0.0,
+        avg_compliance: float = 0.0,
+        training_days_this_week: int = 0,
+    ) -> str:
+        """
+        Format the constitution as a readable Telegram message with live stats.
+
+        Shows the hardcoded constitution principles overlaid with the user's
+        actual performance data. The constitution remains immutable; only the
+        stats update in real time.
+
+        Args:
+            user_name: Display name
+            current_mode: optimization | maintenance | survival
+            streak_days: Current streak
+            avg_sleep: 7-day average sleep hours
+            avg_deep_work: 7-day average deep work hours
+            avg_skill_building: 7-day average skill building hours
+            avg_compliance: 7-day average compliance %
+            training_days_this_week: Number of training days this week
+
+        Returns:
+            str: Formatted HTML message
+        """
+        tier1 = self.get_tier1_rules()
+        modes = self.get_operating_modes()
+        mode_info = modes.get(current_mode, modes["maintenance"])
+
+        # Determine status emojis
+        sleep_emoji = "✅" if avg_sleep >= tier1["sleep"]["target_hours"] else "⚠️"
+        dw_emoji = "✅" if avg_deep_work >= tier1["deep_work"]["target_hours"] else "⚠️"
+        sb_emoji = "✅" if avg_skill_building >= 2.0 else "⚠️"
+        comp_emoji = "🔥" if avg_compliance >= 90 else "✅" if avg_compliance >= 70 else "⚠️"
+
+        lines = []
+        lines.append(f"📜 <b>{user_name}'s Constitution</b>")
+        lines.append(f"<i>Mode: {current_mode.title()} | Streak: {streak_days} days</i>")
+        lines.append("")
+
+        # Core Principles with stats
+        lines.append("<b>Core Principles & Live Stats</b>")
+        lines.append("")
+
+        # Sleep
+        lines.append(
+            f"1️⃣ <b>Physical Sovereignty</b>\n"
+            f"   {sleep_emoji} Sleep: {avg_sleep:.1f}h / {tier1['sleep']['target_hours']}h target\n"
+            f"   🏋️ Training: {training_days_this_week}d this week"
+        )
+        lines.append("")
+
+        # Deep Work
+        lines.append(
+            f"2️⃣ <b>Time is Irreplaceable</b>\n"
+            f"   {dw_emoji} Deep Work: {avg_deep_work:.1f}h / {tier1['deep_work']['target_hours']}h target\n"
+            f"   {sb_emoji} Skill Building: {avg_skill_building:.1f}h / 2.0h target"
+        )
+        lines.append("")
+
+        # Compliance / Systems
+        lines.append(
+            f"3️⃣ <b>Evidence Over Emotion</b>\n"
+            f"   {comp_emoji} 7-Day Compliance: {avg_compliance:.0f}%\n"
+            f"   📊 Mode Target: {mode_info['target_compliance']}%"
+        )
+        lines.append("")
+
+        # Operating mode details
+        lines.append(f"<b>Operating Mode: {current_mode.title()}</b>")
+        lines.append(f"   {mode_info['description']}")
+        lines.append(f"   Training: {mode_info['training_frequency']}x/week")
+        lines.append(f"   Deep Work: {mode_info['deep_work_hours']}h/day")
+        lines.append(f"   Target Compliance: {mode_info['target_compliance']}%")
+        if mode_info.get('graduation_criteria'):
+            lines.append(f"   🎓 Graduation: {mode_info['graduation_criteria']}")
+        lines.append("")
+
+        # Crisis protocols summary
+        lines.append("<b>Crisis Protocols</b>")
+        protocols = self.get_crisis_protocols()
+        for name, proto in protocols.items():
+            lines.append(f"   • {name.replace('_', ' ').title()}: {proto['trigger']}")
+        lines.append("")
+
+        lines.append("<i>Full constitution: /constitution_full</i>")
+
+        return "\n".join(lines)
+
 
 # ===== Singleton Instance =====
 # Import this throughout the app: `from src.services.constitution_service import constitution_service`

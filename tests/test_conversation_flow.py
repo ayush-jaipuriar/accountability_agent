@@ -20,7 +20,7 @@ from telegram.ext import ConversationHandler
 
 from src.models.schemas import User, UserStreaks, Tier1NonNegotiables
 from src.bot.conversation import (
-    Q1_TIER1, Q2_CHALLENGES, Q3_RATING, Q4_TOMORROW,
+    Q1_TIER1, Q2_CHALLENGES, Q3_RATING, Q4_TOMORROW, Q5_MOOD,
     get_skill_building_question,
     start_checkin,
     handle_tier1_response,
@@ -358,9 +358,8 @@ class TestHandleTomorrowResponse:
             'tomorrow_obstacle': '',
         })
 
-        with patch('src.bot.conversation.finish_checkin', new_callable=AsyncMock):
-            result = await handle_tomorrow_response(update, context)
-        assert result == ConversationHandler.END
+        result = await handle_tomorrow_response(update, context)
+        assert result == Q5_MOOD
 
     @pytest.mark.asyncio
     async def test_valid_response_with_delimiter(self):
@@ -386,9 +385,8 @@ class TestHandleTomorrowResponse:
             'tomorrow_obstacle': '',
         })
 
-        with patch('src.bot.conversation.finish_checkin', new_callable=AsyncMock):
-            result = await handle_tomorrow_response(update, context)
-        assert result == ConversationHandler.END
+        result = await handle_tomorrow_response(update, context)
+        assert result == Q5_MOOD
         assert "LeetCode" in context.user_data['tomorrow_priority']
 
     @pytest.mark.asyncio

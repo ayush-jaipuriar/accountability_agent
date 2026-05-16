@@ -5,13 +5,14 @@ Check-In Conversation Handler
 Multi-turn conversation state machine for daily check-ins.
 
 Flow:
-    /checkin → Q1 (Tier 1) → Q2 (Challenges) → Q3 (Rating) → Q4 (Tomorrow) → FINISH
+    /checkin → Q1 (Tier 1) → Q2 (Challenges) → Q3 (Rating) → Q4 (Tomorrow) → Q5 (Mood) → FINISH
     
 States:
 - Q1_TIER1: Ask about 5 Tier 1 non-negotiables with Y/N buttons
 - Q2_CHALLENGES: Free text about today's challenges (10-500 chars)
 - Q3_RATING: 1-10 rating + reason (validation: must start with number)
 - Q4_TOMORROW: Tomorrow's priority + obstacle (10-500 chars each)
+- Q5_MOOD: Energy & mood ratings 1-10 (inline buttons)
 - FINISH: Calculate score, update streak, store data, send feedback
 
 Key Concepts:
@@ -53,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 
 # ===== Conversation States =====
-Q1_TIER1, Q2_CHALLENGES, Q3_RATING, Q4_TOMORROW = range(4)
+Q1_TIER1, Q2_CHALLENGES, Q3_RATING, Q4_TOMORROW, Q5_MOOD = range(5)
 
 
 async def _notify_sender_if_partner_delivery_failed(message, notification_result) -> None:
@@ -159,7 +160,7 @@ async def start_checkin(
     5. Start Question 1 (Tier 1)
     
     <b>Phase 3E Quick Check-In:</b>
-    - /quickcheckin triggers Tier 1-only flow (skip Q2-Q4)
+    - /quickcheckin triggers Tier 1-only flow (skip Q2-Q5)
     - Limited to 2 per week (enforced here)
     - Resets every Monday 12:00 AM IST
     
@@ -694,7 +695,7 @@ async def handle_tier1_response(
             )
             
             # Set dummy values for Q2-Q4 (required by finish_checkin)
-            context.user_data['challenges'] = "Quick check-in (Q2-Q4 skipped)"
+            context.user_data['challenges'] = "Quick check-in (Q2-Q5 skipped)"
             context.user_data['rating'] = 7  # Neutral rating
             context.user_data['rating_reason'] = "Quick check-in mode"
             context.user_data['tomorrow_priority'] = "Continue daily check-ins"
@@ -786,7 +787,7 @@ async def handle_challenges_response(
     
     # Move to Q3
     await update.message.reply_text(
-        "<b>📋 Question 3/4</b>\n\n"
+        "<b>📋 Question 3/5</b>\n\n"
         "<b>Self-Rating & Reflection:</b>\n"
         "Rate today 1-10 on constitution alignment. Why that score?\n\n"
         "📝 Format: Start with number (1-10), then explain.\n\n"
@@ -851,7 +852,7 @@ async def handle_rating_response(
     
     # Move to Q4
     await update.message.reply_text(
-        "<b>📋 Question 4/4</b>\n\n"
+        "<b>📋 Question 4/5</b>\n\n"
         "<b>Tomorrow's Plan:</b>\n"
         "1. What's tomorrow's #1 priority?\n"
         "2. What's the biggest potential obstacle?\n\n"
@@ -913,9 +914,90 @@ async def handle_tomorrow_response(
     context.user_data['tomorrow_obstacle'] = obstacle
     context.user_data['suppress_general_message_once'] = True
 
+    # Move to Q5 (Energy & Mood)
+    await update.message.reply_text(
+        "<b>📋 Question 5/5</b>\n\n"
+        "<b>Energy & Mood:</b>\n"
+        "Rate your energy and mood today (1-10 each).\n\n"
+        "📝 Format: Energy | Mood\n"
+        "_Example: '7 | 8' (7 energy, 8 mood)_\n\n"
+        "Or use the quick-reply buttons below:",
+        parse_mode='HTML'
+    )
+
+    # Send energy quick-reply buttons
+    energy_keyboard = [
+        [InlineKeyboardButton(str(i), callback_data=f"energy_{i}") for i in range(1, 6)],
+        [InlineKeyboardButton(str(i), callback_data=f"energy_{i}") for i in range(6, 11)],
+    ]
+    await update.message.reply_text(
+        "⚡ <b>Energy today?</b> (1 = exhausted, 10 = unstoppable)",
+        reply_markup=InlineKeyboardMarkup(energy_keyboard),
+        parse_mode='HTML'
+    )
+
+    return Q5_MOOD
+
+
+# ===== State Q5: Energy & Mood =====
+
+async def handle_energy_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """
+    Handle energy rating selection via inline button.
+    Stores energy and prompts for mood rating.
+    """
+    query = update.callback_query
+    await query.answer()
+
+    # Extract energy rating from callback_data
+    energy_rating = int(query.data.split("_")[1])
+    context.user_data['energy_rating'] = energy_rating
+
+    # Send mood quick-reply buttons
+    mood_keyboard = [
+        [InlineKeyboardButton(str(i), callback_data=f"mood_{i}") for i in range(1, 6)],
+        [InlineKeyboardButton(str(i), callback_data=f"mood_{i}") for i in range(6, 11)],
+    ]
+    await query.edit_message_text(
+        f"⚡ Energy: <b>{energy_rating}/10</b>\n\n"
+        f"😊 <b>Mood today?</b> (1 = terrible, 10 = amazing)",
+        reply_markup=InlineKeyboardMarkup(mood_keyboard),
+        parse_mode='HTML'
+    )
+
+    return Q5_MOOD
+
+
+async def handle_mood_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """
+    Handle mood rating selection via inline button.
+    Stores mood and completes check-in.
+    """
+    query = update.callback_query
+    await query.answer()
+
+    # Extract mood rating from callback_data
+    mood_rating = int(query.data.split("_")[1])
+    context.user_data['mood_rating'] = mood_rating
+
+    # Update the message to show both ratings
+    energy = context.user_data.get('energy_rating', '?')
+    await query.edit_message_text(
+        f"⚡ Energy: <b>{energy}/10</b>\n"
+        f"😊 Mood: <b>{mood_rating}/10</b>\n\n"
+        f"✅ Saving your check-in...",
+        parse_mode='HTML'
+    )
+
     # Finish check-in
     await finish_checkin(update, context)
-    
+
     return ConversationHandler.END
 
 
@@ -971,7 +1053,9 @@ async def finish_checkin(
             rating=context.user_data['rating'],
             rating_reason=context.user_data['rating_reason'],
             tomorrow_priority=context.user_data['tomorrow_priority'],
-            tomorrow_obstacle=context.user_data['tomorrow_obstacle']
+            tomorrow_obstacle=context.user_data['tomorrow_obstacle'],
+            energy_rating=context.user_data.get('energy_rating'),
+            mood_rating=context.user_data.get('mood_rating'),
         )
         
         # Calculate compliance score
@@ -1153,6 +1237,87 @@ async def finish_checkin(
         )
         await _notify_sender_if_partner_delivery_failed(update.message, partner_notification)
         
+        # ===== P2.2: Goal Progress Integration =====
+        try:
+            from src.services.goal_service import goal_service
+            from src.models.schemas import DailyCheckIn
+            
+            # Rebuild a proper DailyCheckIn object for goal evaluation
+            checkin_for_goals = DailyCheckIn(
+                date=date,
+                user_id=user_id,
+                mode=context.user_data['mode'],
+                tier1_non_negotiables=tier1,
+                responses=responses,
+                compliance_score=compliance_score,
+            )
+            
+            goal_updates = goal_service.update_progress_from_checkin(checkin_for_goals)
+            
+            if goal_updates:
+                goal_messages = []
+                for goal, milestone in goal_updates:
+                    if milestone == "100%":
+                        goal_messages.append(
+                            f"🏆 <b>Goal Completed!</b>\n"
+                            f"'{goal.title}' — {len(goal.progress)}/{goal.target_days} days!"
+                        )
+                    elif milestone in ("50%", "75%"):
+                        goal_messages.append(
+                            f"🎯 <b>{milestone} Milestone!</b>\n"
+                            f"'{goal.title}' — keep going!"
+                        )
+                
+                if goal_messages:
+                    await update.message.reply_text(
+                        "\n\n".join(goal_messages),
+                        parse_mode='HTML'
+                    )
+                    logger.info(f"🎯 Goal milestones reached for {user_id}: {len(goal_updates)}")
+        except Exception as e:
+            logger.error(f"⚠️ Goal progress update failed (non-critical): {e}")
+        
+        # ===== P2.3: Challenge Progress Update =====
+        try:
+            from src.services.challenge_service import challenge_service
+            updated_challenges = challenge_service.update_progress_from_checkin(checkin_for_goals)
+            if updated_challenges:
+                for ch in updated_challenges:
+                    # Check if challenge completed
+                    winner = challenge_service.check_completion(ch)
+                    if winner:
+                        if winner == user_id:
+                            await update.message.reply_text(
+                                f"🏆 <b>You Won the Challenge!</b>\n\n"
+                                f"'{ch.title}' — victory is yours! 🔥",
+                                parse_mode='HTML'
+                            )
+                        elif winner == ch.partner_id:
+                            await update.message.reply_text(
+                                f"😤 <b>Challenge Lost</b>\n\n"
+                                f"'{ch.title}' — your partner edged you out. Rematch?",
+                                parse_mode='HTML'
+                            )
+                        else:
+                            await update.message.reply_text(
+                                f"🤝 <b>Challenge Tie!</b>\n\n"
+                                f"'{ch.title}' — dead even. Rematch?",
+                                parse_mode='HTML'
+                            )
+                    else:
+                        # Daily progress update
+                        progress = ch.progress.get(user_id, [])
+                        met_days = sum(1 for p in progress if p.get("met"))
+                        total = (datetime.strptime(ch.end_date, "%Y-%m-%d") -
+                                datetime.strptime(ch.start_date, "%Y-%m-%d")).days + 1
+                        await update.message.reply_text(
+                            f"🏆 <b>Challenge Update</b>\n\n"
+                            f"'{ch.title}': {met_days}/{total} days",
+                            parse_mode='HTML'
+                        )
+        except Exception as e:
+            logger.error(f"⚠️ Challenge progress update failed (non-critical): {e}")
+        
         # ===== PHASE 3C: Achievement System Integration =====
         # Check for newly unlocked achievements after streak update
         try:
@@ -1320,13 +1485,15 @@ async def finish_checkin_quick(
                 data_quality='migrated',
             )
         
-        # Create CheckInResponses with dummy data (Q2-Q4 skipped)
+        # Create CheckInResponses with dummy data (Q2-Q5 skipped)
         responses = CheckInResponses(
             challenges=context.user_data['challenges'],
             rating=context.user_data['rating'],
             rating_reason=context.user_data['rating_reason'],
             tomorrow_priority=context.user_data['tomorrow_priority'],
-            tomorrow_obstacle=context.user_data['tomorrow_obstacle']
+            tomorrow_obstacle=context.user_data['tomorrow_obstacle'],
+            energy_rating=context.user_data.get('energy_rating'),
+            mood_rating=context.user_data.get('mood_rating'),
         )
         
         # Calculate compliance score
@@ -1443,6 +1610,73 @@ async def finish_checkin_quick(
         target_message = query.message if query else update.message
         await _notify_sender_if_partner_delivery_failed(target_message, partner_notification)
         
+        # ===== P2.2: Goal Progress Integration (Quick Check-In) =====
+        try:
+            from src.services.goal_service import goal_service
+            
+            goal_updates = goal_service.update_progress_from_checkin(checkin)
+            
+            if goal_updates:
+                goal_messages = []
+                for goal, milestone in goal_updates:
+                    if milestone == "100%":
+                        goal_messages.append(
+                            f"🏆 <b>Goal Completed!</b>\n"
+                            f"'{goal.title}' — {len(goal.progress)}/{goal.target_days} days!"
+                        )
+                    elif milestone in ("50%", "75%"):
+                        goal_messages.append(
+                            f"🎯 <b>{milestone} Milestone!</b>\n"
+                            f"'{goal.title}' — keep going!"
+                        )
+                
+                if goal_messages:
+                    await target_message.reply_text(
+                        "\n\n".join(goal_messages),
+                        parse_mode='HTML'
+                    )
+        except Exception as e:
+            logger.error(f"⚠️ Goal progress update failed in quick check-in (non-critical): {e}")
+        
+        # ===== P2.3: Challenge Progress Integration (Quick Check-In) =====
+        try:
+            from src.services.challenge_service import challenge_service
+            updated_challenges = challenge_service.update_progress_from_checkin(checkin)
+            if updated_challenges:
+                for ch in updated_challenges:
+                    winner = challenge_service.check_completion(ch)
+                    if winner:
+                        if winner == user_id:
+                            await target_message.reply_text(
+                                f"🏆 <b>You Won the Challenge!</b>\n\n"
+                                f"'{ch.title}' — victory is yours! 🔥",
+                                parse_mode='HTML'
+                            )
+                        elif winner == ch.partner_id:
+                            await target_message.reply_text(
+                                f"😤 <b>Challenge Lost</b>\n\n"
+                                f"'{ch.title}' — your partner edged you out. Rematch?",
+                                parse_mode='HTML'
+                            )
+                        else:
+                            await target_message.reply_text(
+                                f"🤝 <b>Challenge Tie!</b>\n\n"
+                                f"'{ch.title}' — dead even. Rematch?",
+                                parse_mode='HTML'
+                            )
+                    else:
+                        progress = ch.progress.get(user_id, [])
+                        met_days = sum(1 for p in progress if p.get("met"))
+                        total = (datetime.strptime(ch.end_date, "%Y-%m-%d") -
+                                datetime.strptime(ch.start_date, "%Y-%m-%d")).days + 1
+                        await target_message.reply_text(
+                            f"🏆 <b>Challenge Update</b>\n\n"
+                            f"'{ch.title}': {met_days}/{total} days",
+                            parse_mode='HTML'
+                        )
+        except Exception as e:
+            logger.error(f"⚠️ Challenge progress update failed in quick check-in (non-critical): {e}")
+        
         logger.info(
             f"⚡ Quick check-in completed for {user_id}: {compliance_score}% compliance, "
             f"{streak_updates['current_streak']} day streak, count: {new_count}/2"
@@ -1527,6 +1761,10 @@ def create_checkin_conversation_handler() -> ConversationHandler:
             ],
             Q4_TOMORROW: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_tomorrow_response)
+            ],
+            Q5_MOOD: [
+                CallbackQueryHandler(handle_energy_callback, pattern="^energy_"),
+                CallbackQueryHandler(handle_mood_callback, pattern="^mood_"),
             ]
         },
         fallbacks=[

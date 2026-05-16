@@ -270,6 +270,24 @@ class TelegramBotManager:
         # P1.2: Settings toggle command
         self.application.add_handler(CommandHandler("settings", self.settings_command))
         
+        # P2.1: Constitution viewer command
+        self.application.add_handler(CommandHandler("constitution", self.constitution_command))
+        
+        # P2.2: Goal commands
+        self.application.add_handler(CommandHandler("goals", self.goals_command))
+        self.application.add_handler(CommandHandler("goal_new", self.goal_new_command))
+        self.application.add_handler(CommandHandler("goal_progress", self.goal_progress_command))
+        self.application.add_handler(CommandHandler("goal_complete", self.goal_complete_command))
+        
+        # P2.3: Challenge commands
+        self.application.add_handler(CommandHandler("challenges", self.challenges_command))
+        self.application.add_handler(CommandHandler("challenge_new", self.challenge_new_command))
+        self.application.add_handler(CommandHandler("challenge_accept", self.challenge_accept_command))
+        self.application.add_handler(CommandHandler("challenge_decline", self.challenge_decline_command))
+        
+        # P3.1: Insights on-demand command
+        self.application.add_handler(CommandHandler("insights", self.insights_command))
+        
         # Admin-only: monitoring status command
         self.application.add_handler(CommandHandler("admin_status", self.admin_status_command))
         
@@ -2876,6 +2894,630 @@ class TelegramBotManager:
                 "your long-term goals remain."
             )
     
+    # ===== P2.1: /constitution Command — View Constitution with Live Stats =====
+
+    async def constitution_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle /constitution command — display user's constitution with live stats.
+
+        Shows the hardcoded constitution overlaid with the user's actual
+        performance data from the last 7 days. The constitution itself is
+        immutable; only the stats update in real time.
+        """
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+
+        if not user:
+            await update.message.reply_text(
+                "Please run /start first to set up your account.",
+                parse_mode='HTML'
+            )
+            return
+
+        try:
+            # Fetch recent check-ins for stats
+            recent_checkins = firestore_service.get_recent_checkins(user_id, days=7)
+
+            # Calculate averages
+            sleep_vals = [
+                getattr(c.tier1_non_negotiables, 'sleep_hours', None)
+                for c in recent_checkins
+                if getattr(c.tier1_non_negotiables, 'sleep_hours', None) is not None
+            ]
+            dw_vals = [
+                getattr(c.tier1_non_negotiables, 'deep_work_hours', None)
+                for c in recent_checkins
+                if getattr(c.tier1_non_negotiables, 'deep_work_hours', None) is not None
+            ]
+            sb_vals = [
+                getattr(c.tier1_non_negotiables, 'skill_building_hours', None)
+                for c in recent_checkins
+                if getattr(c.tier1_non_negotiables, 'skill_building_hours', None) is not None
+            ]
+            compliance_vals = [c.compliance_score for c in recent_checkins if c.compliance_score is not None]
+
+            avg_sleep = sum(sleep_vals) / len(sleep_vals) if sleep_vals else 0.0
+            avg_dw = sum(dw_vals) / len(dw_vals) if dw_vals else 0.0
+            avg_sb = sum(sb_vals) / len(sb_vals) if sb_vals else 0.0
+            avg_comp = sum(compliance_vals) / len(compliance_vals) if compliance_vals else 0.0
+
+            # Count training days this week
+            training_days = sum(
+                1 for c in recent_checkins
+                if c.tier1_non_negotiables.training
+            )
+
+            streak = user.streaks.current_streak if user.streaks else 0
+
+            # Format constitution with stats
+            from src.services.constitution_service import constitution_service
+            message = constitution_service.format_constitution_with_stats(
+                user_name=user.name,
+                current_mode=user.constitution_mode,
+                streak_days=streak,
+                avg_sleep=avg_sleep,
+                avg_deep_work=avg_dw,
+                avg_skill_building=avg_sb,
+                avg_compliance=avg_comp,
+                training_days_this_week=training_days,
+            )
+
+            await update.message.reply_text(message, parse_mode='HTML')
+            logger.info(f"📜 Constitution viewed by {user_id}")
+
+        except Exception as e:
+            logger.error(f"❌ Constitution command failed: {e}", exc_info=True)
+            await update.message.reply_text(
+                "⚠️ Could not load your constitution right now. Try again later.",
+                parse_mode='HTML'
+            )
+
+    # ===== P2.2: /goals Command — List Active Goals =====
+
+    async def goals_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /goals command — list active goals with progress."""
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+
+        if not user:
+            await update.message.reply_text("Please run /start first.", parse_mode='HTML')
+            return
+
+        from src.services.goal_service import goal_service
+        goals = goal_service.get_user_goals(user_id)
+
+        if not goals:
+            await update.message.reply_text(
+                "🎯 <b>No active goals</b>\n\n"
+                "Create one with /goal_new\n"
+                "Examples:\n"
+                "• Sleep 7+ hours for 14 days\n"
+                "• Zero porn for 30 days\n"
+                "• Deep work 3h/day for 7 days",
+                parse_mode='HTML'
+            )
+            return
+
+        lines = ["🎯 <b>Your Goals</b>\n"]
+        for goal in goals:
+            lines.append(goal_service.format_goal_progress(goal))
+            lines.append("")
+
+        await update.message.reply_text("\n".join(lines), parse_mode='HTML')
+        logger.info(f"🎯 Goals listed for {user_id}")
+
+    # ===== P2.2: /goal_new Command — Create New Goal =====
+
+    async def goal_new_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /goal_new command — create a new goal."""
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+
+        if not user:
+            await update.message.reply_text("Please run /start first.", parse_mode='HTML')
+            return
+
+        args = context.args
+        if len(args) < 3:
+            await update.message.reply_text(
+                "🎯 <b>Create a Goal</b>\n\n"
+                "Usage: /goal_new &lt;category&gt; &lt;target_days&gt; &lt;title&gt;\n\n"
+                "Categories: sleep, training, deep_work, skill_building, zero_porn, boundaries, custom\n"
+                "Examples:\n"
+                "• /goal_new sleep 14 'Sleep 7+ hours for 14 days'\n"
+                "• /goal_new zero_porn 30 '30 days clean'\n"
+                "• /goal_new deep_work 7 'Deep work 3h/day for a week'",
+                parse_mode='HTML'
+            )
+            return
+
+        category = args[0].lower()
+        try:
+            target_days = int(args[1])
+        except ValueError:
+            await update.message.reply_text("❌ target_days must be a number.", parse_mode='HTML')
+            return
+
+        title = " ".join(args[2:])
+
+        # Determine target_value based on category
+        target_value = None
+        if category == "sleep":
+            target_value = 7.0
+        elif category == "deep_work":
+            target_value = 2.0
+        elif category == "skill_building":
+            target_value = 2.0
+
+        from src.services.goal_service import goal_service
+        goal = goal_service.create_goal(
+            user_id=user_id,
+            title=title,
+            description=title,
+            category=category,
+            target_value=target_value,
+            target_days=target_days,
+        )
+
+        await update.message.reply_text(
+            f"🎯 <b>Goal Created!</b>\n\n"
+            f"<b>{goal.title}</b>\n"
+            f"Category: {category}\n"
+            f"Target: {target_days} consecutive days\n"
+            f"Starts: {goal.start_date}\n\n"
+            f"Track progress with /goals",
+            parse_mode='HTML'
+        )
+        logger.info(f"🎯 New goal created by {user_id}: {goal.goal_id}")
+
+    # ===== P2.2: /goal_progress Command — Update Goal Progress =====
+
+    async def goal_progress_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /goal_progress command — manually update goal progress."""
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+
+        if not user:
+            await update.message.reply_text("Please run /start first.", parse_mode='HTML')
+            return
+
+        args = context.args
+        if len(args) < 2:
+            await update.message.reply_text(
+                "Usage: /goal_progress &lt;goal_id&gt; &lt;met|missed&gt; [value]",
+                parse_mode='HTML'
+            )
+            return
+
+        goal_id = args[0]
+        met = args[1].lower() in ("met", "yes", "true", "1")
+        value = float(args[2]) if len(args) > 2 else None
+
+        from src.services.goal_service import goal_service
+        goal = goal_service.get_goal(goal_id)
+
+        if not goal or goal.user_id != user_id:
+            await update.message.reply_text("❌ Goal not found.", parse_mode='HTML')
+            return
+
+        from src.utils.timezone_utils import get_current_date
+        progress_entry = {
+            "date": get_current_date(),
+            "met": met,
+            "value": value,
+        }
+        goal.progress.append(progress_entry)
+
+        # Check for completion
+        consecutive = goal_service._count_consecutive_met(goal.progress)
+        milestone = None
+        if consecutive >= goal.target_days:
+            goal.status = "completed"
+            goal.completed_at = datetime.utcnow()
+            milestone = "🏆 Goal completed!"
+        elif consecutive >= int(goal.target_days * 0.75):
+            milestone = "🎉 75% milestone reached!"
+        elif consecutive >= int(goal.target_days * 0.5):
+            milestone = "⭐ 50% milestone reached!"
+
+        # Save
+        firestore_service.db.collection("goals").document(goal_id).update({
+            "progress": goal.progress,
+            "status": goal.status,
+            "completed_at": goal.completed_at,
+        })
+
+        msg = f"✅ Progress updated for <b>{goal.title}</b>\n"
+        msg += f"{consecutive}/{goal.target_days} days"
+        if milestone:
+            msg += f"\n\n{milestone}"
+
+        await update.message.reply_text(msg, parse_mode='HTML')
+        logger.info(f"🎯 Goal progress updated by {user_id}: {goal_id}")
+
+    # ===== P2.2: /goal_complete Command — Mark Goal Complete =====
+
+    async def goal_complete_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /goal_complete command — manually mark goal as completed."""
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+
+        if not user:
+            await update.message.reply_text("Please run /start first.", parse_mode='HTML')
+            return
+
+        args = context.args
+        if not args:
+            await update.message.reply_text(
+                "Usage: /goal_complete &lt;goal_id&gt;",
+                parse_mode='HTML'
+            )
+            return
+
+        goal_id = args[0]
+        from src.services.goal_service import goal_service
+        goal = goal_service.get_goal(goal_id)
+
+        if not goal or goal.user_id != user_id:
+            await update.message.reply_text("❌ Goal not found.", parse_mode='HTML')
+            return
+
+        goal_service.update_goal_status(goal_id, "completed")
+
+        await update.message.reply_text(
+            f"🏆 <b>Goal Completed!</b>\n\n"
+            f"<b>{goal.title}</b>\n\n"
+            f"Congratulations! You stayed consistent for {len(goal.progress)} days.\n"
+            f"This is what discipline looks like. 🔥",
+            parse_mode='HTML'
+        )
+        logger.info(f"🎯 Goal manually completed by {user_id}: {goal_id}")
+
+    # ===== P2.3: /challenges Command — List Active Challenges =====
+
+    async def challenges_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /challenges command — list active partner challenges."""
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+
+        if not user:
+            await update.message.reply_text("Please run /start first.", parse_mode='HTML')
+            return
+
+        from src.services.challenge_service import challenge_service
+        challenges = challenge_service.get_user_challenges(user_id, status="active")
+        pending = challenge_service.get_user_challenges(user_id, status="pending")
+
+        if not challenges and not pending:
+            await update.message.reply_text(
+                "🏆 <b>No active challenges</b>\n\n"
+                "Create one with /challenge_new\n"
+                "Examples:\n"
+                "• /challenge_new sleep_7_days @partner_username '7-Day Sleep Challenge'\n"
+                "• /challenge_new training_5_days @partner_username 'Weekly Training Battle'",
+                parse_mode='HTML'
+            )
+            return
+
+        lines = []
+        if pending:
+            lines.append("⏳ <b>Pending Invites</b>\n")
+            for ch in pending:
+                lines.append(
+                    f"• <b>{ch.title}</b> from {ch.challenger_id}\n"
+                    f"  Reply /challenge_accept {ch.challenge_id} or /challenge_decline {ch.challenge_id}\n"
+                )
+            lines.append("")
+
+        if challenges:
+            lines.append("🏆 <b>Active Challenges</b>\n")
+            for ch in challenges:
+                lines.append(challenge_service.format_challenge_status(ch, user_id))
+                lines.append("")
+
+        await update.message.reply_text("\n".join(lines), parse_mode='HTML')
+        logger.info(f"🏆 Challenges listed for {user_id}")
+
+    # ===== P2.3: /challenge_new Command — Create New Challenge =====
+
+    async def challenge_new_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /challenge_new command — create a new partner challenge."""
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+
+        if not user:
+            await update.message.reply_text("Please run /start first.", parse_mode='HTML')
+            return
+
+        args = context.args
+        if len(args) < 3:
+            await update.message.reply_text(
+                "🏆 <b>Create a Challenge</b>\n\n"
+                "Usage: /challenge_new &lt;type&gt; &lt;@partner_username&gt; &lt;title&gt;\n\n"
+                "Types: sleep_7_days, training_5_days, deep_work_7_days, custom\n"
+                "Examples:\n"
+                "• /challenge_new sleep_7_days @john '7-Day Sleep Challenge'\n"
+                "• /challenge_new training_5_days @jane 'Weekly Training Battle'\n"
+                "• /challenge_new deep_work_7_days @alex 'Deep Work Week'",
+                parse_mode='HTML'
+            )
+            return
+
+        challenge_type = args[0].lower()
+        partner_username = args[1].lstrip("@")
+        title = " ".join(args[2:])
+
+        # Find partner by username
+        partner = firestore_service.get_user_by_username(partner_username)
+        if not partner:
+            await update.message.reply_text(
+                f"❌ User @{partner_username} not found.\n"
+                f"They need to have started the bot first.",
+                parse_mode='HTML'
+            )
+            return
+
+        partner_id = str(partner.user_id)
+        if partner_id == user_id:
+            await update.message.reply_text("❌ You can't challenge yourself!", parse_mode='HTML')
+            return
+
+        from src.utils.timezone_utils import get_current_date
+        from datetime import timedelta
+        start_date = get_current_date()
+        end_date = (datetime.strptime(start_date, "%Y-%m-%d") + timedelta(days=6)).strftime("%Y-%m-%d")
+
+        descriptions = {
+            "sleep_7_days": "Get 7+ hours of sleep every day for 7 days",
+            "training_5_days": "Train at least 5 days this week",
+            "deep_work_7_days": "Do 2+ hours of deep work every day for 7 days",
+            "custom": title,
+        }
+
+        from src.services.challenge_service import challenge_service
+        challenge = challenge_service.create_challenge(
+            challenger_id=user_id,
+            partner_id=partner_id,
+            challenge_type=challenge_type,
+            title=title,
+            description=descriptions.get(challenge_type, title),
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        await update.message.reply_text(
+            f"🏆 <b>Challenge Sent!</b>\n\n"
+            f"<b>{title}</b>\n"
+            f"vs @{partner_username}\n"
+            f"Type: {challenge_type}\n"
+            f"Duration: {start_date} → {end_date}\n\n"
+            f"Waiting for them to accept with /challenge_accept {challenge.challenge_id}",
+            parse_mode='HTML'
+        )
+
+        # Notify partner
+        try:
+            await self.bot.send_message(
+                chat_id=partner_id,
+                text=(
+                    f"🏆 <b>New Challenge!</b>\n\n"
+                    f"{update.effective_user.username or update.effective_user.first_name} "
+                    f"challenged you to:\n"
+                    f"<b>{title}</b>\n\n"
+                    f"Type: {challenge_type}\n"
+                    f"Duration: {start_date} → {end_date}\n\n"
+                    f"Accept: /challenge_accept {challenge.challenge_id}\n"
+                    f"Decline: /challenge_decline {challenge.challenge_id}"
+                ),
+                parse_mode='HTML'
+            )
+        except Exception as e:
+            logger.warning(f"Failed to notify partner {partner_id}: {e}")
+
+        logger.info(f"🏆 Challenge created by {user_id} vs {partner_id}: {challenge.challenge_id}")
+
+    # ===== P2.3: /challenge_accept Command — Accept Challenge =====
+
+    async def challenge_accept_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /challenge_accept command — accept a pending challenge."""
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+
+        if not user:
+            await update.message.reply_text("Please run /start first.", parse_mode='HTML')
+            return
+
+        args = context.args
+        if not args:
+            await update.message.reply_text(
+                "Usage: /challenge_accept &lt;challenge_id&gt;",
+                parse_mode='HTML'
+            )
+            return
+
+        challenge_id = args[0]
+        from src.services.challenge_service import challenge_service
+        challenge = challenge_service.get_challenge(challenge_id)
+
+        if not challenge or challenge.partner_id != user_id:
+            await update.message.reply_text("❌ Challenge not found.", parse_mode='HTML')
+            return
+
+        if challenge.status != "pending":
+            await update.message.reply_text(
+                f"❌ Challenge is already {challenge.status}.",
+                parse_mode='HTML'
+            )
+            return
+
+        challenge_service.accept_challenge(challenge_id)
+
+        await update.message.reply_text(
+            f"🏆 <b>Challenge Accepted!</b>\n\n"
+            f"<b>{challenge.title}</b>\n"
+            f"vs {challenge.challenger_id}\n"
+            f"Duration: {challenge.start_date} → {challenge.end_date}\n\n"
+            f"May the best man win! 🔥",
+            parse_mode='HTML'
+        )
+
+        # Notify challenger
+        try:
+            await self.bot.send_message(
+                chat_id=challenge.challenger_id,
+                text=(
+                    f"🏆 <b>Challenge Accepted!</b>\n\n"
+                    f"{update.effective_user.username or update.effective_user.first_name} "
+                    f"accepted your challenge:\n"
+                    f"<b>{challenge.title}</b>\n\n"
+                    f"Let the battle begin! 🔥"
+                ),
+                parse_mode='HTML'
+            )
+        except Exception as e:
+            logger.warning(f"Failed to notify challenger {challenge.challenger_id}: {e}")
+
+        logger.info(f"🏆 Challenge {challenge_id} accepted by {user_id}")
+
+    # ===== P2.3: /challenge_decline Command — Decline Challenge =====
+
+    async def challenge_decline_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /challenge_decline command — decline a pending challenge."""
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+
+        if not user:
+            await update.message.reply_text("Please run /start first.", parse_mode='HTML')
+            return
+
+        args = context.args
+        if not args:
+            await update.message.reply_text(
+                "Usage: /challenge_decline &lt;challenge_id&gt;",
+                parse_mode='HTML'
+            )
+            return
+
+        challenge_id = args[0]
+        from src.services.challenge_service import challenge_service
+        challenge = challenge_service.get_challenge(challenge_id)
+
+        if not challenge or challenge.partner_id != user_id:
+            await update.message.reply_text("❌ Challenge not found.", parse_mode='HTML')
+            return
+
+        if challenge.status != "pending":
+            await update.message.reply_text(
+                f"❌ Challenge is already {challenge.status}.",
+                parse_mode='HTML'
+            )
+            return
+
+        challenge_service.decline_challenge(challenge_id)
+
+        await update.message.reply_text(
+            f"Challenge declined. Maybe next time!",
+            parse_mode='HTML'
+        )
+
+        # Notify challenger
+        try:
+            await self.bot.send_message(
+                chat_id=challenge.challenger_id,
+                text=(
+                    f"❌ <b>Challenge Declined</b>\n\n"
+                    f"{update.effective_user.username or update.effective_user.first_name} "
+                    f"declined your challenge: <b>{challenge.title}</b>\n\n"
+                    f"Maybe try a different partner?"
+                ),
+                parse_mode='HTML'
+            )
+        except Exception as e:
+            logger.warning(f"Failed to notify challenger {challenge.challenger_id}: {e}")
+
+        logger.info(f"🏆 Challenge {challenge_id} declined by {user_id}")
+
+    # ===== P3.1: /insights Command — On-Demand Insights =====
+
+    async def insights_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /insights command — show personalized pattern insights."""
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+
+        if not user:
+            await update.message.reply_text("Please run /start first.", parse_mode='HTML')
+            return
+
+        from src.services.insights_engine import insights_engine
+        checkins = firestore_service.get_recent_checkins(user_id, days=90)
+
+        if len(checkins) < 7:
+            await update.message.reply_text(
+                "📊 <b>Insights</b>\n\n"
+                "Not enough data yet. Keep checking in daily — insights appear after 7+ check-ins!",
+                parse_mode='HTML'
+            )
+            return
+
+        insights = insights_engine.generate_insights(checkins, user)
+
+        if not insights:
+            await update.message.reply_text(
+                "📊 <b>Insights</b>\n\n"
+                "No strong patterns detected yet. Keep checking in — your data is building up!",
+                parse_mode='HTML'
+            )
+            return
+
+        lines = ["📊 <b>Your Personalized Insights</b>\n"]
+        for i, insight in enumerate(insights, 1):
+            lines.append(f"{i}. {insight['title']}")
+            lines.append(f"   <i>{insight['suggestion']}</i>")
+            lines.append("")
+
+        await update.message.reply_text("\n".join(lines), parse_mode='HTML')
+        logger.info(f"📊 Insights sent to {user_id}: {len(insights)} insights")
+
     # ===== P1.2: /briefing Command — On-Demand Morning Briefing =====
 
     async def briefing_command(

@@ -1398,6 +1398,73 @@ async def churn_prevention(request: Request):
     return {"status": "success", "timezones": target_timezones, "results": results}
 
 
+# ===== P3.3: Predictive Intervention Endpoint =====
+
+@app.post("/cron/predictive_intervention")
+async def predictive_intervention(request: Request):
+    """
+    Evening predictive intervention cron.
+
+    Runs at 9:00 PM local time for each timezone.
+    Predicts tomorrow's risk and sends preventive messages.
+
+    Returns:
+        dict: Aggregate results (scanned / messaged / errors)
+    """
+    verify_cron_request(request)
+
+    from src.services.predictive_intervention import predictive_intervention_engine
+    from src.utils.timezone_utils import get_timezones_at_local_time
+
+    results = {"scanned": 0, "messaged": 0, "errors": 0}
+
+    # Find timezones at 9:00 PM (within 15-min window)
+    utc_now = datetime.utcnow()
+    target_timezones = get_timezones_at_local_time(utc_now, target_hour=21, tolerance_minutes=15)
+    logger.info(f"🔮 Running predictive interventions for timezones at 9 PM: {target_timezones}")
+
+    if not target_timezones:
+        return {"status": "no_timezones_at_9pm", "results": results}
+
+    # Fetch users in matching timezones
+    users = firestore_service.get_users_by_timezones(target_timezones)
+
+    for user in users:
+        try:
+            results["scanned"] += 1
+
+            # Check if user has enabled predictive interventions
+            settings_dict = getattr(user, 'settings', {}) or {}
+            if not settings_dict.get("predictive_interventions_enabled", True):
+                continue
+
+            # Fetch recent check-ins
+            checkins = firestore_service.get_recent_checkins(user.user_id, days=30)
+            if len(checkins) < 14:
+                continue
+
+            # Generate prediction
+            prediction = predictive_intervention_engine.predict_tomorrow_risk(user, checkins)
+            if prediction.get("risk_score", 0.0) < 0.5:
+                continue
+
+            # Format and send message
+            message = predictive_intervention_engine.format_prediction(prediction, user)
+            await bot_manager.bot.send_message(
+                chat_id=user.user_id,
+                text=message,
+                parse_mode='HTML'
+            )
+            results["messaged"] += 1
+
+        except Exception as e:
+            logger.error(f"❌ Predictive intervention failed for {user.user_id}: {e}")
+            results["errors"] += 1
+
+    logger.info(f"🔮 Predictive interventions complete: {results}")
+    return {"status": "success", "timezones": target_timezones, "results": results}
+
+
 # ===== Admin Broadcast Endpoint =====
 
 @app.post("/admin/broadcast")

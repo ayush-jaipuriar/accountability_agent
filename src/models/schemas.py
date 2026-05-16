@@ -373,12 +373,20 @@ class CheckInResponses(BaseModel):
     3. Rating Reason: Why that score?
     4. Tomorrow Priority: What's tomorrow's #1 priority?
     5. Tomorrow Obstacle: What's the biggest potential obstacle?
+    
+    Questions (Phase 3 - Mood & Energy):
+    6. Energy: Rate your energy today 1-10
+    7. Mood: Rate your mood today 1-10
     """
     challenges: str = Field(..., min_length=10, max_length=500)      # 10-500 chars
     rating: int = Field(..., ge=1, le=10)                            # 1-10 scale
     rating_reason: str = Field(..., min_length=10, max_length=500)   # Why that rating?
     tomorrow_priority: str = Field(..., min_length=10, max_length=500)
     tomorrow_obstacle: str = Field(..., min_length=10, max_length=500)
+    
+    # P3.2: Mood & Energy tracking (optional for backward compatibility)
+    energy_rating: Optional[int] = Field(None, ge=1, le=10, description="Energy level 1-10")
+    mood_rating: Optional[int] = Field(None, ge=1, le=10, description="Mood level 1-10")
 
 
 class DailyCheckIn(BaseModel):
@@ -465,6 +473,104 @@ class Pattern(BaseModel):
     data_points: list                             # Check-in dates that triggered pattern
     message: str                                  # Intervention message sent to user
     acknowledged: bool = False                    # Did user respond to intervention?
+
+
+# ===== P2.2: Goal Model =====
+
+class Goal(BaseModel):
+    """
+    User-defined SMART goal with automatic progress tracking.
+
+    Goals are tied to constitution principles and auto-update based on
+    check-in data. Examples:
+        - "Sleep 7+ hours for 14 consecutive days"
+        - "Complete LeetCode 150 by June 1"
+        - "Zero porn for 90 days"
+    """
+    goal_id: str = Field(default_factory=lambda: f"goal_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}")
+    user_id: str
+    title: str                        # "Sleep 7+ hours for 14 days"
+    description: str                  # "Build consistent sleep habit"
+    category: str                     # sleep | training | deep_work | skill_building | zero_porn | boundaries | custom
+    target_value: Optional[float] = None  # e.g., 7.0 hours
+    target_days: int = 14             # e.g., 14 consecutive days
+    start_date: str                   # YYYY-MM-DD
+    end_date: Optional[str] = None    # YYYY-MM-DD
+    status: str = "active"            # active | completed | failed | paused
+    progress: List[Dict] = Field(default_factory=list)  # [{"date": "2026-02-01", "met": True, "value": 7.5}]
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    completed_at: Optional[datetime] = None
+
+    def to_firestore(self) -> dict:
+        return {
+            "goal_id": self.goal_id,
+            "user_id": self.user_id,
+            "title": self.title,
+            "description": self.description,
+            "category": self.category,
+            "target_value": self.target_value,
+            "target_days": self.target_days,
+            "start_date": self.start_date,
+            "end_date": self.end_date,
+            "status": self.status,
+            "progress": self.progress,
+            "created_at": self.created_at,
+            "completed_at": self.completed_at,
+        }
+
+    @classmethod
+    def from_firestore(cls, data: dict) -> "Goal":
+        return cls(**data)
+
+
+# ===== P2.3: Partner Challenge Model =====
+
+class PartnerChallenge(BaseModel):
+    """
+    Shared challenge between two accountability partners.
+
+    Partners compete or collaborate on a shared goal (e.g., "7-day sleep challenge").
+    Progress is tracked per participant and updated after each check-in.
+    """
+    challenge_id: str = Field(default_factory=lambda: f"ch_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}")
+    challenger_id: str      # Who created the challenge
+    partner_id: str         # Who was invited
+    challenge_type: str     # sleep_7_days | training_5_days | deep_work_7_days | custom
+    title: str
+    description: str
+    start_date: str         # YYYY-MM-DD
+    end_date: str           # YYYY-MM-DD
+    status: str = "pending"  # pending | active | completed | cancelled
+    
+    # Progress tracking per participant
+    # progress: {user_id: [{"date": "2026-02-01", "met": True, "value": 7.5}]}
+    progress: Dict[str, List[Dict]] = Field(default_factory=dict)
+    
+    # Winner (if competitive)
+    winner_id: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    completed_at: Optional[datetime] = None
+
+    def to_firestore(self) -> dict:
+        return {
+            "challenge_id": self.challenge_id,
+            "challenger_id": self.challenger_id,
+            "partner_id": self.partner_id,
+            "challenge_type": self.challenge_type,
+            "title": self.title,
+            "description": self.description,
+            "start_date": self.start_date,
+            "end_date": self.end_date,
+            "status": self.status,
+            "progress": self.progress,
+            "winner_id": self.winner_id,
+            "created_at": self.created_at,
+            "completed_at": self.completed_at,
+        }
+
+    @classmethod
+    def from_firestore(cls, data: dict) -> "PartnerChallenge":
+        return cls(**data)
 
 
 # ===== Helper Functions =====
