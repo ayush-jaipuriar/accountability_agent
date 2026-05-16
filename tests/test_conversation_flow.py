@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from datetime import datetime
 from telegram.ext import ConversationHandler
 
-from src.models.schemas import User, UserStreaks
+from src.models.schemas import User, UserStreaks, Tier1NonNegotiables
 from src.bot.conversation import (
     Q1_TIER1, Q2_CHALLENGES, Q3_RATING, Q4_TOMORROW,
     get_skill_building_question,
@@ -205,28 +205,32 @@ class TestHandleTier1Response:
 
     @pytest.mark.asyncio
     async def test_single_answer_stays_in_q1(self):
-        update = _make_callback_update(data="sleep_yes")
+        update = _make_callback_update(data="tier1_sleep_hours_7.5")
         context = _make_context(user_data={
             'user_id': '111',
-            'tier1_responses': {},
+            'tier1_step': 0,
+            'tier1_data': {},
             'tier1_answer_order': [],
         })
         result = await handle_tier1_response(update, context)
         assert result == Q1_TIER1
-        assert context.user_data['tier1_responses']['sleep'] is True
+        assert context.user_data['tier1_data']['sleep_hours'] == 7.5
+        assert context.user_data['tier1_step'] == 1
 
     @pytest.mark.asyncio
     async def test_all_six_answered_moves_to_q2(self):
-        update = _make_callback_update(data="boundaries_yes")
+        update = _make_callback_update(data="tier1_boundaries_yes")
         context = _make_context(user_data={
             'user_id': '111',
             'checkin_type': 'full',
-            'tier1_responses': {
-                'sleep': True, 'training': True, 'deepwork': True,
-                'skillbuilding': True, 'porn': True
+            'tier1_step': 5,
+            'tier1_data': {
+                'sleep_hours': 5.5, 'deep_work_hours': 1.0,
+                'skill_building_hours': 0.5, 'training_intensity': 'rest',
+                'zero_porn': True
             },
-            'tier1_answer_order': ['sleep', 'training', 'deepwork',
-                                   'skillbuilding', 'porn'],
+            'tier1_answer_order': ['sleep_hours', 'deep_work_hours',
+                                   'skill_building_hours', 'training_intensity', 'zero_porn'],
         })
         result = await handle_tier1_response(update, context)
         assert result == Q2_CHALLENGES
@@ -236,20 +240,23 @@ class TestHandleTier1Response:
         update = _make_callback_update(data="tier1_undo")
         context = _make_context(user_data={
             'user_id': '111',
-            'tier1_responses': {'sleep': True, 'training': False},
-            'tier1_answer_order': ['sleep', 'training'],
+            'tier1_step': 2,
+            'tier1_data': {'sleep_hours': 7.5, 'deep_work_hours': 2.5},
+            'tier1_answer_order': ['sleep_hours', 'deep_work_hours'],
         })
         result = await handle_tier1_response(update, context)
         assert result == Q1_TIER1
-        assert 'training' not in context.user_data['tier1_responses']
+        assert 'deep_work_hours' not in context.user_data['tier1_data']
         assert len(context.user_data['tier1_answer_order']) == 1
+        assert context.user_data['tier1_step'] == 1
 
     @pytest.mark.asyncio
     async def test_undo_empty_does_nothing(self):
         update = _make_callback_update(data="tier1_undo")
         context = _make_context(user_data={
             'user_id': '111',
-            'tier1_responses': {},
+            'tier1_step': 0,
+            'tier1_data': {},
             'tier1_answer_order': [],
         })
         result = await handle_tier1_response(update, context)
@@ -337,10 +344,13 @@ class TestHandleTomorrowResponse:
             'date': '2026-02-07',
             'mode': 'maintenance',
             'checkin_start_time': datetime.utcnow(),
-            'tier1_responses': {
-                'sleep': True, 'training': True, 'deepwork': True,
-                'skillbuilding': True, 'porn': True, 'boundaries': True
-            },
+            'tier1': Tier1NonNegotiables(
+                sleep=True, sleep_hours=7.5,
+                training=True, training_intensity='moderate',
+                deep_work=True, deep_work_hours=2.5,
+                skill_building=True, skill_building_hours=2.0,
+                zero_porn=True, boundaries=True
+            ),
             'challenges': 'Test challenges text here for validation',
             'rating': 8,
             'rating_reason': 'Solid day overall with good consistency',
@@ -362,10 +372,13 @@ class TestHandleTomorrowResponse:
             'date': '2026-02-07',
             'mode': 'maintenance',
             'checkin_start_time': datetime.utcnow(),
-            'tier1_responses': {
-                'sleep': True, 'training': True, 'deepwork': True,
-                'skillbuilding': True, 'porn': True, 'boundaries': True
-            },
+            'tier1': Tier1NonNegotiables(
+                sleep=True, sleep_hours=7.5,
+                training=True, training_intensity='moderate',
+                deep_work=True, deep_work_hours=2.5,
+                skill_building=True, skill_building_hours=2.0,
+                zero_porn=True, boundaries=True
+            ),
             'challenges': 'Test challenges text here for validation',
             'rating': 8,
             'rating_reason': 'Solid day overall with good consistency',
@@ -419,16 +432,18 @@ class TestQuickCheckinPath:
 
     @pytest.mark.asyncio
     async def test_quick_checkin_skips_q2_q4(self):
-        update = _make_callback_update(data="boundaries_yes")
+        update = _make_callback_update(data="tier1_boundaries_yes")
         context = _make_context(user_data={
             'user_id': '111',
             'checkin_type': 'quick',
-            'tier1_responses': {
-                'sleep': True, 'training': True, 'deepwork': True,
-                'skillbuilding': True, 'porn': True
+            'tier1_step': 5,
+            'tier1_data': {
+                'sleep_hours': 7.5, 'deep_work_hours': 2.5,
+                'skill_building_hours': 2.0, 'training_intensity': 'moderate',
+                'zero_porn': True
             },
-            'tier1_answer_order': ['sleep', 'training', 'deepwork',
-                                   'skillbuilding', 'porn'],
+            'tier1_answer_order': ['sleep_hours', 'deep_work_hours',
+                                   'skill_building_hours', 'training_intensity', 'zero_porn'],
         })
 
         with patch('src.bot.conversation.finish_checkin_quick',

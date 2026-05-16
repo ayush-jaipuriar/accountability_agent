@@ -224,10 +224,10 @@ class CheckInAgent:
             prompt = f"""Generate brief (1-2 sentences) check-in feedback.
 
 <b>Tier 1 Results:</b>
-- Sleep: {'✅' if tier1.sleep else '❌'} (7+ hours)
-- Training: {'✅' if tier1.training else '❌'} (workout or rest)
-- Deep Work: {'✅' if tier1.deep_work else '❌'} (2+ hours)
-- Skill Building: {'✅' if tier1.skill_building else '❌'} (2+ hours career learning)
+- Sleep: {'✅' if tier1.sleep else '❌'} ({tier1.sleep_hours}h, target 7h+)
+- Training: {'✅' if tier1.training else '❌'} ({tier1.training_intensity.title()})
+- Deep Work: {'✅' if tier1.deep_work else '❌'} ({tier1.deep_work_hours}h, target 2h+)
+- Skill Building: {'✅' if tier1.skill_building else '❌'} ({tier1.skill_building_hours}h, target 2h+)
 - Zero Porn: {'✅' if tier1.zero_porn else '❌'}
 - Boundaries: {'✅' if tier1.boundaries else '❌'} (no toxic interactions)
 
@@ -542,22 +542,36 @@ Return only the support note text."""
         5. <b>Examples</b>: (Could add few-shot examples for better quality)
         6. <b>Constraints</b>: What to avoid (generic praise, fluff, vague advice)
         """
-        # Summarize tier1 status
+        # Summarize tier1 status with actual hours (v2.0 continuous data)
         tier1_items = []
-        if tier1.sleep:
-            tier1_items.append("✅ Sleep (7+ hours)")
-        else:
-            tier1_items.append("❌ Sleep (<7 hours)")
         
-        if tier1.training:
-            tier1_items.append("✅ Training")
+        # Sleep with actual hours
+        sleep_hours = getattr(tier1, 'sleep_hours', None)
+        if sleep_hours is not None:
+            tier1_items.append(f"{'✅' if tier1.sleep else '❌'} Sleep ({sleep_hours}h, target 7h+)")
         else:
-            tier1_items.append("❌ Training (missed)")
+            tier1_items.append(f"{'✅' if tier1.sleep else '❌'} Sleep ({'7+ hours' if tier1.sleep else '<7 hours'})")
         
-        if tier1.deep_work:
-            tier1_items.append("✅ Deep Work (2+ hours)")
+        # Training with intensity
+        training_intensity = getattr(tier1, 'training_intensity', None)
+        if training_intensity:
+            tier1_items.append(f"{'✅' if tier1.training else '❌'} Training ({training_intensity.title()})")
         else:
-            tier1_items.append("❌ Deep Work (<2 hours)")
+            tier1_items.append(f"{'✅' if tier1.training else '❌'} Training")
+        
+        # Deep work with actual hours
+        dw_hours = getattr(tier1, 'deep_work_hours', None)
+        if dw_hours is not None:
+            tier1_items.append(f"{'✅' if tier1.deep_work else '❌'} Deep Work ({dw_hours}h, target 2h+)")
+        else:
+            tier1_items.append(f"{'✅' if tier1.deep_work else '❌'} Deep Work ({'2+ hours' if tier1.deep_work else '<2 hours'})")
+        
+        # Skill building with actual hours
+        sb_hours = getattr(tier1, 'skill_building_hours', None)
+        if sb_hours is not None:
+            tier1_items.append(f"{'✅' if tier1.skill_building else '❌'} Skill Building ({sb_hours}h, target 2h+)")
+        else:
+            tier1_items.append(f"{'✅' if tier1.skill_building else '❌'} Skill Building")
         
         if tier1.zero_porn:
             tier1_items.append("✅ Zero Porn")
@@ -570,6 +584,39 @@ Return only the support note text."""
             tier1_items.append("❌ Boundaries (violated)")
         
         tier1_summary = "\n".join(tier1_items)
+        
+        # Calculate 7-day averages for context
+        avg_sleep = avg_dw = avg_sb = None
+        if recent_checkins:
+            sleep_vals = []
+            dw_vals = []
+            sb_vals = []
+            for c in recent_checkins:
+                if 'tier1' in c:
+                    t1 = c['tier1']
+                    if 'sleep_hours' in t1 and t1['sleep_hours'] is not None:
+                        sleep_vals.append(t1['sleep_hours'])
+                    if 'deep_work_hours' in t1 and t1['deep_work_hours'] is not None:
+                        dw_vals.append(t1['deep_work_hours'])
+                    if 'skill_building_hours' in t1 and t1['skill_building_hours'] is not None:
+                        sb_vals.append(t1['skill_building_hours'])
+            
+            if sleep_vals:
+                avg_sleep = sum(sleep_vals) / len(sleep_vals)
+            if dw_vals:
+                avg_dw = sum(dw_vals) / len(dw_vals)
+            if sb_vals:
+                avg_sb = sum(sb_vals) / len(sb_vals)
+        
+        recent_averages = ""
+        if avg_sleep or avg_dw or avg_sb:
+            recent_averages = "\n7-Day Averages:\n"
+            if avg_sleep:
+                recent_averages += f"- Sleep: {avg_sleep:.1f}h/day\n"
+            if avg_dw:
+                recent_averages += f"- Deep Work: {avg_dw:.1f}h/day\n"
+            if avg_sb:
+                recent_averages += f"- Skill Building: {avg_sb:.1f}h/day\n"
         
         # Format recent history
         if recent_checkins:
@@ -603,7 +650,7 @@ TODAY'S CHECK-IN:
 Compliance Score: {compliance_score}%
 Tier 1 Non-Negotiables:
 {tier1_summary}
-
+{recent_averages}
 Self-Rating: {self_rating}/10
 Reason: "{rating_reason}"
 

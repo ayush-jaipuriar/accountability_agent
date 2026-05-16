@@ -64,6 +64,8 @@ class Settings(BaseSettings):
     enable_emotional_processing: bool = False  # Phase 4
     enable_ghosting_detection: bool = False    # Phase 4
     enable_reports: bool = False                # Phase 3
+    enable_morning_briefing: bool = True       # P1.2
+    enable_churn_prediction: bool = True       # P1.4
     
     # ===== Phase Deployment Dates =====
     # Used for backward-compatible score normalization.

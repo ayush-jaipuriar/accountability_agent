@@ -1233,6 +1233,171 @@ async def periodic_report_trigger(request: Request):
         raise HTTPException(500, f"Periodic report failed: {str(e)}")
 
 
+# ===== P1.2: Morning Briefing Endpoint =====
+
+@app.post("/cron/morning_briefing")
+async def morning_briefing(request: Request):
+    """
+    Send morning briefings to all users at 8:00 AM local time.
+
+    Triggered by Cloud Scheduler every 15 minutes.
+    Each invocation checks which timezones are currently at 8:00 AM
+    and sends briefings to users in those timezones.
+
+    Process:
+        1. Find timezones where current local time is ~8:00 AM
+        2. Fetch users in those timezones
+        3. Generate personalized briefing for each
+        4. Send via Telegram
+        5. Update last_briefing_date to prevent duplicates
+
+    Returns:
+        dict: Aggregate results (sent / skipped / failed)
+    """
+    verify_cron_request(request)
+
+    if not settings.enable_morning_briefing:
+        return {"status": "disabled", "reason": "enable_morning_briefing=False"}
+
+    from src.services.briefing_service import briefing_service
+    from src.utils.timezone_utils import get_timezones_at_local_time
+
+    results = {"sent": 0, "skipped": 0, "errors": 0}
+
+    # Find timezones at 8:00 AM (within 15-min window)
+    utc_now = datetime.utcnow()
+    target_timezones = get_timezones_at_local_time(utc_now, target_hour=8, tolerance_minutes=15)
+    logger.info(f"🌅 Sending morning briefings to timezones at 8 AM: {target_timezones}")
+
+    if not target_timezones:
+        return {"status": "no_timezones_at_8am", "results": results}
+
+    # Fetch users in matching timezones
+    users = firestore_service.get_users_by_timezones(target_timezones)
+
+    for user in users:
+        try:
+            # Generate briefing
+            briefing = await briefing_service.generate_briefing(user)
+
+            if briefing is None:
+                results["skipped"] += 1
+                continue
+
+            # Send briefing
+            await bot_manager.bot.send_message(
+                chat_id=user.telegram_id,
+                text=briefing,
+                parse_mode='HTML'
+            )
+
+            # Update last_briefing_date to prevent duplicate sends
+            settings_dict = getattr(user, 'settings', {}) or {}
+            settings_dict["last_briefing_date"] = datetime.utcnow().strftime("%Y-%m-%d")
+            firestore_service.update_user(user_id=user.user_id, updates={"settings": settings_dict})
+
+            results["sent"] += 1
+            logger.info(f"🌅 Briefing sent to {user.user_id}")
+
+        except Exception as e:
+            logger.error(f"❌ Failed to send briefing to {user.user_id}: {e}")
+            results["errors"] += 1
+
+    logger.info(f"🌅 Morning briefing complete: {results}")
+    return {"status": "success", "timezones": target_timezones, "results": results}
+
+
+# ===== P1.4: Churn Prevention Endpoint =====
+
+@app.post("/cron/churn_prevention")
+async def churn_prevention(request: Request):
+    """
+    Daily churn prevention scan.
+
+    Runs at 10:00 AM local time for each timezone.
+    Identifies at-risk users and sends gentle nudges.
+
+    Process:
+        1. Find timezones where current local time is ~10:00 AM
+        2. Fetch active users in those timezones
+        3. Calculate churn risk score for each user
+        4. For at-risk users (score >= 0.5), check cooldown
+        5. Send intervention message if cooldown elapsed
+        6. Update last_churn_intervention timestamp
+
+    Returns:
+        dict: Aggregate results (scanned / at_risk / messaged / errors)
+    """
+    verify_cron_request(request)
+
+    if not settings.enable_churn_prediction:
+        return {"status": "disabled", "reason": "enable_churn_prediction=False"}
+
+    from src.services.churn_prediction import churn_predictor
+    from src.services.churn_intervention import send_churn_intervention
+    from src.utils.timezone_utils import get_timezones_at_local_time
+
+    results = {"scanned": 0, "at_risk": 0, "messaged": 0, "errors": 0}
+
+    # Find timezones at 10:00 AM (within 15-min window)
+    utc_now = datetime.utcnow()
+    target_timezones = get_timezones_at_local_time(utc_now, target_hour=10, tolerance_minutes=15)
+    logger.info(f"🛟 Running churn prevention for timezones at 10 AM: {target_timezones}")
+
+    if not target_timezones:
+        return {"status": "no_timezones_at_10am", "results": results}
+
+    # Fetch users in matching timezones
+    users = firestore_service.get_users_by_timezones(target_timezones)
+
+    for user in users:
+        try:
+            results["scanned"] += 1
+
+            # Calculate risk
+            risk_score, factors, raw_data = churn_predictor.calculate_risk_score(user)
+
+            # Store risk score (internal only)
+            firestore_service.update_user(
+                user_id=user.user_id,
+                updates={
+                    "churn_risk_score": risk_score,
+                    "last_churn_check": datetime.utcnow(),
+                }
+            )
+
+            if risk_score >= 0.5:
+                results["at_risk"] += 1
+
+                # Check cooldown (don't message more than once every 3 days)
+                if not churn_predictor.is_intervention_cooled_down(user, cooldown_days=3):
+                    logger.info(f"🛟 User {user.user_id} in cooldown, skipping intervention")
+                    continue
+
+                # Send intervention
+                sent = await send_churn_intervention(
+                    bot=bot_manager.bot,
+                    user=user,
+                    risk_score=risk_score,
+                    factors=factors,
+                )
+
+                if sent:
+                    # Update last intervention timestamp
+                    firestore_service.update_user(
+                        user_id=user.user_id,
+                        updates={"last_churn_intervention": datetime.utcnow()},
+                    )
+                    results["messaged"] += 1
+
+        except Exception as e:
+            logger.error(f"❌ Churn prevention failed for {user.user_id}: {e}")
+            results["errors"] += 1
+
+    logger.info(f"🛟 Churn prevention complete: {results}")
+    return {"status": "success", "timezones": target_timezones, "results": results}
+
+
 # ===== Admin Broadcast Endpoint =====
 
 @app.post("/admin/broadcast")

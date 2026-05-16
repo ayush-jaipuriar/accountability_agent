@@ -337,12 +337,24 @@ def _calculate_tier1_stats(checkins: List[DailyCheckIn]) -> Dict[str, Any]:
                             if c.tier1_non_negotiables.skill_building_hours is not None]
     avg_skill_building = mean(skill_building_hours) if skill_building_hours else 0
     
+    # Calculate min/max for continuous metrics
+    sleep_min = min(sleep_hours) if sleep_hours else 0
+    sleep_max = max(sleep_hours) if sleep_hours else 0
+    
+    dw_min = min(deep_work_hours) if deep_work_hours else 0
+    dw_max = max(deep_work_hours) if deep_work_hours else 0
+    
+    sb_min = min(skill_building_hours) if skill_building_hours else 0
+    sb_max = max(skill_building_hours) if skill_building_hours else 0
+    
     return {
         "sleep": {
             "days": sleep_days,
             "total": total_days,
             "pct": (sleep_days / total_days) * 100,
             "avg_hours": avg_sleep,
+            "min_hours": sleep_min,
+            "max_hours": sleep_max,
             "target": 7.0
         },
         "training": {
@@ -355,13 +367,18 @@ def _calculate_tier1_stats(checkins: List[DailyCheckIn]) -> Dict[str, Any]:
             "total": total_days,
             "pct": (deep_work_days / total_days) * 100,
             "avg_hours": avg_deep_work,
+            "min_hours": dw_min,
+            "max_hours": dw_max,
             "target": 2.0
         },
         "skill_building": {
             "days": skill_building_days,
             "total": total_days,
             "pct": (skill_building_days / total_days) * 100,
-            "avg_hours": avg_skill_building
+            "avg_hours": avg_skill_building,
+            "min_hours": sb_min,
+            "max_hours": sb_max,
+            "target": 2.0
         },
         "zero_porn": {
             "days": zero_porn_days,

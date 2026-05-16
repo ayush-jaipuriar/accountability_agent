@@ -320,6 +320,37 @@ async def start_checkin(
     else:
         context.user_data['checkin_type'] = 'full'
     
+    # P1.3: Calculate adaptive context
+    recent_checkins = firestore_service.get_recent_checkins(user_id, days=7)
+    recent_scores = [c.compliance_score for c in recent_checkins if c.compliance_score is not None]
+    avg_compliance = sum(recent_scores) / len(recent_scores) if recent_scores else 0.0
+    
+    is_power_user = (
+        user.streaks.current_streak >= 30 and avg_compliance >= 85.0
+    ) if user.streaks else False
+    is_struggling = avg_compliance < 60.0 if recent_scores else False
+    
+    context.user_data['adaptive_context'] = {
+        'power_user': is_power_user,
+        'struggling': is_struggling,
+        'avg_compliance': avg_compliance,
+        'recent_count': len(recent_scores),
+    }
+    
+    # P1.3: Struggling user — empathetic framing
+    if is_struggling and not is_quick_checkin:
+        await update.message.reply_text(
+            f"💪 Hey {user.name}, I know it's been tough lately. "
+            f"Let's take this one step at a time. Ready?"
+        )
+    
+    # P1.3: Power user — mention quick mode availability
+    if is_power_user and not is_quick_checkin:
+        await update.message.reply_text(
+            f"🔥 Day {user.streaks.current_streak} — you're on fire! "
+            f"Quick mode available anytime with /quickcheckin."
+        )
+    
     # Start Question 1: Tier 1 non-negotiables
     await ask_tier1_question(update.message, context)
     
@@ -330,82 +361,109 @@ async def start_checkin(
 
 async def ask_tier1_question(message, context):
     """
-    Ask Question 1: Tier 1 non-negotiables with inline keyboard.
+    Ask Question 1: Tier 1 non-negotiables with continuous data capture.
     
-    <b>Phase 3D Expansion: 5 items → 6 items</b>
+    <b>Phase v2.0: Continuous Data Capture</b>
     
-    6 items to answer (Y/N):
-    1. Sleep (7+ hours)
-    2. Training (workout or rest day)
-    3. Deep Work (2+ hours)
-    4. Skill Building (2+ hours) - <b>NEW in Phase 3D</b> - Adapts to career mode
-    5. Zero Porn
-    6. Boundaries
+    Now captures actual hours and intensity levels via button-based input:
+    1. Sleep hours (6, 6.5, 7, 7.5, 8, 8.5, 9, Other)
+    2. Deep work hours (0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, More)
+    3. Skill building hours (0, 0.5, 1, 1.5, 2, 2.5, 3, More)
+    4. Training intensity (Rest Day, Light, Moderate, Intense)
+    5. Zero Porn (Yes, No)
+    6. Boundaries (Yes, No)
     
-    <b>Why 6 Items?</b>
-    - Constitution mandates daily skill building (LeetCode, system design, AI/ML)
-    - June 2026 career goal (₹28-42 LPA) requires tracking career progress
-    - Skill building is different from general deep work (career-specific learning)
-    
-    <b>Adaptive Question Logic:</b>
-    - Skill building question adapts based on user's career_mode
-    - skill_building mode: "Did you do 2+ hours skill building?"
-    - job_searching mode: "Did you make job search progress?"
-    - employed mode: "Did you work toward promotion/raise?"
+    Uses a step-by-step flow with inline keyboards for faster input.
     """
-    # Get user to determine career mode
-    user_id = context.user_data.get('user_id')
-    user = firestore_service.get_user(user_id)
+    # Initialize tier1 step tracking
+    context.user_data['tier1_step'] = 0
+    context.user_data['tier1_data'] = {}
     
-    # Get current mode for training target
-    mode = context.user_data.get('mode', 'maintenance')
-    training_target = "6x/week" if mode == "optimization" else "4x/week"
+    # Start with first question (sleep hours)
+    await ask_tier1_step(message, context)
+
+
+async def ask_tier1_step(message, context):
+    """
+    Ask a single step of the Tier 1 continuous data capture flow.
     
-    # Get adaptive skill building question
-    career_mode = user.career_mode if user else "skill_building"
-    skill_q = get_skill_building_question(career_mode)
+    Steps:
+    0: Sleep hours
+    1: Deep work hours
+    2: Skill building hours
+    3: Training intensity
+    4: Zero Porn
+    5: Boundaries
+    """
+    step = context.user_data.get('tier1_step', 0)
     
-    question_text = (
-        "<b>📋 Daily Check-In - Question 1/4</b>\n\n"
-        "<b>Constitution Compliance</b> (Tier 1 Non-Negotiables):\n\n"
-        "Did you complete the following today?\n\n"
-        "• 💤 <b>Sleep:</b> 7+ hours last night?\n"
-        f"• 💪 <b>Training:</b> Workout OR rest day? ({training_target})\n"
-        "• 🧠 <b>Deep Work:</b> 2+ hours focused work/study?\n"
-        f"• {skill_q['question']} {skill_q['description']}\n"
-        "• 🚫 <b>Zero Porn:</b> No consumption today?\n"
-        "• 🛡️ <b>Boundaries:</b> No toxic interactions?\n\n"
-        "Click the buttons below to answer:"
-    )
-    
-    # Create inline keyboard with buttons (now 6 items)
-    keyboard = [
-        [
-            InlineKeyboardButton("💤 Sleep: YES", callback_data="sleep_yes"),
-            InlineKeyboardButton("💤 Sleep: NO", callback_data="sleep_no")
-        ],
-        [
-            InlineKeyboardButton("💪 Training: YES", callback_data="training_yes"),
-            InlineKeyboardButton("💪 Training: NO", callback_data="training_no")
-        ],
-        [
-            InlineKeyboardButton("🧠 Deep Work: YES", callback_data="deepwork_yes"),
-            InlineKeyboardButton("🧠 Deep Work: NO", callback_data="deepwork_no")
-        ],
-        [
-            # Phase 3D: New skill building button (adapts label to career mode)
-            InlineKeyboardButton(f"{skill_q['label']}: YES", callback_data="skillbuilding_yes"),
-            InlineKeyboardButton(f"{skill_q['label']}: NO", callback_data="skillbuilding_no")
-        ],
-        [
-            InlineKeyboardButton("🚫 Zero Porn: YES", callback_data="porn_yes"),
-            InlineKeyboardButton("🚫 Zero Porn: NO", callback_data="porn_no")
-        ],
-        [
-            InlineKeyboardButton("🛡️ Boundaries: YES", callback_data="boundaries_yes"),
-            InlineKeyboardButton("🛡️ Boundaries: NO", callback_data="boundaries_no")
-        ]
+    steps = [
+        {
+            'metric': 'sleep_hours',
+            'question': '💤 <b>How many hours did you sleep last night?</b>',
+            'options': ['6', '6.5', '7', '7.5', '8', '8.5', '9', 'Other'],
+            'target': '7h+',
+        },
+        {
+            'metric': 'deep_work_hours',
+            'question': '🧠 <b>How many focused deep work hours today?</b>',
+            'options': ['0', '0.5', '1', '1.5', '2', '2.5', '3', '3.5', '4', 'More'],
+            'target': '2h+',
+        },
+        {
+            'metric': 'skill_building_hours',
+            'question': '📚 <b>How many skill building hours today?</b>',
+            'options': ['0', '0.5', '1', '1.5', '2', '2.5', '3', 'More'],
+            'target': '2h+',
+        },
+        {
+            'metric': 'training_intensity',
+            'question': '💪 <b>What training did you do today?</b>',
+            'options': ['Rest Day', 'Light', 'Moderate', 'Intense'],
+            'target': None,
+        },
+        {
+            'metric': 'zero_porn',
+            'question': '🚫 <b>Zero porn maintained today?</b>',
+            'options': ['Yes', 'No'],
+            'target': None,
+        },
+        {
+            'metric': 'boundaries',
+            'question': '🛡️ <b>Healthy boundaries maintained today?</b>',
+            'options': ['Yes', 'No'],
+            'target': None,
+        },
     ]
+    
+    if step >= len(steps):
+        # All steps complete — move to completion
+        return
+    
+    current = steps[step]
+    question_text = current['question']
+    if current['target']:
+        question_text += f"\n<i>Target: {current['target']}</i>"
+    question_text += f"\n\n<i>Step {step + 1}/6</i>"
+    
+    # Build keyboard with 4 buttons per row
+    options = current['options']
+    keyboard = []
+    row = []
+    
+    for opt in options:
+        callback = f"tier1_{current['metric']}_{opt.lower().replace(' ', '_')}"
+        row.append(InlineKeyboardButton(opt, callback_data=callback))
+        if len(row) == 4:
+            keyboard.append(row)
+            row = []
+    
+    if row:
+        keyboard.append(row)
+    
+    # Add Undo button if not on first step
+    if step > 0:
+        keyboard.append([InlineKeyboardButton("↩️ Undo Last", callback_data="tier1_undo")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     await message.reply_text(question_text, reply_markup=reply_markup, parse_mode='HTML')
@@ -418,16 +476,18 @@ async def handle_tier1_response(
     context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     """
-    Handle button presses for Tier 1 responses, including Undo.
+    Handle button presses for Tier 1 continuous data capture.
     
-    Stores responses in context.user_data and tracks which items are answered.
-    When all 6 items answered, moves to Q2.
+    Uses a step-by-step flow where each question is answered sequentially.
+    When all 6 steps are complete, moves to Q2.
     
-    Undo Feature:
-    - After each answer, a confirmation message with an "Undo Last" button is shown
-    - Pressing "Undo Last" removes the most recently answered item
-    - User can then re-answer that item via the original buttons
-    - Tracks answer order in context.user_data['tier1_answer_order'] (list)
+    Steps:
+    0: Sleep hours
+    1: Deep work hours
+    2: Skill building hours
+    3: Training intensity
+    4: Zero Porn
+    5: Boundaries
     
     Returns:
         int: Q1_TIER1 (still answering) or Q2_CHALLENGES (all answered)
@@ -435,81 +495,192 @@ async def handle_tier1_response(
     query = update.callback_query
     await query.answer()  # Acknowledge button press
     
-    # Map item names to user-friendly labels
-    item_labels = {
-        'sleep': '💤 Sleep',
-        'training': '💪 Training',
-        'deepwork': '🧠 Deep Work',
-        'skillbuilding': '📚 Skill Building',
-        'porn': '🚫 Zero Porn',
-        'boundaries': '🛡️ Boundaries'
-    }
-    
     # Initialize data structures if needed
-    if 'tier1_responses' not in context.user_data:
-        context.user_data['tier1_responses'] = {}
+    if 'tier1_step' not in context.user_data:
+        context.user_data['tier1_step'] = 0
+    if 'tier1_data' not in context.user_data:
+        context.user_data['tier1_data'] = {}
     if 'tier1_answer_order' not in context.user_data:
         context.user_data['tier1_answer_order'] = []
     
-    # ===== Handle Undo =====
-    if query.data == "tier1_undo":
+    # P1.3: Handle perfect-day Q2 skip decision
+    if context.user_data.get('awaiting_q2_skip'):
+        context.user_data['awaiting_q2_skip'] = False
+        if query.data == 'skip_q2':
+            # Skip Q2 and Q3, set neutral values and go to Q4
+            context.user_data['challenges'] = "Perfect day — skipped challenges question"
+            context.user_data['rating'] = 10
+            context.user_data['rating_reason'] = "Perfect day! All Tier 1 targets met."
+            await query.message.reply_text(
+                "⚡ <b>Skipped to Question 4/4</b>\n\n"
+                "<b>Tomorrow's Plan:</b>\n"
+                "1. What's tomorrow's #1 priority?\n"
+                "2. What's the biggest potential obstacle?\n\n"
+                "📝 Format: Priority | Obstacle",
+                parse_mode='HTML'
+            )
+            return Q4_TOMORROW
+        else:
+            # User chose to answer anyway — proceed to Q2
+            yesterday = context.user_data.get('yesterday_checkin')
+            if yesterday and yesterday.get('tomorrow_priority'):
+                priority = yesterday['tomorrow_priority']
+                q2_text = (
+                    f"📋 <b>Question 2/4</b>\n\n"
+                    f"<b>Challenges & Reflection:</b>\n"
+                    f"Yesterday you planned to focus on:\n"
+                    f"<b>\"{priority}\"</b>\n\n"
+                    f"How did that go? What challenges did you face today?\n\n"
+                    f"📝 Type your response (10-500 characters)."
+                )
+            else:
+                q2_text = (
+                    "📋 <b>Question 2/4</b>\n\n"
+                    "<b>Challenges & Handling:</b>\n"
+                    "What challenges did you face today? How did you handle them?\n\n"
+                    "📝 Type your response (10-500 characters).\n\n"
+                    "Example: 'Urge to watch porn around 10 PM. Went for a walk and texted friend instead.'"
+                )
+            await query.message.reply_text(q2_text, parse_mode='HTML')
+            return Q2_CHALLENGES
+    
+    # Handle undo callback
+    if query.data == 'tier1_undo':
         answer_order = context.user_data.get('tier1_answer_order', [])
-        
-        if not answer_order:
-            await query.message.reply_text("Nothing to undo yet!")
-            return Q1_TIER1
-        
-        # Remove the last answered item
-        last_item = answer_order.pop()
-        old_value = context.user_data['tier1_responses'].pop(last_item, None)
-        old_text = "YES" if old_value else "NO"
-        
-        # Remove the undo button from the confirmation message
-        await query.edit_message_reply_markup(reply_markup=None)
-        
-        remaining = 6 - len(context.user_data['tier1_responses'])
-        await query.message.reply_text(
-            f"↩️ Undone: {item_labels.get(last_item, last_item)} (was {old_text})\n"
-            f"Please re-answer it using the buttons above.\n"
-            f"({remaining} item{'s' if remaining != 1 else ''} remaining)"
-        )
-        
-        logger.info(f"↩️ User {context.user_data.get('user_id')} undid {last_item}")
+        if answer_order:
+            # Pop the last answered metric
+            last_metric = answer_order.pop()
+            context.user_data['tier1_data'].pop(last_metric, None)
+            context.user_data['tier1_step'] -= 1
+            # Ensure step doesn't go below 0
+            if context.user_data['tier1_step'] < 0:
+                context.user_data['tier1_step'] = 0
+            await query.message.reply_text(
+                f"↩️ Undo complete. Let's re-answer that question."
+            )
+        else:
+            await query.message.reply_text("Nothing to undo yet.")
+        # Re-ask the current step
+            await ask_tier1_step(query.message, context)
         return Q1_TIER1
     
-    # ===== Handle Normal Tier 1 Answer =====
-    # Parse callback data (e.g., "sleep_yes" → sleep: True)
-    item, response = query.data.rsplit('_', 1)
-    response_bool = (response == "yes")
+    # Parse callback data — supports BOTH old format ("sleep_yes") and new format ("tier1_sleep_hours_7.5")
+    if query.data.startswith('tier1_'):
+        # NEW FORMAT: tier1_<metric>_<value>
+        parts = query.data.split('_')
+        metric = '_'.join(parts[1:-1])  # e.g., "sleep_hours" or "training_intensity"
+        value = parts[-1].replace('_', ' ')  # e.g., "7.5" or "rest day"
+        
+        # Convert value based on metric type
+        if metric in ('sleep_hours', 'deep_work_hours', 'skill_building_hours'):
+            try:
+                value = float(value)
+                target_met = value >= 7.0 if metric == 'sleep_hours' else value >= 2.0
+                emoji = '✅' if target_met else '⚠️'
+                unit = 'h'
+                confirmation = f"{emoji} {metric.replace('_', ' ').title()}: {value}{unit}"
+            except ValueError:
+                confirmation = f"📋 {metric.replace('_', ' ').title()}: {value}"
+        elif metric == 'training_intensity':
+            emoji = '💪' if value in ('light', 'moderate', 'intense') else '😴'
+            confirmation = f"{emoji} Training: {value.title()}"
+        elif metric in ('zero_porn', 'boundaries'):
+            response_bool = (value.lower() == 'yes')
+            emoji = '✅' if response_bool else '❌'
+            label = 'Zero Porn' if metric == 'zero_porn' else 'Boundaries'
+            confirmation = f"{emoji} {label}: {'Yes' if response_bool else 'No'}"
+            value = response_bool
+        else:
+            confirmation = f"📋 {metric}: {value}"
+        
+        context.user_data['tier1_data'][metric] = value
+        context.user_data['tier1_answer_order'].append(metric)
     
-    # Store response and track order
-    context.user_data['tier1_responses'][item] = response_bool
+    elif '_' in query.data and not query.data.startswith('tier1_'):
+        # OLD FORMAT: "sleep_yes", "training_no", etc. (backward compatibility)
+        item, response = query.data.rsplit('_', 1)
+        response_bool = (response == "yes")
+        
+        # Map old item names to new metric names
+        metric_map = {
+            'sleep': 'sleep_hours',
+            'training': 'training_intensity',
+            'deepwork': 'deep_work_hours',
+            'skillbuilding': 'skill_building_hours',
+            'porn': 'zero_porn',
+            'boundaries': 'boundaries',
+        }
+        metric = metric_map.get(item, item)
+        
+        # Convert to new format values
+        if metric == 'sleep_hours':
+            value = 7.5 if response_bool else 5.5
+            confirmation = f"{'✅' if response_bool else '❌'} Sleep: {value}h"
+        elif metric == 'deep_work_hours':
+            value = 2.5 if response_bool else 0.5
+            confirmation = f"{'✅' if response_bool else '❌'} Deep Work: {value}h"
+        elif metric == 'skill_building_hours':
+            value = 2.5 if response_bool else 0.5
+            confirmation = f"{'✅' if response_bool else '❌'} Skill Building: {value}h"
+        elif metric == 'training_intensity':
+            value = 'moderate' if response_bool else 'rest'
+            confirmation = f"{'✅' if response_bool else '❌'} Training: {value.title()}"
+        elif metric == 'zero_porn':
+            value = response_bool
+            confirmation = f"{'✅' if response_bool else '❌'} Zero Porn"
+        elif metric == 'boundaries':
+            value = response_bool
+            confirmation = f"{'✅' if response_bool else '❌'} Boundaries"
+        else:
+            value = response_bool
+            confirmation = f"{'✅' if response_bool else '❌'} {item.title()}"
+        
+        context.user_data['tier1_data'][metric] = value
+        context.user_data['tier1_answer_order'].append(metric)
     
-    # Track order: if item was already in order (re-answer after undo), remove old position
-    answer_order = context.user_data['tier1_answer_order']
-    if item in answer_order:
-        answer_order.remove(item)
-    answer_order.append(item)
+    else:
+        logger.warning(f"Unknown callback data: {query.data}")
+        return Q1_TIER1
     
-    # Show what was selected, with Undo button
-    response_text = "✅ YES" if response_bool else "❌ NO"
+    # Show confirmation
+    await query.message.reply_text(confirmation)
     
-    undo_keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("↩️ Undo Last", callback_data="tier1_undo")
-    ]])
+    # Move to next step
+    context.user_data['tier1_step'] += 1
+    step = context.user_data['tier1_step']
     
-    await query.message.reply_text(
-        f"{item_labels.get(item, item.title())}: {response_text}",
-        reply_markup=undo_keyboard
-    )
-    
-    # Check if all 6 items answered (Phase 3D: was 5, now 6)
-    required_items = {'sleep', 'training', 'deepwork', 'skillbuilding', 'porn', 'boundaries'}
-    answered_items = set(context.user_data['tier1_responses'].keys())
-    
-    if required_items.issubset(answered_items):
-        # All answered → Remove buttons from original question
-        await query.edit_message_reply_markup(reply_markup=None)
+    # Check if all steps complete
+    if step >= 6:
+        # All answered → build Tier1NonNegotiables
+        tier1_data = context.user_data['tier1_data']
+        
+        # Build the Tier1NonNegotiables object with continuous data
+        # Set BOTH continuous fields AND boolean fields for backward compatibility
+        sleep_hours = float(tier1_data.get('sleep_hours', 0))
+        dw_hours = float(tier1_data.get('deep_work_hours', 0))
+        sb_hours = float(tier1_data.get('skill_building_hours', 0))
+        training_intensity = tier1_data.get('training_intensity', 'rest').lower()
+        
+        tier1 = Tier1NonNegotiables(
+            sleep_hours=sleep_hours,
+            deep_work_hours=dw_hours,
+            skill_building_hours=sb_hours,
+            training_intensity=training_intensity,
+            # Also set boolean fields for backward compatibility
+            sleep=sleep_hours >= 7.0,
+            training=training_intensity in ('light', 'moderate', 'intense'),
+            deep_work=dw_hours >= 2.0,
+            skill_building=sb_hours >= 2.0,
+            zero_porn=tier1_data.get('zero_porn', False),
+            boundaries=tier1_data.get('boundaries', False),
+            data_quality='actual',
+        )
+        
+        context.user_data['tier1'] = tier1
+        
+        # Calculate compliance score early for adaptive branching (P1.3)
+        compliance_score = calculate_compliance_score(tier1)
+        context.user_data['compliance_score'] = compliance_score
         
         # Phase 3E: Check if this is a quick check-in
         is_quick_checkin = context.user_data.get('checkin_type') == 'quick'
@@ -533,6 +704,21 @@ async def handle_tier1_response(
             await finish_checkin_quick(update, context)
             return ConversationHandler.END
         else:
+            # P1.3: Perfect day? Offer to skip Q2
+            if compliance_score == 100.0:
+                context.user_data['awaiting_q2_skip'] = True
+                keyboard = [
+                    [InlineKeyboardButton("⚡ Skip → Plan Tomorrow", callback_data="skip_q2")],
+                    [InlineKeyboardButton("📝 Answer Anyway", callback_data="answer_q2")]
+                ]
+                await query.message.reply_text(
+                    "💯 <b>Perfect day!</b> All Tier 1 targets met.\n\n"
+                    "Want to skip the challenges question and go straight to tomorrow's plan?",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode='HTML'
+                )
+                return Q1_TIER1
+            
             # Normal check-in: Move to Q2
             # If yesterday's check-in had a stated priority, reference it
             # so the user reflects on whether they followed through.
@@ -558,7 +744,8 @@ async def handle_tier1_response(
             await query.message.reply_text(q2_text, parse_mode='HTML')
             return Q2_CHALLENGES
     
-    # Still need more answers - keep buttons visible
+    # Ask next step
+    await ask_tier1_step(query.message, context)
     return Q1_TIER1
 
 
@@ -753,16 +940,30 @@ async def finish_checkin(
         # Calculate check-in duration
         duration = int((datetime.utcnow() - context.user_data['checkin_start_time']).total_seconds())
         
-        # Create Tier1NonNegotiables object (Phase 3D: Now 6 items)
-        tier1_data = context.user_data['tier1_responses']
-        tier1 = Tier1NonNegotiables(
-            sleep=tier1_data.get('sleep', False),
-            training=tier1_data.get('training', False),
-            deep_work=tier1_data.get('deepwork', False),
-            skill_building=tier1_data.get('skillbuilding', False),  # Phase 3D: New field
-            zero_porn=tier1_data.get('porn', False),
-            boundaries=tier1_data.get('boundaries', False)
-        )
+        # Get Tier1NonNegotiables object (built during Q1 continuous data capture)
+        tier1 = context.user_data.get('tier1')
+        
+        # Fallback: if using old flow (backward compatibility for in-progress check-ins)
+        if tier1 is None:
+            tier1_data = context.user_data.get('tier1_responses', {})
+            sleep_val = tier1_data.get('sleep', False)
+            training_val = tier1_data.get('training', False)
+            dw_val = tier1_data.get('deepwork', False)
+            sb_val = tier1_data.get('skillbuilding', False)
+            
+            tier1 = Tier1NonNegotiables(
+                sleep=sleep_val,
+                training=training_val,
+                deep_work=dw_val,
+                skill_building=sb_val,
+                sleep_hours=7.5 if sleep_val else 5.5,
+                deep_work_hours=2.5 if dw_val else 0.5,
+                skill_building_hours=2.5 if sb_val else 0.5,
+                training_intensity='moderate' if training_val else 'rest',
+                zero_porn=tier1_data.get('porn', False),
+                boundaries=tier1_data.get('boundaries', False),
+                data_quality='migrated',
+            )
         
         # Create CheckInResponses object
         responses = CheckInResponses(
@@ -1094,16 +1295,30 @@ async def finish_checkin_quick(
         # Calculate check-in duration
         duration = int((datetime.utcnow() - context.user_data['checkin_start_time']).total_seconds())
         
-        # Create Tier1NonNegotiables object
-        tier1_data = context.user_data['tier1_responses']
-        tier1 = Tier1NonNegotiables(
-            sleep=tier1_data.get('sleep', False),
-            training=tier1_data.get('training', False),
-            deep_work=tier1_data.get('deepwork', False),
-            skill_building=tier1_data.get('skillbuilding', False),
-            zero_porn=tier1_data.get('porn', False),
-            boundaries=tier1_data.get('boundaries', False)
-        )
+        # Get Tier1NonNegotiables object (built during Q1 continuous data capture)
+        tier1 = context.user_data.get('tier1')
+        
+        # Fallback: if using old flow (backward compatibility for in-progress check-ins)
+        if tier1 is None:
+            tier1_data = context.user_data.get('tier1_responses', {})
+            sleep_val = tier1_data.get('sleep', False)
+            training_val = tier1_data.get('training', False)
+            dw_val = tier1_data.get('deepwork', False)
+            sb_val = tier1_data.get('skillbuilding', False)
+            
+            tier1 = Tier1NonNegotiables(
+                sleep=sleep_val,
+                training=training_val,
+                deep_work=dw_val,
+                skill_building=sb_val,
+                sleep_hours=7.5 if sleep_val else 5.5,
+                deep_work_hours=2.5 if dw_val else 0.5,
+                skill_building_hours=2.5 if sb_val else 0.5,
+                training_intensity='moderate' if training_val else 'rest',
+                zero_porn=tier1_data.get('porn', False),
+                boundaries=tier1_data.get('boundaries', False),
+                data_quality='migrated',
+            )
         
         # Create CheckInResponses with dummy data (Q2-Q4 skipped)
         responses = CheckInResponses(

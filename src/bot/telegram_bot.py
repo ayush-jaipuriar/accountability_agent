@@ -264,6 +264,12 @@ class TelegramBotManager:
         # Phase D: /support command — direct entry to emotional support agent
         self.application.add_handler(CommandHandler("support", self.support_command))
         
+        # P1.2: Morning briefing on-demand command
+        self.application.add_handler(CommandHandler("briefing", self.briefing_command))
+        
+        # P1.2: Settings toggle command
+        self.application.add_handler(CommandHandler("settings", self.settings_command))
+        
         # Admin-only: monitoring status command
         self.application.add_handler(CommandHandler("admin_status", self.admin_status_command))
         
@@ -2870,6 +2876,112 @@ class TelegramBotManager:
                 "your long-term goals remain."
             )
     
+    # ===== P1.2: /briefing Command — On-Demand Morning Briefing =====
+
+    async def briefing_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle /briefing command — generate and send morning briefing on demand.
+
+        Overrides the "already sent today" check so users can always request
+        a fresh briefing.
+        """
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+
+        if not user:
+            await update.message.reply_text(
+                "Please run /start first to set up your account.",
+                parse_mode='HTML'
+            )
+            return
+
+        from src.services.briefing_service import briefing_service
+
+        # Temporarily clear last_briefing_date to allow on-demand generation
+        settings_dict = getattr(user, 'settings', {}) or {}
+        saved_last_date = settings_dict.get("last_briefing_date")
+        settings_dict["last_briefing_date"] = None
+
+        briefing = await briefing_service.generate_briefing(user)
+
+        # Restore last_briefing_date
+        settings_dict["last_briefing_date"] = saved_last_date
+
+        if briefing:
+            await update.message.reply_text(briefing, parse_mode='HTML')
+            logger.info(f"🌅 On-demand briefing sent to {user_id}")
+        else:
+            await update.message.reply_text(
+                "ℹ️ No briefing available yet. Complete your first check-in and try again!",
+                parse_mode='HTML'
+            )
+
+    # ===== P1.2: /settings Command — User Preferences =====
+
+    async def settings_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle /settings command — view and toggle user preferences.
+
+        Usage:
+            /settings                          — show current settings
+            /settings morning_briefing on      — enable morning briefing
+            /settings morning_briefing off     — disable morning briefing
+        """
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+
+        if not user:
+            await update.message.reply_text(
+                "Please run /start first to set up your account.",
+                parse_mode='HTML'
+            )
+            return
+
+        args = context.args or []
+        settings_dict = getattr(user, 'settings', {}) or {}
+
+        # Parse toggle command
+        if len(args) >= 2 and args[0].lower() == "morning_briefing":
+            enabled = args[1].lower() in ("on", "true", "yes", "1")
+            settings_dict["morning_briefing_enabled"] = enabled
+
+            # Persist to Firestore
+            firestore_service.update_user(
+                user_id=user_id,
+                updates={"settings": settings_dict}
+            )
+
+            status = "enabled" if enabled else "disabled"
+            await update.message.reply_text(
+                f"✅ Morning briefing <b>{status}</b>.\n\n"
+                f"You'll receive your briefing at 8:00 AM {user.timezone}.",
+                parse_mode='HTML'
+            )
+            logger.info(f"⚙️ User {user_id} set morning_briefing={enabled}")
+            return
+
+        # Show current settings
+        briefing_status = "✅ On" if settings_dict.get("morning_briefing_enabled", True) else "❌ Off"
+        tz_display = user.timezone
+
+        await update.message.reply_text(
+            f"⚙️ <b>Settings</b>\n\n"
+            f"Morning Briefing: {briefing_status}\n"
+            f"   Toggle: /settings morning_briefing off\n\n"
+            f"Timezone: {tz_display}\n"
+            f"Constitution Mode: {user.constitution_mode}\n"
+            f"Career Mode: {user.career_mode}\n",
+            parse_mode='HTML'
+        )
+
     # ===== Fuzzy Command Matching Handler =====
     
     AUTO_EXECUTE_THRESHOLD = 0.85

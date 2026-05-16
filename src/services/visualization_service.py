@@ -122,14 +122,16 @@ def generate_tier1_consistency_chart(checkins: List[DailyCheckIn]) -> io.BytesIO
     <b>Visual Design:</b>
     - Horizontal stacked bar chart with 6 bars (one per non-negotiable)
     - Green segment = completed days, Red segment = missed days
+    - Shows average hours where continuous data is available
     - Percentage label at the end of each bar
     - Sorted by completion rate (highest first) for instant prioritization
 
     <b>Theory: Why Horizontal Bars for Tier 1?</b>
-    Unlike sleep (which we never collect as hours), Tier 1 items are
-    binary yes/no. A horizontal bar shows, at a glance, which habits
-    are solid and which are slipping. Sorting by completion rate means
-    the user immediately sees their weakest area at the bottom.
+    A horizontal bar shows, at a glance, which habits are solid and
+    which are slipping. With continuous data (hours), we show both
+    completion rate AND average values for richer insight.
+    Sorting by completion rate means the user immediately sees their
+    weakest area at the bottom.
 
     Args:
         checkins: List of check-ins (should be 7 days, sorted by date)
@@ -139,22 +141,59 @@ def generate_tier1_consistency_chart(checkins: List[DailyCheckIn]) -> io.BytesIO
     """
     total_days = len(checkins) if checkins else 1
 
-    # Count completions per Tier 1 item
+    # Item configs: (display_label, boolean_attr, continuous_attr, target, unit)
     items = [
-        ('Sleep 7h+', 'sleep'),
-        ('Training', 'training'),
-        ('Deep Work', 'deep_work'),
-        ('Skill Building', 'skill_building'),
-        ('Zero Porn', 'zero_porn'),
-        ('Boundaries', 'boundaries'),
+        ('Sleep', 'sleep', 'sleep_hours', 7.0, 'h'),
+        ('Deep Work', 'deep_work', 'deep_work_hours', 2.0, 'h'),
+        ('Skill Building', 'skill_building', 'skill_building_hours', 2.0, 'h'),
+        ('Training', 'training', 'training_intensity', None, None),
+        ('Zero Porn', 'zero_porn', None, None, None),
+        ('Boundaries', 'boundaries', None, None, None),
     ]
 
     stats = []
-    for label, attr in items:
-        completed = sum(1 for c in checkins if getattr(c.tier1_non_negotiables, attr))
+    for label, bool_attr, cont_attr, target, unit in items:
+        tier1s = [c.tier1_non_negotiables for c in checkins]
+        # Completion: use continuous data when available, fall back to boolean
+        if cont_attr and cont_attr in ('sleep_hours', 'deep_work_hours', 'skill_building_hours'):
+            completed = sum(
+                1 for t in tier1s
+                if (getattr(t, cont_attr, None) is not None and getattr(t, cont_attr) >= target)
+                or (getattr(t, cont_attr, None) is None and getattr(t, bool_attr))
+            )
+        elif cont_attr == 'training_intensity':
+            completed = sum(
+                1 for t in tier1s
+                if (getattr(t, cont_attr, None) is not None and getattr(t, cont_attr) in ('light', 'moderate', 'intense'))
+                or (getattr(t, cont_attr, None) is None and getattr(t, bool_attr))
+            )
+        else:
+            completed = sum(1 for t in tier1s if getattr(t, bool_attr))
         missed = total_days - completed
         rate = (completed / total_days) * 100 if total_days else 0
-        stats.append((label, completed, missed, rate))
+
+        # Calculate average for continuous metrics
+        avg_str = ''
+        if cont_attr and cont_attr in ('sleep_hours', 'deep_work_hours', 'skill_building_hours'):
+            vals = [getattr(t, cont_attr) for t in tier1s if getattr(t, cont_attr, None) is not None]
+            if vals:
+                avg = sum(vals) / len(vals)
+                avg_str = f'  ({avg:.1f}{unit} avg)'
+        elif cont_attr == 'training_intensity':
+            vals = [getattr(t, cont_attr) for t in tier1s if getattr(t, cont_attr, None) is not None]
+            if vals:
+                # Count intensities
+                intense = sum(1 for v in vals if v == 'intense')
+                moderate = sum(1 for v in vals if v == 'moderate')
+                light = sum(1 for v in vals if v == 'light')
+                if intense > 0:
+                    avg_str = f'  ({intense}x intense)'
+                elif moderate > 0:
+                    avg_str = f'  ({moderate}x moderate)'
+                elif light > 0:
+                    avg_str = f'  ({light}x light)'
+
+        stats.append((label + avg_str, completed, missed, rate))
 
     # Sort by completion rate descending (best habits at top)
     stats.sort(key=lambda x: x[3], reverse=True)
@@ -219,16 +258,18 @@ def generate_training_chart(checkins: List[DailyCheckIn]) -> io.BytesIO:
     Generate training frequency bar chart.
     
     <b>Visual Design:</b>
-    - Bar chart with 3 states: Completed (green), Rest Day (blue), Missed (red)
+    - Bar chart with 5 states: Intense (dark green), Moderate (green),
+      Light (light green), Rest Day (blue), Missed (red)
+    - Uses training_intensity when available, falls back to boolean + is_rest_day
     - Each bar is full height (binary) with color indicating status
     - Legend explains color coding
     - Training mode indicator shown in subtitle
     
-    <b>Theory: Binary vs. Continuous</b>
-    Training is inherently binary (did/didn't train), unlike sleep which
-    is continuous (hours). Bar charts are the ideal visualization for
-    categorical/binary data because each bar represents a discrete
-    category (day) with a discrete outcome (trained/rested/skipped).
+    <b>Theory: Intensity-Based Visualization</b>
+    Training intensity (rest/light/moderate/intense) provides richer
+    insight than binary did/didn't train. A rest day is planned recovery,
+    not a failure. Light days maintain momentum. Intense days drive
+    progress. Color coding by intensity shows the training distribution.
     
     Args:
         checkins: List of check-ins sorted by date
@@ -238,6 +279,15 @@ def generate_training_chart(checkins: List[DailyCheckIn]) -> io.BytesIO:
     """
     fig, ax = _setup_figure("Training Frequency (Last 7 Days)")
     
+    # Intensity color mapping
+    intensity_colors = {
+        'intense': '#1E8449',    # Dark green
+        'moderate': '#27AE60',   # Green
+        'light': '#82E0AA',      # Light green
+        'rest': COLORS['rest'],  # Blue
+        'missed': COLORS['danger'],  # Red
+    }
+    
     dates = []
     bar_colors = []
     bar_labels = []
@@ -245,40 +295,65 @@ def generate_training_chart(checkins: List[DailyCheckIn]) -> io.BytesIO:
     for c in sorted(checkins, key=lambda x: x.date):
         dates.append(c.date[-5:])
         t1 = c.tier1_non_negotiables
-        if t1.training:
-            bar_colors.append(COLORS['success'])
-            bar_labels.append('Completed')
-        elif t1.is_rest_day:
-            bar_colors.append(COLORS['rest'])
-            bar_labels.append('Rest Day')
+        
+        # Use training_intensity when available, fall back to boolean
+        intensity = getattr(t1, 'training_intensity', None)
+        if intensity is not None:
+            intensity = intensity.lower()
+            if intensity in ('light', 'moderate', 'intense'):
+                bar_colors.append(intensity_colors[intensity])
+                bar_labels.append(intensity.title())
+            elif intensity == 'rest' or t1.is_rest_day:
+                bar_colors.append(intensity_colors['rest'])
+                bar_labels.append('Rest Day')
+            else:
+                bar_colors.append(intensity_colors['missed'])
+                bar_labels.append('Missed')
         else:
-            bar_colors.append(COLORS['danger'])
-            bar_labels.append('Missed')
+            # Fallback to boolean
+            if t1.training:
+                bar_colors.append(intensity_colors['moderate'])
+                bar_labels.append('Moderate')
+            elif t1.is_rest_day:
+                bar_colors.append(intensity_colors['rest'])
+                bar_labels.append('Rest Day')
+            else:
+                bar_colors.append(intensity_colors['missed'])
+                bar_labels.append('Missed')
     
     x = range(len(dates))
     ax.bar(x, [1] * len(dates), color=bar_colors, width=0.6, edgecolor='white', linewidth=1)
     
     # Add status labels on bars
     for xi, label, _ in zip(x, bar_labels, bar_colors):
-        icon = "✓" if label == 'Completed' else ("R" if label == 'Rest Day' else "✗")
+        if label == 'Rest Day':
+            icon = "R"
+        elif label == 'Missed':
+            icon = "✗"
+        else:
+            icon = "✓"
         ax.text(xi, 0.5, icon, ha='center', va='center',
                 fontsize=16, fontweight='bold', color='white')
     
     # Stats summary
-    completed = bar_labels.count('Completed')
+    intense = bar_labels.count('Intense')
+    moderate = bar_labels.count('Moderate')
+    light = bar_labels.count('Light')
     rest = bar_labels.count('Rest Day')
     missed = bar_labels.count('Missed')
     
-    stats_text = f"Completed: {completed} | Rest: {rest} | Missed: {missed}"
+    stats_text = f"Intense: {intense} | Moderate: {moderate} | Light: {light} | Rest: {rest} | Missed: {missed}"
     ax.text(0.5, 1.08, stats_text, transform=ax.transAxes, ha='center',
             fontsize=10, color=COLORS['text'])
     
     # Custom legend
     from matplotlib.patches import Patch
     legend_elements = [
-        Patch(facecolor=COLORS['success'], label=f'Completed ({completed})'),
-        Patch(facecolor=COLORS['rest'], label=f'Rest Day ({rest})'),
-        Patch(facecolor=COLORS['danger'], label=f'Missed ({missed})'),
+        Patch(facecolor=intensity_colors['intense'], label=f'Intense ({intense})'),
+        Patch(facecolor=intensity_colors['moderate'], label=f'Moderate ({moderate})'),
+        Patch(facecolor=intensity_colors['light'], label=f'Light ({light})'),
+        Patch(facecolor=intensity_colors['rest'], label=f'Rest Day ({rest})'),
+        Patch(facecolor=intensity_colors['missed'], label=f'Missed ({missed})'),
     ]
     ax.legend(handles=legend_elements, loc='upper right', fontsize=8)
     
@@ -400,14 +475,47 @@ def generate_domain_radar(checkins: List[DailyCheckIn]) -> io.BytesIO:
     # Calculate domain scores (0-100 scale)
     total = len(checkins) if checkins else 1
     
-    # Physical = (sleep_rate + training_rate) / 2
-    sleep_rate = sum(1 for c in checkins if c.tier1_non_negotiables.sleep) / total * 100
-    train_rate = sum(1 for c in checkins if c.tier1_non_negotiables.training) / total * 100
+    # Physical = (sleep_score + training_score) / 2
+    # Use continuous data when available for more accurate scoring
+    sleep_scores = []
+    for c in checkins:
+        t1 = c.tier1_non_negotiables
+        if getattr(t1, 'sleep_hours', None) is not None:
+            # Score based on hours: 7h = 100%, linear down to 0h = 0%
+            sleep_scores.append(min(100, max(0, (t1.sleep_hours / 7.0) * 100)))
+        else:
+            sleep_scores.append(100.0 if t1.sleep else 0.0)
+    sleep_rate = sum(sleep_scores) / total if sleep_scores else 0
+    
+    train_scores = []
+    for c in checkins:
+        t1 = c.tier1_non_negotiables
+        if getattr(t1, 'training_intensity', None) is not None:
+            intensity_scores = {'rest': 50, 'light': 70, 'moderate': 90, 'intense': 100}
+            train_scores.append(intensity_scores.get(t1.training_intensity.lower(), 0))
+        else:
+            train_scores.append(100.0 if t1.training else 0.0)
+    train_rate = sum(train_scores) / total if train_scores else 0
     physical = (sleep_rate + train_rate) / 2
     
-    # Career = (deep_work_rate + skill_building_rate) / 2
-    dw_rate = sum(1 for c in checkins if c.tier1_non_negotiables.deep_work) / total * 100
-    sb_rate = sum(1 for c in checkins if c.tier1_non_negotiables.skill_building) / total * 100
+    # Career = (deep_work_score + skill_building_score) / 2
+    dw_scores = []
+    for c in checkins:
+        t1 = c.tier1_non_negotiables
+        if getattr(t1, 'deep_work_hours', None) is not None:
+            dw_scores.append(min(100, max(0, (t1.deep_work_hours / 2.0) * 100)))
+        else:
+            dw_scores.append(100.0 if t1.deep_work else 0.0)
+    dw_rate = sum(dw_scores) / total if dw_scores else 0
+    
+    sb_scores = []
+    for c in checkins:
+        t1 = c.tier1_non_negotiables
+        if getattr(t1, 'skill_building_hours', None) is not None:
+            sb_scores.append(min(100, max(0, (t1.skill_building_hours / 2.0) * 100)))
+        else:
+            sb_scores.append(100.0 if t1.skill_building else 0.0)
+    sb_rate = sum(sb_scores) / total if sb_scores else 0
     career = (dw_rate + sb_rate) / 2
     
     # Mental = (zero_porn_rate + boundaries_rate) / 2

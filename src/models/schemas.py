@@ -131,6 +131,17 @@ class User(BaseModel):
     # ===== Phase 5: Periodic Reports =====
     last_report_date: Optional[str] = None   # YYYY-MM-DD of last sent report (prevents duplicates)
     
+    # ===== P1.2: User Settings =====
+    settings: Dict = Field(default_factory=lambda: {
+        "morning_briefing_enabled": True,
+        "last_briefing_date": None,
+    })
+    
+    # ===== P1.4: Churn Risk (Internal Only) =====
+    churn_risk_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    last_churn_check: Optional[datetime] = None
+    last_churn_intervention: Optional[datetime] = None
+    
     def to_firestore(self) -> dict:
         """
         Convert to Firestore-compatible dictionary.
@@ -179,6 +190,14 @@ class User(BaseModel):
             
             # Phase 5: Periodic Reports
             "last_report_date": self.last_report_date,
+            
+            # P1.2: User Settings
+            "settings": self.settings,
+            
+            # P1.4: Churn Risk (Internal)
+            "churn_risk_score": self.churn_risk_score,
+            "last_churn_check": self.last_churn_check,
+            "last_churn_intervention": self.last_churn_intervention,
         }
     
     @classmethod
@@ -206,6 +225,14 @@ class User(BaseModel):
         # Phase 3A: Streak shields
         if "streak_shields" in data and isinstance(data["streak_shields"], dict):
             data["streak_shields"] = StreakShields(**data["streak_shields"])
+        
+        # P1.4: Convert churn datetime strings to datetime objects (if stored as strings)
+        for churn_field in ["last_churn_check", "last_churn_intervention"]:
+            if churn_field in data and isinstance(data[churn_field], str):
+                try:
+                    data[churn_field] = datetime.fromisoformat(data[churn_field])
+                except (ValueError, TypeError):
+                    data[churn_field] = None
         
         return cls(**data)
 
@@ -253,45 +280,87 @@ class Tier1NonNegotiables(BaseModel):
     """
     Tier 1 non-negotiables from constitution.
     
-    <b>Phase 3D Expansion: 5 items → 6 items</b>
+    <b>Phase v2.0: Continuous Data Capture</b>
     
-    6 Core Habits (Boolean + Optional Details):
-    1. Sleep: 7+ hours
-    2. Training: Workout or scheduled rest day
-    3. Deep Work: 2+ hours focused work
-    4. Skill Building: 2+ hours career-focused learning (NEW in Phase 3D)
-    5. Zero Porn: No consumption (absolute rule)
-    6. Boundaries: No toxic interactions
+    Now captures continuous metrics (hours) with computed boolean properties
+    for backward compatibility.
     
-    <b>Why Add Skill Building?</b>
-    - Constitution Section III.B mandates daily skill building (LeetCode, system design)
-    - June 2026 career goal (₹28-42 LPA) requires tracking
-    - Different from general deep work (career-specific learning)
-    - Question adapts to career mode (skill_building/job_searching/employed)
+    6 Core Habits (Continuous + Computed Boolean):
+    1. Sleep: 7+ hours (captured as hours, computed boolean)
+    2. Training: Workout or scheduled rest day (captured as intensity, computed boolean)
+    3. Deep Work: 2+ hours focused work (captured as hours, computed boolean)
+    4. Skill Building: 2+ hours career-focused learning (captured as hours, computed boolean)
+    5. Zero Porn: No consumption (absolute rule) - boolean only
+    6. Boundaries: No toxic interactions - boolean only
     
     <b>Backward Compatibility:</b>
-    - skill_building has default value False
-    - Old check-ins without this field will work (Pydantic sets default)
-    - New check-ins require this field
+    - Old code reading 'tier1.sleep' still works (computed property)
+    - Old code reading 'tier1.deep_work' still works (computed property)
+    - Migrated check-ins have data_quality="migrated"
+    - New check-ins have data_quality="actual"
     """
-    sleep: bool                                   # Did you get 7+ hours?
-    sleep_hours: Optional[float] = None           # Actual hours slept (e.g., 7.5)
     
-    training: bool                                # Did you train?
-    is_rest_day: bool = False                     # Was today a scheduled rest day?
-    training_type: Optional[str] = None           # "workout", "rest", "skipped"
+    # ===== Continuous Metrics (Primary Data — v2.0) =====
+    # Optional with defaults for backward compatibility with v1 check-ins
+    sleep_hours: Optional[float] = Field(default=None, ge=0, le=16, description="Actual hours slept")
+    deep_work_hours: Optional[float] = Field(default=None, ge=0, le=16, description="Actual focused hours")
+    skill_building_hours: Optional[float] = Field(default=None, ge=0, le=16, description="Actual learning hours")
     
-    deep_work: bool                               # Did you complete 2+ hours?
-    deep_work_hours: Optional[float] = None       # Actual hours (e.g., 2.5)
+    # ===== Training Intensity (v2.0) =====
+    training_intensity: Optional[str] = Field(
+        default=None,
+        pattern="^(rest|light|moderate|intense)$",
+        description="Training intensity level"
+    )
     
-    # Phase 3D: New field for career tracking
-    skill_building: bool = False                  # Did you do career-focused learning?
-    skill_building_hours: Optional[float] = None  # Actual hours (e.g., 2.5)
-    skill_building_activity: Optional[str] = None # "LeetCode", "System Design", "Courses", etc.
+    # ===== Legacy Boolean Fields (RETAINED for backward compatibility) =====
+    sleep: bool = False
+    training: bool = False
+    deep_work: bool = False
+    skill_building: bool = False
     
-    zero_porn: bool                               # Did you maintain zero porn?
+    # ===== Computed Properties (v2.0) =====
+    @property
+    def sleep_met(self) -> bool:
+        """Did user meet 7+ hour sleep target? Uses hours if available, falls back to boolean."""
+        if self.sleep_hours is not None:
+            return self.sleep_hours >= 7.0
+        return self.sleep
     
-    boundaries: bool                              # Did you maintain boundaries?
+    @property
+    def deep_work_met(self) -> bool:
+        """Did user meet 2+ hour deep work target? Uses hours if available, falls back to boolean."""
+        if self.deep_work_hours is not None:
+            return self.deep_work_hours >= 2.0
+        return self.deep_work
+    
+    @property
+    def skill_building_met(self) -> bool:
+        """Did user meet 2+ hour skill building target? Uses hours if available, falls back to boolean."""
+        if self.skill_building_hours is not None:
+            return self.skill_building_hours >= 2.0
+        return self.skill_building
+    
+    @property
+    def training_done(self) -> bool:
+        """Did user train today? Uses intensity if available, falls back to boolean."""
+        if self.training_intensity is not None:
+            return self.training_intensity in ("light", "moderate", "intense")
+        return self.training
+    
+    # ===== Optional Detail Fields (Existing — Unchanged) =====
+    is_rest_day: bool = False
+    training_type: Optional[str] = None
+    skill_building_activity: Optional[str] = None
+    
+    zero_porn: bool
+    boundaries: bool
+    
+    # ===== Data Quality Flag (v2.0) =====
+    data_quality: str = Field(
+        default="actual",
+        description="actual | migrated | estimated"
+    )
 
 
 class CheckInResponses(BaseModel):

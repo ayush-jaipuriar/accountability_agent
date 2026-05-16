@@ -251,14 +251,8 @@ class PatternDetectionAgent:
         Detect: <6 hours sleep for 3+ consecutive nights
         Severity: HIGH (Physical Sovereignty violation)
         
-        Why 6 hours as threshold?
-        - Constitution requires 7+ hours
-        - <6 hours = significant deficit
-        - 3+ consecutive nights = pattern (not just one bad night)
-        
-        Historical Context:
-        - Feb 2025: Sleep degradation → full spiral
-        - This pattern is a leading indicator of breakdown
+        v2.0: Uses actual sleep_hours from continuous data capture.
+        Falls back to estimated values for migrated check-ins.
         """
         if len(checkins) < 3:
             return None
@@ -266,18 +260,19 @@ class PatternDetectionAgent:
         # Get last 3 check-ins
         recent_3 = checkins[-3:]
         
-        # Check if all have sleep data (some check-ins might not track sleep)
+        # Collect actual sleep hours from check-ins
         sleep_data = []
         for c in recent_3:
-            # Extract sleep hours from check-in
-            # In Phase 1, sleep might be in tier1 (boolean) not hours
-            # For now, we'll assume tier1.sleep = True means >=7 hours
-            # and tier1.sleep = False means <7 hours
-            if hasattr(c.tier1_non_negotiables, 'sleep'):
-                sleep_compliant = c.tier1_non_negotiables.sleep
-                # Rough estimate: compliant = 7+ hours, non-compliant = assume 5-6 hours
-                sleep_hours = 7.5 if sleep_compliant else 5.5
-                sleep_data.append((c.date, sleep_hours))
+            tier1 = c.tier1_non_negotiables
+            
+            # v2.0: Use actual sleep_hours if available
+            if hasattr(tier1, 'sleep_hours') and tier1.sleep_hours is not None:
+                sleep_hours = tier1.sleep_hours
+            else:
+                # Fallback for old check-ins: estimate from boolean
+                sleep_hours = 7.5 if tier1.sleep else 5.5
+            
+            sleep_data.append((c.date, sleep_hours))
         
         if len(sleep_data) < 3:
             return None
@@ -288,6 +283,7 @@ class PatternDetectionAgent:
         if len(low_sleep_nights) >= 3:
             avg_sleep = sum(s[1] for s in sleep_data) / len(sleep_data)
             dates = [s[0] for s in sleep_data]
+            actual_values = [s[1] for s in sleep_data]
             
             return Pattern(
                 type="sleep_degradation",
@@ -295,10 +291,12 @@ class PatternDetectionAgent:
                 detected_at=datetime.utcnow(),
                 data={
                     "avg_sleep_hours": round(avg_sleep, 1),
+                    "actual_values": actual_values,
                     "consecutive_days": 3,
                     "threshold": 6,
                     "dates": dates,
-                    "message": f"Average {avg_sleep:.1f} hours over last 3 nights"
+                    "message": f"Average {avg_sleep:.1f} hours over last 3 nights",
+                    "data_quality": "actual" if hasattr(checkins[-1].tier1_non_negotiables, 'data_quality') else "estimated"
                 }
             )
         
@@ -317,7 +315,22 @@ class PatternDetectionAgent:
             return None
         
         recent_3 = checkins[-3:]
-        missed_training = [c for c in recent_3 if not c.tier1_non_negotiables.training]
+        
+        # v2.0: Count as missed only if intensity is NOT light/moderate/intense
+        # Rest days are planned and don't count as abandonment
+        missed_training = []
+        for c in recent_3:
+            tier1 = c.tier1_non_negotiables
+            
+            # v2.0: Use training_intensity if available
+            if hasattr(tier1, 'training_intensity') and tier1.training_intensity:
+                is_missed = tier1.training_intensity == 'rest'
+            else:
+                # Fallback for old check-ins
+                is_missed = not tier1.training
+            
+            if is_missed:
+                missed_training.append(c)
         
         if len(missed_training) >= 3:
             dates = [c.date for c in missed_training]
@@ -329,7 +342,7 @@ class PatternDetectionAgent:
                 data={
                     "consecutive_missed_days": 3,
                     "dates": dates,
-                    "message": "No training for 3+ consecutive days"
+                    "message": "No training for 3+ consecutive days (rest days excluded)"
                 }
             )
         
@@ -456,14 +469,12 @@ class PatternDetectionAgent:
         for checkin in recent_5:
             tier1 = checkin.tier1_non_negotiables
             
-            # Check if deep work completed
-            deep_work_completed = tier1.deep_work
-            
-            # Estimate hours (if deep_work_hours available, use it; else estimate)
-            deep_work_hours = getattr(tier1, 'deep_work_hours', None)
-            if deep_work_hours is None:
-                # Estimate based on boolean
-                deep_work_hours = 2.5 if deep_work_completed else 1.0
+            # v2.0: Use actual deep_work_hours if available
+            if hasattr(tier1, 'deep_work_hours') and tier1.deep_work_hours is not None:
+                deep_work_hours = tier1.deep_work_hours
+            else:
+                # Fallback for old check-ins: estimate from boolean
+                deep_work_hours = 2.5 if tier1.deep_work else 1.0
             
             total_deep_work += deep_work_hours
             
