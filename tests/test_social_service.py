@@ -219,8 +219,10 @@ class TestFormatLeaderboard:
         assert "Not enough data" in result
         assert "/checkin" in result
     
-    def test_top_3_have_medal_emojis(self):
+    @patch('src.services.social_service.calculate_leaderboard')
+    def test_top_3_have_medal_emojis(self, mock_calc):
         """Top 3 entries should have medal emojis (🥇🥈🥉)."""
+        mock_calc.return_value = []
         entries = [
             {"rank": 1, "user_id": "1", "name": "Alice", "compliance": 95, "streak": 30},
             {"rank": 2, "user_id": "2", "name": "Bob", "compliance": 90, "streak": 20},
@@ -232,8 +234,10 @@ class TestFormatLeaderboard:
         assert "🥈" in result
         assert "🥉" in result
     
-    def test_requesting_user_highlighted(self):
+    @patch('src.services.social_service.calculate_leaderboard')
+    def test_requesting_user_highlighted(self, mock_calc):
         """Requesting user should see '(You)' next to their name."""
+        mock_calc.return_value = []
         entries = [
             {"rank": 1, "user_id": "1", "name": "Alice", "compliance": 95, "streak": 30},
             {"rank": 2, "user_id": "2", "name": "Bob", "compliance": 90, "streak": 20},
@@ -242,8 +246,10 @@ class TestFormatLeaderboard:
         result = format_leaderboard_message(entries, "1")
         assert "(You)" in result
     
-    def test_uses_html_formatting(self):
+    @patch('src.services.social_service.calculate_leaderboard')
+    def test_uses_html_formatting(self, mock_calc):
         """Message should use HTML formatting for Telegram."""
+        mock_calc.return_value = []
         entries = [
             {"rank": 1, "user_id": "1", "name": "Alice", "compliance": 95, "streak": 30},
         ]
