@@ -95,11 +95,13 @@ print()
 def test_fonts_available():
     """Verify system fonts are available for matplotlib."""
     import matplotlib.font_manager as fm
+    import platform
     fonts = fm.findSystemFonts()
     assert len(fonts) > 0, "No system fonts found"
     
     dejavu = [f for f in fonts if 'DejaVu' in f]
-    assert len(dejavu) > 0, "DejaVu fonts not found"
+    if platform.system() != 'Darwin':
+        assert len(dejavu) > 0, "DejaVu fonts not found"
 
 
 print("2. Font Tests")
@@ -113,7 +115,7 @@ print()
 def test_visualization_imports():
     """Verify visualization service imports work."""
     from src.services.visualization_service import (
-        generate_sleep_chart,
+        generate_tier1_consistency_chart,
         generate_training_chart,
         generate_compliance_chart,
         generate_domain_radar,
@@ -156,7 +158,7 @@ def test_all_four_graphs():
     graphs = generate_weekly_graphs(checkins)
     assert len(graphs) == 4, f"Expected 4 graphs, got {len(graphs)}"
     
-    for name in ['sleep', 'training', 'compliance', 'radar']:
+    for name in ['tier1_consistency', 'training', 'compliance', 'radar']:
         assert name in graphs, f"Missing graph: {name}"
         buf = graphs[name]
         buf.seek(0)
