@@ -702,6 +702,7 @@ Write feedback that:
    - ONE specific action for tomorrow
    - Reference their stated priority or obstacle
    - Make it actionable and concrete
+   - **CRITICAL**: If the user missed "Skill Building" or "Training" today or recently, recommend starting with micro-habits and smaller incremental blocks of time tomorrow (e.g., "instead of doing 2 hours, commit to just 15-30 minutes of learning or a 15-minute workout to maintain momentum"). Encourage lowering the bar to maintain the streak.
 
 TONE REQUIREMENTS:
 - Direct and clear (no corporate-speak or generic praise)
@@ -858,6 +859,81 @@ INSTRUCTIONS FOR USING YESTERDAY'S CONTEXT:
         message += "\n\n(Note: AI feedback temporarily unavailable - using basic feedback)"
         
         return message
+
+    async def parse_reflection_note(
+        self,
+        note_text: str,
+        alignment_rating: int,
+        tier1_completed: str
+    ) -> Dict[str, str]:
+        """
+        Use Gemini to parse a single-sentence reflection note into structured fields.
+        
+        Args:
+            note_text: Raw user text note or transcription
+            alignment_rating: User's rating (1-10)
+            tier1_completed: Summary of completed habits
+            
+        Returns:
+            Dict containing challenges, rating_reason, tomorrow_priority, tomorrow_obstacle
+        """
+        if not note_text or not note_text.strip():
+            return {
+                "challenges": "None reported.",
+                "rating_reason": f"Alignment rating: {alignment_rating}/10.",
+                "tomorrow_priority": "Maintain consistency.",
+                "tomorrow_obstacle": "None reported."
+            }
+
+        prompt = f"""You are a data extraction assistant. Parse this user's daily check-in reflection note into a structured JSON response.
+
+USER INPUT NOTE:
+"{note_text}"
+
+CONTEXT:
+- User's self-alignment rating today: {alignment_rating}/10
+- Completed Tier 1 items today: {tier1_completed}
+
+TASK:
+Extract or infer the following 4 fields. If a field cannot be inferred from the note, use the default values specified below.
+
+1. "challenges": What challenges did they face today? (Default: "None reported.")
+2. "rating_reason": Why did they rate today as {alignment_rating}/10? (Synthesize their note and rating. Default: "Cohesive alignment with targets.")
+3. "tomorrow_priority": What is their #1 priority for tomorrow? (Default: "Maintain consistency.")
+4. "tomorrow_obstacle": What is the biggest potential obstacle for tomorrow? (Default: "None reported.")
+
+Return ONLY a valid JSON object matching this schema, with no markdown formatting, no backticks, and no extra text:
+{{
+  "challenges": "...",
+  "rating_reason": "...",
+  "tomorrow_priority": "...",
+  "tomorrow_obstacle": "..."
+}}
+"""
+        try:
+            response = await self.llm.generate_text(prompt, max_output_tokens=500, temperature=0.1)
+            cleaned_response = response.strip()
+            if cleaned_response.startswith("```"):
+                cleaned_response = re.sub(r"^```(?:json)?\n", "", cleaned_response)
+                cleaned_response = re.sub(r"\n```$", "", cleaned_response)
+                cleaned_response = cleaned_response.strip()
+            
+            import json
+            parsed = json.loads(cleaned_response)
+            return {
+                "challenges": parsed.get("challenges", "None reported."),
+                "rating_reason": parsed.get("rating_reason", f"Alignment rating: {alignment_rating}/10."),
+                "tomorrow_priority": parsed.get("tomorrow_priority", "Maintain consistency."),
+                "tomorrow_obstacle": parsed.get("tomorrow_obstacle", "None reported.")
+            }
+        except Exception as e:
+            logger.error(f"Failed to parse reflection note with LLM: {e}")
+            return {
+                "challenges": "None reported." if len(note_text) < 5 else note_text,
+                "rating_reason": f"Self-rated {alignment_rating}/10. Note: {note_text}",
+                "tomorrow_priority": "Maintain consistency.",
+                "tomorrow_obstacle": "None reported."
+            }
 
 
 # Global instance

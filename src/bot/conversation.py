@@ -54,7 +54,13 @@ logger = logging.getLogger(__name__)
 
 
 # ===== Conversation States =====
-Q1_TIER1, Q2_CHALLENGES, Q3_RATING, Q4_TOMORROW, Q5_MOOD = range(5)
+Q1_TIER1, Q2_ALIGNMENT_RATING, Q3_ENERGY_MOOD, Q4_REFLECTION_NOTE = range(4)
+
+# Legacy states kept for test compilation compatibility
+Q2_CHALLENGES = 99
+Q3_RATING = 98
+Q4_TOMORROW = 97
+Q5_MOOD = 96
 
 
 async def _notify_sender_if_partner_delivery_failed(message, notification_result) -> None:
@@ -73,6 +79,20 @@ async def _notify_sender_if_partner_delivery_failed(message, notification_result
         await message.reply_text(
             "ℹ️ Your check-in was saved, but partner notification could not be delivered."
         )
+
+
+def _get_message_from_update(update: Update):
+    """
+    Safely get the message object from an Update.
+
+    When called from a callback query handler (e.g., mood button tap),
+    update.message is None. We must use update.callback_query.message instead.
+    """
+    if update.message:
+        return update.message
+    if update.callback_query and update.callback_query.message:
+        return update.callback_query.message
+    return None
 
 
 # ===== Phase 3D: Career Mode Adaptive Questions =====
@@ -667,11 +687,12 @@ async def handle_tier1_response(
             deep_work_hours=dw_hours,
             skill_building_hours=sb_hours,
             training_intensity=training_intensity,
-            # Also set boolean fields for backward compatibility
+            # Set boolean fields to represent FULL targets (not micro-habits)
             sleep=sleep_hours >= 7.0,
             training=training_intensity in ('light', 'moderate', 'intense'),
             deep_work=dw_hours >= 2.0,
             skill_building=sb_hours >= 2.0,
+            is_rest_day=training_intensity == 'rest',
             zero_porn=tier1_data.get('zero_porn', False),
             boundaries=tier1_data.get('boundaries', False),
             data_quality='actual',
@@ -705,45 +726,19 @@ async def handle_tier1_response(
             await finish_checkin_quick(update, context)
             return ConversationHandler.END
         else:
-            # P1.3: Perfect day? Offer to skip Q2
-            if compliance_score == 100.0:
-                context.user_data['awaiting_q2_skip'] = True
-                keyboard = [
-                    [InlineKeyboardButton("⚡ Skip → Plan Tomorrow", callback_data="skip_q2")],
-                    [InlineKeyboardButton("📝 Answer Anyway", callback_data="answer_q2")]
-                ]
-                await query.message.reply_text(
-                    "💯 <b>Perfect day!</b> All Tier 1 targets met.\n\n"
-                    "Want to skip the challenges question and go straight to tomorrow's plan?",
-                    reply_markup=InlineKeyboardMarkup(keyboard),
-                    parse_mode='HTML'
-                )
-                return Q1_TIER1
-            
-            # Normal check-in: Move to Q2
-            # If yesterday's check-in had a stated priority, reference it
-            # so the user reflects on whether they followed through.
-            yesterday = context.user_data.get('yesterday_checkin')
-            if yesterday and yesterday.get('tomorrow_priority'):
-                priority = yesterday['tomorrow_priority']
-                q2_text = (
-                    f"📋 <b>Question 2/4</b>\n\n"
-                    f"<b>Challenges & Reflection:</b>\n"
-                    f"Yesterday you planned to focus on:\n"
-                    f"<b>\"{priority}\"</b>\n\n"
-                    f"How did that go? What challenges did you face today?\n\n"
-                    f"📝 Type your response (10-500 characters)."
-                )
-            else:
-                q2_text = (
-                    "📋 <b>Question 2/4</b>\n\n"
-                    "<b>Challenges & Handling:</b>\n"
-                    "What challenges did you face today? How did you handle them?\n\n"
-                    "📝 Type your response (10-500 characters).\n\n"
-                    "Example: 'Urge to watch porn around 10 PM. Went for a walk and texted friend instead.'"
-                )
-            await query.message.reply_text(q2_text, parse_mode='HTML')
-            return Q2_CHALLENGES
+            # Move to Q2: Alignment Rating
+            align_keyboard = [
+                [InlineKeyboardButton(str(i), callback_data=f"align_{i}") for i in range(1, 6)],
+                [InlineKeyboardButton(str(i), callback_data=f"align_{i}") for i in range(6, 11)],
+            ]
+            await query.message.reply_text(
+                "📋 <b>Question 2/4: Self-Alignment</b>\n\n"
+                "Rate today 1-10 on alignment with your constitution:\n"
+                "(1 = completely misaligned, 10 = perfect alignment)",
+                reply_markup=InlineKeyboardMarkup(align_keyboard),
+                parse_mode='HTML'
+            )
+            return Q2_ALIGNMENT_RATING
     
     # Ask next step
     await ask_tier1_step(query.message, context)
@@ -941,6 +936,34 @@ async def handle_tomorrow_response(
 
 # ===== State Q5: Energy & Mood =====
 
+async def handle_alignment_rating_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """
+    Handle alignment rating selection via inline button (1-10).
+    Stores rating and prompts for Energy rating.
+    """
+    query = update.callback_query
+    await query.answer()
+    
+    rating = int(query.data.split("_")[1])
+    context.user_data['rating'] = rating
+    
+    # Prompt for Energy
+    energy_keyboard = [
+        [InlineKeyboardButton(str(i), callback_data=f"energy_{i}") for i in range(1, 6)],
+        [InlineKeyboardButton(str(i), callback_data=f"energy_{i}") for i in range(6, 11)],
+    ]
+    await query.edit_message_text(
+        f"🎯 Alignment Rating: <b>{rating}/10</b>\n\n"
+        f"⚡ <b>Rate your energy today?</b> (1 = exhausted, 10 = unstoppable)",
+        reply_markup=InlineKeyboardMarkup(energy_keyboard),
+        parse_mode='HTML'
+    )
+    return Q3_ENERGY_MOOD
+
+
 async def handle_energy_callback(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
@@ -968,7 +991,7 @@ async def handle_energy_callback(
         parse_mode='HTML'
     )
 
-    return Q5_MOOD
+    return Q3_ENERGY_MOOD
 
 
 async def handle_mood_callback(
@@ -977,7 +1000,7 @@ async def handle_mood_callback(
 ) -> int:
     """
     Handle mood rating selection via inline button.
-    Stores mood and completes check-in.
+    Stores mood and prompts for optional reflection note (Q4).
     """
     query = update.callback_query
     await query.answer()
@@ -986,18 +1009,140 @@ async def handle_mood_callback(
     mood_rating = int(query.data.split("_")[1])
     context.user_data['mood_rating'] = mood_rating
 
-    # Update the message to show both ratings
+    # Update the message to show ratings
     energy = context.user_data.get('energy_rating', '?')
+    align = context.user_data.get('rating', '?')
+    
+    keyboard = [
+        [InlineKeyboardButton("🏁 Finish Check-In", callback_data="ref_skip")]
+    ]
+
     await query.edit_message_text(
+        f"🎯 Alignment: <b>{align}/10</b>\n"
         f"⚡ Energy: <b>{energy}/10</b>\n"
         f"😊 Mood: <b>{mood_rating}/10</b>\n\n"
-        f"✅ Saving your check-in...",
+        f"📝 <b>Question 4/4: Optional Reflection</b>\n\n"
+        f"Write a short reflection or priority for tomorrow in one sentence (or send a voice note).\n\n"
+        f"_Tap the button below to skip and finish immediately._",
+        reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='HTML'
     )
 
+    return Q4_REFLECTION_NOTE
+
+
+async def handle_reflection_skip_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """
+    Handle skip button press for reflection note.
+    Fills in neutral defaults and completes check-in.
+    """
+    query = update.callback_query
+    await query.answer()
+    
+    await query.edit_message_text(
+        "🏁 Check-in reflection skipped.\n"
+        "💾 Saving check-in and generating feedback...",
+        parse_mode='HTML'
+    )
+    
+    # Populate neutral values
+    rating = context.user_data.get('rating', 8)
+    context.user_data['challenges'] = "None reported."
+    context.user_data['rating_reason'] = f"Cohesive alignment with targets (Rated {rating}/10)."
+    context.user_data['tomorrow_priority'] = "Maintain consistency."
+    context.user_data['tomorrow_obstacle'] = "None reported."
+    
     # Finish check-in
     await finish_checkin(update, context)
+    return ConversationHandler.END
 
+
+async def handle_reflection_response(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """
+    Handle free-text reflection note response.
+    Parses using Gemini to extract challenges, rating reason, priority, obstacle,
+    saves the check-in, and completes.
+    """
+    note_text = update.message.text.strip()
+    
+    # Send a progress indicator
+    progress_msg = await update.message.reply_text(
+        "🧠 <i>Analyzing your reflection and structuring daily focus...</i>",
+        parse_mode='HTML'
+    )
+    
+    rating = context.user_data.get('rating', 8)
+    
+    # Format a summary of Tier 1 metrics for LLM context
+    tier1 = context.user_data.get('tier1')
+    t1_completed = []
+    if tier1:
+        if tier1.sleep_met: t1_completed.append("sleep")
+        if tier1.training_done or tier1.is_rest_day: t1_completed.append("training")
+        if tier1.deep_work_met: t1_completed.append("deep work")
+        if tier1.skill_building_met: t1_completed.append("skill building")
+        if tier1.zero_porn: t1_completed.append("zero porn")
+        if tier1.boundaries: t1_completed.append("boundaries")
+    t1_str = ", ".join(t1_completed) if t1_completed else "none"
+    
+    # Call Gemini to parse reflection
+    agent = get_checkin_agent(settings.gcp_project_id)
+    parsed = await agent.parse_reflection_note(
+        note_text=note_text,
+        alignment_rating=rating,
+        tier1_completed=t1_str
+    )
+    
+    # Store parsed data in context.user_data
+    context.user_data['challenges'] = parsed.get("challenges", "None reported.")
+    context.user_data['rating_reason'] = parsed.get("rating_reason", f"Alignment rating: {rating}/10.")
+    context.user_data['tomorrow_priority'] = parsed.get("tomorrow_priority", "Maintain consistency.")
+    context.user_data['tomorrow_obstacle'] = parsed.get("tomorrow_obstacle", "None reported.")
+    context.user_data['suppress_general_message_once'] = True
+    
+    try:
+        await progress_msg.delete()
+    except Exception as e:
+        logger.warning(f"Could not delete progress message: {e}")
+        
+    await update.message.reply_text(
+        "💾 Reflection parsed. Saving check-in and generating feedback...",
+        parse_mode='HTML'
+    )
+    
+    await finish_checkin(update, context)
+    return ConversationHandler.END
+
+
+async def handle_voice_reflection(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """
+    Handle voice reflection note by acknowledging and completing with defaults.
+    """
+    await update.message.reply_text(
+        "🎤 <b>Voice note received!</b> (Audio transcription is not configured in this version, "
+        "so I will complete your check-in with standard defaults).\n\n"
+        "💾 Saving check-in and generating feedback...",
+        parse_mode='HTML'
+    )
+    
+    # Populate neutral values
+    rating = context.user_data.get('rating', 8)
+    context.user_data['challenges'] = "Voice reflection recorded (audio file)."
+    context.user_data['rating_reason'] = f"Cohesive alignment with targets (Rated {rating}/10)."
+    context.user_data['tomorrow_priority'] = "Maintain consistency."
+    context.user_data['tomorrow_obstacle'] = "None reported."
+    
+    # Finish check-in
+    await finish_checkin(update, context)
     return ConversationHandler.END
 
 
@@ -1042,6 +1187,7 @@ async def finish_checkin(
                 deep_work_hours=2.5 if dw_val else 0.5,
                 skill_building_hours=2.5 if sb_val else 0.5,
                 training_intensity='moderate' if training_val else 'rest',
+                is_rest_day=not training_val,
                 zero_porn=tier1_data.get('porn', False),
                 boundaries=tier1_data.get('boundaries', False),
                 data_quality='migrated',
@@ -1226,7 +1372,9 @@ async def finish_checkin(
             
             final_message = "\n".join(feedback_parts)
         
-        await update.message.reply_text(final_message, parse_mode='HTML')
+        msg = _get_message_from_update(update)
+        if msg:
+            await msg.reply_text(final_message, parse_mode='HTML')
 
         partner_notification = await send_partner_checkin_notification(
             bot=context.bot,
@@ -1235,12 +1383,12 @@ async def finish_checkin(
             date=date,
             fallback_sender_name=update.effective_user.first_name,
         )
-        await _notify_sender_if_partner_delivery_failed(update.message, partner_notification)
+        if msg:
+            await _notify_sender_if_partner_delivery_failed(msg, partner_notification)
         
         # ===== P2.2: Goal Progress Integration =====
         try:
             from src.services.goal_service import goal_service
-            from src.models.schemas import DailyCheckIn
             
             # Rebuild a proper DailyCheckIn object for goal evaluation
             checkin_for_goals = DailyCheckIn(
@@ -1269,10 +1417,11 @@ async def finish_checkin(
                         )
                 
                 if goal_messages:
-                    await update.message.reply_text(
-                        "\n\n".join(goal_messages),
-                        parse_mode='HTML'
-                    )
+                    if msg:
+                        await msg.reply_text(
+                            "\n\n".join(goal_messages),
+                            parse_mode='HTML'
+                        )
                     logger.info(f"🎯 Goal milestones reached for {user_id}: {len(goal_updates)}")
         except Exception as e:
             logger.error(f"⚠️ Goal progress update failed (non-critical): {e}")
@@ -1287,39 +1436,44 @@ async def finish_checkin(
                     winner = challenge_service.check_completion(ch)
                     if winner:
                         if winner == user_id:
-                            await update.message.reply_text(
-                                f"🏆 <b>You Won the Challenge!</b>\n\n"
-                                f"'{ch.title}' — victory is yours! 🔥",
-                                parse_mode='HTML'
-                            )
+                            if msg:
+                                await msg.reply_text(
+                                    f"🏆 <b>You Won the Challenge!</b>\n\n"
+                                    f"'{ch.title}' — victory is yours! 🔥",
+                                    parse_mode='HTML'
+                                )
                         elif winner == ch.partner_id:
-                            await update.message.reply_text(
-                                f"😤 <b>Challenge Lost</b>\n\n"
-                                f"'{ch.title}' — your partner edged you out. Rematch?",
-                                parse_mode='HTML'
-                            )
+                            if msg:
+                                await msg.reply_text(
+                                    f"😤 <b>Challenge Lost</b>\n\n"
+                                    f"'{ch.title}' — your partner edged you out. Rematch?",
+                                    parse_mode='HTML'
+                                )
                         else:
-                            await update.message.reply_text(
-                                f"🤝 <b>Challenge Tie!</b>\n\n"
-                                f"'{ch.title}' — dead even. Rematch?",
-                                parse_mode='HTML'
-                            )
+                            if msg:
+                                await msg.reply_text(
+                                    f"🤝 <b>Challenge Tie!</b>\n\n"
+                                    f"'{ch.title}' — dead even. Rematch?",
+                                    parse_mode='HTML'
+                                )
                     else:
                         # Daily progress update
                         progress = ch.progress.get(user_id, [])
                         met_days = sum(1 for p in progress if p.get("met"))
                         total = (datetime.strptime(ch.end_date, "%Y-%m-%d") -
                                 datetime.strptime(ch.start_date, "%Y-%m-%d")).days + 1
-                        await update.message.reply_text(
-                            f"🏆 <b>Challenge Update</b>\n\n"
-                            f"'{ch.title}': {met_days}/{total} days",
-                            parse_mode='HTML'
-                        )
+                        if msg:
+                            await msg.reply_text(
+                                f"🏆 <b>Challenge Update</b>\n\n"
+                                f"'{ch.title}': {met_days}/{total} days",
+                                parse_mode='HTML'
+                            )
         except Exception as e:
             logger.error(f"⚠️ Challenge progress update failed (non-critical): {e}")
         
         # ===== PHASE 3C: Achievement System Integration =====
         # Check for newly unlocked achievements after streak update
+        newly_unlocked = []  # Initialize for feature discovery hints below
         try:
             # Get updated user profile with current streak
             user = firestore_service.get_user(user_id)
@@ -1349,10 +1503,11 @@ async def finish_checkin(
                         )
                         
                         # Send celebration as separate message (after check-in feedback)
-                        await update.message.reply_text(
-                            celebration_message,
-                            parse_mode='HTML'
-                        )
+                        if msg:
+                            await msg.reply_text(
+                                celebration_message,
+                                parse_mode='HTML'
+                            )
                         
                         logger.info(f"✅ Sent celebration for {achievement_id} to user {user_id}")
                 else:
@@ -1361,6 +1516,40 @@ async def finish_checkin(
         except Exception as e:
             # Don't fail check-in if achievement system has issues
             logger.error(f"⚠️ Achievement checking failed (non-critical): {e}", exc_info=True)
+        
+        # ===== P4.3: Feature Discovery Hints =====
+        try:
+            from src.services.feature_discovery_service import feature_discovery_service
+            
+            # Determine which event to check based on user state
+            event = None
+            if user.streaks.current_streak == 7:
+                event = "streak_7_days"
+            elif user.streaks.current_streak == 14:
+                event = "streak_14_days"
+            elif user.streaks.current_streak == 21:
+                event = "streak_21_days"
+            elif user.streaks.current_streak == 30:
+                event = "streak_30_days"
+            elif user.streaks.total_checkins == 3:
+                event = "after_3_checkins"
+            elif newly_unlocked:
+                event = "first_pattern_detected"
+            
+            if event:
+                hint = feature_discovery_service.check_and_send_hint(
+                    user=user,
+                    event=event,
+                    checkins=recent_checkins,
+                )
+                if hint:
+                    if msg:
+                        await msg.reply_text(hint, parse_mode='HTML')
+                    # Mark as sent
+                    feature_discovery_service.mark_hint_sent(user_id, event)
+                    logger.info(f"💡 Hint sent to {user_id}: {event}")
+        except Exception as e:
+            logger.error(f"⚠️ Feature discovery hint failed (non-critical): {e}")
         
         # ===== End Achievement System Integration =====
         
@@ -1373,10 +1562,11 @@ async def finish_checkin(
                     f"{milestone_hit['message']}"
                 )
                 
-                await update.message.reply_text(
-                    milestone_message,
-                    parse_mode='HTML'
-                )
+                if msg:
+                    await msg.reply_text(
+                        milestone_message,
+                        parse_mode='HTML'
+                    )
                 
                 logger.info(
                     f"🎉 Sent milestone celebration ({streak_updates['current_streak']} days) "
@@ -1397,10 +1587,11 @@ async def finish_checkin(
         if recovery_msg and not streak_updates.get('is_reset'):
             # Recovery milestone (not the initial reset — that's shown inline above)
             try:
-                await update.message.reply_text(
-                    recovery_msg,
-                    parse_mode="HTML"
-                )
+                if msg:
+                    await msg.reply_text(
+                        recovery_msg,
+                        parse_mode="HTML"
+                    )
                 logger.info(
                     f"🔄 Sent recovery milestone for {user_id} "
                     f"(streak: {streak_updates['current_streak']})"
@@ -1416,10 +1607,12 @@ async def finish_checkin(
         
     except Exception as e:
         logger.error(f"❌ Error completing check-in: {e}", exc_info=True)
-        await update.message.reply_text(
-            "❌ Sorry, there was an error saving your check-in. "
-            "Please try again or contact support."
-        )
+        msg = _get_message_from_update(update)
+        if msg:
+            await msg.reply_text(
+                "❌ Sorry, there was an error saving your check-in. "
+                "Please try again or contact support."
+            )
 
 
 # ===== Phase 3E: Quick Check-In Completion =====
@@ -1480,6 +1673,7 @@ async def finish_checkin_quick(
                 deep_work_hours=2.5 if dw_val else 0.5,
                 skill_building_hours=2.5 if sb_val else 0.5,
                 training_intensity='moderate' if training_val else 'rest',
+                is_rest_day=not training_val,
                 zero_porn=tier1_data.get('porn', False),
                 boundaries=tier1_data.get('boundaries', False),
                 data_quality='migrated',
@@ -1600,6 +1794,18 @@ async def finish_checkin_quick(
         else:
             await update.message.reply_text(final_message, parse_mode='HTML')
 
+        # ===== P4.2: Streak Recovery Ritual =====
+        if streak_updates.get('is_reset'):
+            try:
+                from src.services.streak_recovery_service import send_recovery_ritual
+                await send_recovery_ritual(
+                    bot=context.bot,
+                    user=user,
+                    previous_streak=streak_updates.get('streak_before_reset', 0),
+                )
+            except Exception as e:
+                logger.error(f"⚠️ Recovery ritual failed (non-critical): {e}")
+
         partner_notification = await send_partner_checkin_notification(
             bot=context.bot,
             sender=user,
@@ -1677,6 +1883,36 @@ async def finish_checkin_quick(
         except Exception as e:
             logger.error(f"⚠️ Challenge progress update failed in quick check-in (non-critical): {e}")
         
+        # ===== P4.3: Feature Discovery Hints (Quick Check-In) =====
+        try:
+            from src.services.feature_discovery_service import feature_discovery_service
+            
+            # Re-fetch user for current streak data
+            user_quick = firestore_service.get_user(user_id)
+            if user_quick:
+                event = None
+                if user_quick.streaks.current_streak == 7:
+                    event = "streak_7_days"
+                elif user_quick.streaks.current_streak == 14:
+                    event = "streak_14_days"
+                elif user_quick.streaks.current_streak == 21:
+                    event = "streak_21_days"
+                elif user_quick.streaks.current_streak == 30:
+                    event = "streak_30_days"
+                
+                if event:
+                    hint = feature_discovery_service.check_and_send_hint(
+                        user=user_quick,
+                        event=event,
+                        checkins=[checkin],  # Quick check-in only has current checkin
+                    )
+                    if hint:
+                        await target_message.reply_text(hint, parse_mode='HTML')
+                        feature_discovery_service.mark_hint_sent(user_id, event)
+                        logger.info(f"💡 Hint sent to {user_id} (quick): {event}")
+        except Exception as e:
+            logger.error(f"⚠️ Feature discovery hint failed in quick check-in (non-critical): {e}")
+        
         logger.info(
             f"⚡ Quick check-in completed for {user_id}: {compliance_score}% compliance, "
             f"{streak_updates['current_streak']} day streak, count: {new_count}/2"
@@ -1753,18 +1989,17 @@ def create_checkin_conversation_handler() -> ConversationHandler:
             Q1_TIER1: [
                 CallbackQueryHandler(handle_tier1_response)
             ],
-            Q2_CHALLENGES: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_challenges_response)
+            Q2_ALIGNMENT_RATING: [
+                CallbackQueryHandler(handle_alignment_rating_callback, pattern="^align_")
             ],
-            Q3_RATING: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_rating_response)
-            ],
-            Q4_TOMORROW: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_tomorrow_response)
-            ],
-            Q5_MOOD: [
+            Q3_ENERGY_MOOD: [
                 CallbackQueryHandler(handle_energy_callback, pattern="^energy_"),
                 CallbackQueryHandler(handle_mood_callback, pattern="^mood_"),
+            ],
+            Q4_REFLECTION_NOTE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reflection_response),
+                MessageHandler(filters.VOICE, handle_voice_reflection),
+                CallbackQueryHandler(handle_reflection_skip_callback, pattern="^ref_")
             ]
         },
         fallbacks=[

@@ -1465,6 +1465,53 @@ async def predictive_intervention(request: Request):
     return {"status": "success", "timezones": target_timezones, "results": results}
 
 
+# ===== P4.4: Weekly NPS Survey Cron =====
+
+@app.post("/cron/weekly_nps")
+async def weekly_nps_survey(request: Request):
+    """
+    Send NPS survey to active users every Sunday.
+
+    Only sends to users who haven't provided feedback in 14 days.
+    """
+    verify_cron_request(request)
+
+    from src.services.feedback_service import feedback_service
+
+    results = {"scanned": 0, "sent": 0, "skipped": 0, "errors": 0}
+
+    all_users = firestore_service.get_all_users()
+    for user in all_users:
+        try:
+            results["scanned"] += 1
+
+            last_feedback = feedback_service.get_last_feedback(user.user_id, "nps")
+            if last_feedback:
+                from datetime import timedelta
+                days_since = (datetime.utcnow() - last_feedback["created_at"]).days
+                if days_since < 14:
+                    results["skipped"] += 1
+                    continue
+
+            await bot_manager.bot.send_message(
+                chat_id=user.telegram_id,
+                text=(
+                    "📊 <b>Quick Question</b>\n\n"
+                    "How's your experience going? Your feedback helps us improve.\n\n"
+                    "Share your thoughts: /feedback"
+                ),
+                parse_mode='HTML'
+            )
+            results["sent"] += 1
+
+        except Exception as e:
+            logger.error(f"❌ NPS survey failed for {user.user_id}: {e}")
+            results["errors"] += 1
+
+    logger.info(f"📊 Weekly NPS survey complete: {results}")
+    return {"status": "success", "results": results}
+
+
 # ===== Admin Broadcast Endpoint =====
 
 @app.post("/admin/broadcast")

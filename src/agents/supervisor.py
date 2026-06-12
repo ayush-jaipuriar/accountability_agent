@@ -214,9 +214,9 @@ class SupervisorAgent:
             if user_profile:
                 return {
                     "current_streak": user_profile.streaks.current_streak,
-                    "last_checkin_date": user_profile.last_checkin_date,
+                    "last_checkin_date": user_profile.streaks.last_checkin_date,
                     "longest_streak": user_profile.streaks.longest_streak,
-                    "constitution_mode": user_profile.mode
+                    "constitution_mode": user_profile.constitution_mode
                 }
             else:
                 # New user (no profile yet)

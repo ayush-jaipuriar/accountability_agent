@@ -51,6 +51,15 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-2.5-flash"  # Use Gemini 2.5 Flash (standard reasoning, fast)
     gemini_api_key: Optional[str] = None  # For direct Gemini API (alternative to Vertex AI)
     
+    # Centralized model names — all agents should reference these.
+    # Prevents hardcoded deprecated model names scattered across files.
+    model_checkin_agent: str = "gemini-2.5-flash"
+    model_emotional_agent: str = "gemini-2.5-flash"
+    model_supervisor: str = "gemini-2.5-flash"
+    model_intervention: str = "gemini-2.5-flash"
+    model_query_agent: str = "gemini-2.5-flash"
+    model_reporting_agent: str = "gemini-2.5-flash"
+    
     # ===== Application Settings =====
     log_level: str = "INFO"
     timezone: str = "Asia/Kolkata"
@@ -66,6 +75,19 @@ class Settings(BaseSettings):
     enable_reports: bool = False                # Phase 3
     enable_morning_briefing: bool = True       # P1.2
     enable_churn_prediction: bool = True       # P1.4
+    
+    # ===== v2.0 Feature Flags (Phases 1-4) =====
+    enable_continuous_data: bool = True        # P1.1: Numeric Q1 inputs
+    enable_adaptive_checkin: bool = True       # P1.3: Power/struggling user detection
+    enable_constitution_viewer: bool = True    # P2.1: /constitution command
+    enable_goals: bool = True                  # P2.2: Goal-setting system
+    enable_partner_challenges: bool = True     # P2.3: Partner challenges
+    enable_insights_engine: bool = True        # P3.1: /insights command
+    enable_mood_tracking: bool = True          # P3.2: Energy & mood Q5
+    enable_predictive_interventions: bool = True  # P3.3: Evening risk forecasts
+    enable_streak_recovery: bool = True        # P4.2: Recovery ritual on break
+    enable_feature_hints: bool = True          # P4.3: Contextual feature hints
+    enable_feedback_collection: bool = True    # P4.4: /feedback NPS command
     
     # ===== Phase Deployment Dates =====
     # Used for backward-compatible score normalization.

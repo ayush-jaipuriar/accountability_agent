@@ -18,7 +18,7 @@ from src.models.schemas import (
     User, UserStreaks, Tier1NonNegotiables, CheckInResponses, DailyCheckIn
 )
 from src.bot.conversation import (
-    Q1_TIER1, Q2_CHALLENGES, Q4_TOMORROW,
+    Q1_TIER1, Q2_ALIGNMENT_RATING,
     start_checkin,
     handle_tier1_response,
 )
@@ -204,13 +204,13 @@ class TestStrugglingUserFraming:
         assert not any("tough" in c.lower() for c in calls), f"Unexpected empathy in {calls}"
 
 
-# ===== Perfect Day Q2 Skip =====
+# ===== Flow Transitions =====
 
-class TestPerfectDaySkip:
+class TestCheckinFlowTransitions:
 
     @pytest.mark.asyncio
-    async def test_perfect_day_offers_skip(self):
-        """100% compliance should offer to skip Q2."""
+    async def test_completion_goes_to_alignment_rating(self):
+        """When all Tier 1 steps are completed, transition to alignment rating."""
         update = _make_callback_update(data="tier1_boundaries_yes")
         context = _make_context(user_data={
             'user_id': '111',
@@ -226,75 +226,11 @@ class TestPerfectDaySkip:
         })
 
         result = await handle_tier1_response(update, context)
-        assert result == Q1_TIER1  # Stays in Q1 while awaiting skip decision
-        assert context.user_data.get('awaiting_q2_skip') is True
-        # Should have sent skip offer with inline keyboard
+        assert result == Q2_ALIGNMENT_RATING
+        assert context.user_data.get('compliance_score') is not None
+        # Should have sent alignment rating question with inline keyboard
         text = update.callback_query.message.reply_text.call_args[0][0]
-        assert "Perfect day" in text or "skip" in text.lower()
-
-    @pytest.mark.asyncio
-    async def test_skip_q2_goes_to_q4(self):
-        """Clicking 'Skip' should go directly to Q4."""
-        update = _make_callback_update(data="skip_q2")
-        context = _make_context(user_data={
-            'user_id': '111',
-            'checkin_type': 'full',
-            'awaiting_q2_skip': True,
-            'tier1': Tier1NonNegotiables(
-                sleep=True, sleep_hours=8.0,
-                training=True, training_intensity='intense',
-                deep_work=True, deep_work_hours=3.0,
-                skill_building=True, skill_building_hours=2.5,
-                zero_porn=True, boundaries=True,
-            ),
-        })
-
-        result = await handle_tier1_response(update, context)
-        assert result == Q4_TOMORROW
-        assert context.user_data['challenges'] == "Perfect day — skipped challenges question"
-        assert context.user_data['rating'] == 10
-
-    @pytest.mark.asyncio
-    async def test_answer_anyway_goes_to_q2(self):
-        """Clicking 'Answer Anyway' should go to Q2."""
-        update = _make_callback_update(data="answer_q2")
-        context = _make_context(user_data={
-            'user_id': '111',
-            'checkin_type': 'full',
-            'awaiting_q2_skip': True,
-            'tier1': Tier1NonNegotiables(
-                sleep=True, sleep_hours=8.0,
-                training=True, training_intensity='intense',
-                deep_work=True, deep_work_hours=3.0,
-                skill_building=True, skill_building_hours=2.5,
-                zero_porn=True, boundaries=True,
-            ),
-        })
-
-        result = await handle_tier1_response(update, context)
-        assert result == Q2_CHALLENGES
-        assert context.user_data.get('awaiting_q2_skip') is False
-
-    @pytest.mark.asyncio
-    async def test_non_perfect_day_no_skip_offer(self):
-        """< 100% compliance should NOT offer skip, go straight to Q2."""
-        update = _make_callback_update(data="tier1_boundaries_yes")
-        context = _make_context(user_data={
-            'user_id': '111',
-            'checkin_type': 'full',
-            'tier1_step': 5,
-            'tier1_data': {
-                'sleep_hours': 5.5, 'deep_work_hours': 1.0,
-                'skill_building_hours': 0.5, 'training_intensity': 'rest',
-                'zero_porn': True
-            },
-            'tier1_answer_order': ['sleep_hours', 'deep_work_hours',
-                                   'skill_building_hours', 'training_intensity', 'zero_porn'],
-        })
-
-        result = await handle_tier1_response(update, context)
-        assert result == Q2_CHALLENGES
-        assert context.user_data.get('awaiting_q2_skip') is not True
+        assert "Self-Alignment" in text
 
 
 # ===== Adaptive Context Stored =====

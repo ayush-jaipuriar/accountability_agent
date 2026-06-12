@@ -226,7 +226,7 @@ class ConstitutionService:
                 "last_occurrence": "Feb 2025 (post-breakup)",
                 "ai_response": "Flag within 24 hours, immediate intervention",
                 "early_warning_signs": [
-                    "2+ nights of <6 hours sleep",
+                    "2+ nights of &lt;6 hours sleep",
                     "Increased late-night phone usage",
                     "Skipped workouts 2+ days"
                 ]

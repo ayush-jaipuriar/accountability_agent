@@ -20,13 +20,14 @@ from telegram.ext import ConversationHandler
 
 from src.models.schemas import User, UserStreaks, Tier1NonNegotiables
 from src.bot.conversation import (
-    Q1_TIER1, Q2_CHALLENGES, Q3_RATING, Q4_TOMORROW, Q5_MOOD,
+    Q1_TIER1, Q2_ALIGNMENT_RATING, Q3_ENERGY_MOOD, Q4_REFLECTION_NOTE,
     get_skill_building_question,
     start_checkin,
     handle_tier1_response,
-    handle_challenges_response,
-    handle_rating_response,
-    handle_tomorrow_response,
+    handle_alignment_rating_callback,
+    handle_reflection_response,
+    handle_reflection_skip_callback,
+    handle_voice_reflection,
     cancel_checkin,
 )
 
@@ -233,7 +234,7 @@ class TestHandleTier1Response:
                                    'skill_building_hours', 'training_intensity', 'zero_porn'],
         })
         result = await handle_tier1_response(update, context)
-        assert result == Q2_CHALLENGES
+        assert result == Q2_ALIGNMENT_RATING
 
     @pytest.mark.asyncio
     async def test_undo_removes_last_answer(self):
@@ -264,81 +265,29 @@ class TestHandleTier1Response:
 
 
 # =============================================
-# handle_challenges_response Tests
+# handle_alignment_rating_callback Tests
 # =============================================
 
-class TestHandleChallengesResponse:
+class TestHandleAlignmentRatingCallback:
 
     @pytest.mark.asyncio
-    async def test_valid_challenge(self):
-        update = _make_update(text="Had difficulty staying focused during deep work session today")
-        context = _make_context()
-        result = await handle_challenges_response(update, context)
-        assert result == Q3_RATING
-        assert context.user_data['challenges'] is not None
-
-    @pytest.mark.asyncio
-    async def test_too_short(self):
-        update = _make_update(text="ok")
-        context = _make_context()
-        result = await handle_challenges_response(update, context)
-        assert result == Q2_CHALLENGES
-
-    @pytest.mark.asyncio
-    async def test_too_long(self):
-        update = _make_update(text="x" * 501)
-        context = _make_context()
-        result = await handle_challenges_response(update, context)
-        assert result == Q2_CHALLENGES
-
-
-# =============================================
-# handle_rating_response Tests
-# =============================================
-
-class TestHandleRatingResponse:
-
-    @pytest.mark.asyncio
-    async def test_valid_rating(self):
-        update = _make_update(text="8 - Solid day, hit all targets except skill building which was short")
-        context = _make_context()
-        result = await handle_rating_response(update, context)
-        assert result == Q4_TOMORROW
+    async def test_valid_alignment_rating(self):
+        update = _make_callback_update(data="align_8")
+        context = _make_context(user_data={'rating': 0})
+        result = await handle_alignment_rating_callback(update, context)
+        assert result == Q3_ENERGY_MOOD
         assert context.user_data['rating'] == 8
 
-    @pytest.mark.asyncio
-    async def test_no_number(self):
-        update = _make_update(text="great day overall felt strong")
-        context = _make_context()
-        result = await handle_rating_response(update, context)
-        assert result == Q3_RATING
-
-    @pytest.mark.asyncio
-    async def test_out_of_range(self):
-        update = _make_update(text="15 - amazing day")
-        context = _make_context()
-        result = await handle_rating_response(update, context)
-        assert result == Q3_RATING
-
-    @pytest.mark.asyncio
-    async def test_reason_too_short(self):
-        update = _make_update(text="7 ok")
-        context = _make_context()
-        result = await handle_rating_response(update, context)
-        assert result == Q3_RATING
-
 
 # =============================================
-# handle_tomorrow_response Tests
+# handle_reflection_skip_callback Tests
 # =============================================
 
-class TestHandleTomorrowResponse:
+class TestHandleReflectionSkipCallback:
 
     @pytest.mark.asyncio
-    async def test_valid_response_no_delimiter(self):
-        update = _make_update(
-            text="Focus on completing three LeetCode problems and study system design patterns"
-        )
+    async def test_reflection_skip(self):
+        update = _make_callback_update(data="ref_skip")
         context = _make_context(user_data={
             'user_id': '111',
             'date': '2026-02-07',
@@ -351,21 +300,30 @@ class TestHandleTomorrowResponse:
                 skill_building=True, skill_building_hours=2.0,
                 zero_porn=True, boundaries=True
             ),
-            'challenges': 'Test challenges text here for validation',
             'rating': 8,
-            'rating_reason': 'Solid day overall with good consistency',
-            'tomorrow_priority': '',
-            'tomorrow_obstacle': '',
+            'energy_rating': 7,
+            'mood_rating': 8,
         })
+        
+        with patch('src.bot.conversation.finish_checkin', new_callable=AsyncMock) as mock_finish:
+            result = await handle_reflection_skip_callback(update, context)
+            
+        assert result == ConversationHandler.END
+        assert context.user_data['challenges'] == "None reported."
+        assert "alignment" in context.user_data['rating_reason'].lower()
+        assert context.user_data['tomorrow_priority'] == "Maintain consistency."
+        mock_finish.assert_called_once()
 
-        result = await handle_tomorrow_response(update, context)
-        assert result == Q5_MOOD
+
+# =============================================
+# handle_reflection_response Tests
+# =============================================
+
+class TestHandleReflectionResponse:
 
     @pytest.mark.asyncio
-    async def test_valid_response_with_delimiter(self):
-        update = _make_update(
-            text="Priority: Complete 3 LeetCode problems | Obstacle: Evening meeting might drain energy"
-        )
+    async def test_reflection_text_input(self):
+        update = _make_update(text="Felt good today, completed tasks. Tomorrow focus on study.")
         context = _make_context(user_data={
             'user_id': '111',
             'date': '2026-02-07',
@@ -378,30 +336,68 @@ class TestHandleTomorrowResponse:
                 skill_building=True, skill_building_hours=2.0,
                 zero_porn=True, boundaries=True
             ),
-            'challenges': 'Test challenges text here for validation',
             'rating': 8,
-            'rating_reason': 'Solid day overall with good consistency',
-            'tomorrow_priority': '',
-            'tomorrow_obstacle': '',
+            'energy_rating': 7,
+            'mood_rating': 8,
         })
+        
+        mock_parsed = {
+            "challenges": "None reported.",
+            "rating_reason": "Felt good today, completed tasks.",
+            "tomorrow_priority": "Study.",
+            "tomorrow_obstacle": "None reported."
+        }
+        
+        with patch('src.bot.conversation.get_checkin_agent') as mock_agent_get, \
+             patch('src.bot.conversation.finish_checkin', new_callable=AsyncMock) as mock_finish:
+            mock_agent = MagicMock()
+            mock_agent.parse_reflection_note = AsyncMock(return_value=mock_parsed)
+            mock_agent_get.return_value = mock_agent
+            
+            result = await handle_reflection_response(update, context)
+            
+        assert result == ConversationHandler.END
+        assert context.user_data['challenges'] == "None reported."
+        assert context.user_data['tomorrow_priority'] == "Study."
+        mock_finish.assert_called_once()
 
-        result = await handle_tomorrow_response(update, context)
-        assert result == Q5_MOOD
-        assert "LeetCode" in context.user_data['tomorrow_priority']
+
+# =============================================
+# handle_voice_reflection Tests
+# =============================================
+
+class TestHandleVoiceReflection:
 
     @pytest.mark.asyncio
-    async def test_too_short(self):
-        update = _make_update(text="ok")
-        context = _make_context()
-        result = await handle_tomorrow_response(update, context)
-        assert result == Q4_TOMORROW
-
-    @pytest.mark.asyncio
-    async def test_too_long(self):
-        update = _make_update(text="x" * 501)
-        context = _make_context()
-        result = await handle_tomorrow_response(update, context)
-        assert result == Q4_TOMORROW
+    async def test_voice_reflection(self):
+        update = MagicMock()
+        update.message = AsyncMock()
+        update.message.voice = MagicMock()
+        update.message.reply_text = AsyncMock()
+        
+        context = _make_context(user_data={
+            'user_id': '111',
+            'date': '2026-02-07',
+            'mode': 'maintenance',
+            'checkin_start_time': datetime.utcnow(),
+            'tier1': Tier1NonNegotiables(
+                sleep=True, sleep_hours=7.5,
+                training=True, training_intensity='moderate',
+                deep_work=True, deep_work_hours=2.5,
+                skill_building=True, skill_building_hours=2.0,
+                zero_porn=True, boundaries=True
+            ),
+            'rating': 8,
+            'energy_rating': 7,
+            'mood_rating': 8,
+        })
+        
+        with patch('src.bot.conversation.finish_checkin', new_callable=AsyncMock) as mock_finish:
+            result = await handle_voice_reflection(update, context)
+            
+        assert result == ConversationHandler.END
+        assert "voice" in context.user_data['challenges'].lower()
+        mock_finish.assert_called_once()
 
 
 # =============================================

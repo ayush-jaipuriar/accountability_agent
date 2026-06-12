@@ -32,7 +32,9 @@ Before any production deployment:
    - `pytest tests`
 5. Run source compilation sanity check:
    - `python3 -m compileall src`
-6. If Docker is available, validate the deployable artifact path:
+6. Run the pre-deploy validation script:
+   - `python3 scripts/pre_deploy_check.py`
+7. If Docker is available, validate the deployable artifact path:
    - `docker build -t accountability-agent:preflight .`
 
 ### Build Rules
@@ -109,13 +111,21 @@ After every production deployment:
 
 ## Current Deployment Reference
 
-The deployment process validated on 2026-03-14 is documented in:
+The deployment process validated on 2026-05-16 is documented in:
 
-- `DEPLOYMENT_LOG_2026-03-14.md`
+- `DEPLOYMENT_LOG_2026-05-16.md`
 
 That deployment successfully:
 
-- updated the existing `accountability-agent` service in `us-central1`,
-- created revision `accountability-agent-00007-fsj`,
-- preserved the single-service topology,
+- deployed v2.0 Phases 1-4 to the existing `accountability-agent` service in `us-central1`,
+- added 1043 passing tests,
+- added 11 new feature flags for safe rollout,
+- added GDPR-compliant `/delete_my_data` command,
 - and verified healthy post-deploy behavior.
+
+Previous deployment: `DEPLOYMENT_LOG_2026-03-14.md`
+
+## Planning and Brainstorming Rules
+
+- Never create or update an implementation plan (`implementation_plan.md`) without first asking the user clarification questions and brainstorming the design in chat.
+

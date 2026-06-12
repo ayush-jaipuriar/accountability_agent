@@ -86,15 +86,18 @@ class QueryAgent:
     - Main application sends response via Telegram
     """
     
-    def __init__(self, project_id: str, location: str = "us-central1", model_name: str = "gemini-2.0-flash-exp"):
+    def __init__(self, project_id: str, location: str = "us-central1", model_name: str = None):
         """
         Initialize Query Agent.
         
         Args:
             project_id: GCP project ID for Vertex AI
             location: Vertex AI location (default: us-central1)
-            model_name: Gemini model name
+            model_name: Gemini model name (defaults to config setting)
         """
+        from src.config import settings
+        if model_name is None:
+            model_name = settings.model_query_agent
         self.llm = LLMService(
             project_id=project_id,
             location=location,

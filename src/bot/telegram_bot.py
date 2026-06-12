@@ -75,12 +75,17 @@ class TelegramBotManager:
     
     # All registered slash-command names (used for fuzzy matching)
     REGISTERED_COMMANDS = [
-        "start", "help", "status", "metrics", "mode", "checkin", "quickcheckin",
+        "start", "help", "status", "metrics", "mode",
+        "checkin", "quickcheckin",  # Handled by ConversationHandler, not CommandHandler
         "use_shield", "set_partner", "partner_status", "unlink_partner",
         "partner_notifications",
         "achievements", "career", "weekly", "monthly", "yearly",
         "export", "report", "leaderboard", "rank", "invite", "refer",
         "brag", "share", "resume", "correct", "timezone", "support",
+        "briefing", "settings", "constitution",
+        "goals", "goal_new", "goal_progress", "goal_complete",
+        "challenges", "challenge_new", "challenge_accept", "challenge_decline",
+        "insights", "feedback", "delete_my_data",
         "admin_status",
     ]
     
@@ -127,6 +132,23 @@ class TelegramBotManager:
             "my metrics", "show metrics", "metric dashboard",
             "per metric", "detailed metrics", "tier 1 breakdown",
         ],
+        "constitution": [
+            "show constitution", "my constitution", "view constitution",
+            "constitution rules", "my rules",
+        ],
+        "goals": [
+            "my goals", "show goals", "goal progress", "active goals",
+        ],
+        "insights": [
+            "my insights", "show insights", "patterns", "my patterns",
+            "habit analysis", "what do you see",
+        ],
+        "feedback": [
+            "give feedback", "rate bot", "nps", "survey",
+        ],
+        "briefing": [
+            "morning briefing", "daily briefing", "start my day",
+        ],
     }
     
     def _fuzzy_match_command(self, text: str) -> Tuple[Optional[str], float]:
@@ -168,19 +190,36 @@ class TelegramBotManager:
             "partner_notifications": self.partner_notifications_command,
             "achievements": self.achievements_command,
             "career": self.career_command,
+            "weekly": weekly_command,
+            "monthly": monthly_command,
+            "yearly": yearly_command,
             "export": self.export_command,
             "report": self.report_command,
             "leaderboard": self.leaderboard_command,
+            "rank": self.leaderboard_command,
             "invite": self.invite_command,
+            "refer": self.invite_command,
             "share": self.share_command,
+            "brag": self.share_command,
             "resume": self.resume_command,
             "correct": self.correct_command,
             "timezone": self.timezone_command,
             "support": self.support_command,
+            "briefing": self.briefing_command,
+            "settings": self.settings_command,
+            "constitution": self.constitution_command,
+            "goals": self.goals_command,
+            "goal_new": self.goal_new_command,
+            "goal_progress": self.goal_progress_command,
+            "goal_complete": self.goal_complete_command,
+            "challenges": self.challenges_command,
+            "challenge_new": self.challenge_new_command,
+            "challenge_accept": self.challenge_accept_command,
+            "challenge_decline": self.challenge_decline_command,
+            "insights": self.insights_command,
+            "feedback": self.feedback_command,
+            "delete_my_data": self.delete_my_data_command,
             "admin_status": self.admin_status_command,
-            "weekly": weekly_command,
-            "monthly": monthly_command,
-            "yearly": yearly_command,
         }
     
     def _match_command_keywords(self, message: str) -> Optional[str]:
@@ -265,28 +304,40 @@ class TelegramBotManager:
         self.application.add_handler(CommandHandler("support", self.support_command))
         
         # P1.2: Morning briefing on-demand command
-        self.application.add_handler(CommandHandler("briefing", self.briefing_command))
+        if settings.enable_morning_briefing:
+            self.application.add_handler(CommandHandler("briefing", self.briefing_command))
         
-        # P1.2: Settings toggle command
+        # P1.2: Settings toggle command (always enabled — core UX)
         self.application.add_handler(CommandHandler("settings", self.settings_command))
         
         # P2.1: Constitution viewer command
-        self.application.add_handler(CommandHandler("constitution", self.constitution_command))
+        if settings.enable_constitution_viewer:
+            self.application.add_handler(CommandHandler("constitution", self.constitution_command))
         
         # P2.2: Goal commands
-        self.application.add_handler(CommandHandler("goals", self.goals_command))
-        self.application.add_handler(CommandHandler("goal_new", self.goal_new_command))
-        self.application.add_handler(CommandHandler("goal_progress", self.goal_progress_command))
-        self.application.add_handler(CommandHandler("goal_complete", self.goal_complete_command))
+        if settings.enable_goals:
+            self.application.add_handler(CommandHandler("goals", self.goals_command))
+            self.application.add_handler(CommandHandler("goal_new", self.goal_new_command))
+            self.application.add_handler(CommandHandler("goal_progress", self.goal_progress_command))
+            self.application.add_handler(CommandHandler("goal_complete", self.goal_complete_command))
         
         # P2.3: Challenge commands
-        self.application.add_handler(CommandHandler("challenges", self.challenges_command))
-        self.application.add_handler(CommandHandler("challenge_new", self.challenge_new_command))
-        self.application.add_handler(CommandHandler("challenge_accept", self.challenge_accept_command))
-        self.application.add_handler(CommandHandler("challenge_decline", self.challenge_decline_command))
+        if settings.enable_partner_challenges:
+            self.application.add_handler(CommandHandler("challenges", self.challenges_command))
+            self.application.add_handler(CommandHandler("challenge_new", self.challenge_new_command))
+            self.application.add_handler(CommandHandler("challenge_accept", self.challenge_accept_command))
+            self.application.add_handler(CommandHandler("challenge_decline", self.challenge_decline_command))
         
         # P3.1: Insights on-demand command
-        self.application.add_handler(CommandHandler("insights", self.insights_command))
+        if settings.enable_insights_engine:
+            self.application.add_handler(CommandHandler("insights", self.insights_command))
+        
+        # P4.4: Feedback command
+        if settings.enable_feedback_collection:
+            self.application.add_handler(CommandHandler("feedback", self.feedback_command))
+        
+        # P5.2: GDPR data deletion command (always enabled — compliance requirement)
+        self.application.add_handler(CommandHandler("delete_my_data", self.delete_my_data_command))
         
         # Admin-only: monitoring status command
         self.application.add_handler(CommandHandler("admin_status", self.admin_status_command))
@@ -309,6 +360,17 @@ class TelegramBotManager:
         self.application.add_handler(CallbackQueryHandler(self.accept_partner_callback, pattern="^accept_partner:"))
         self.application.add_handler(CallbackQueryHandler(self.decline_partner_callback, pattern="^decline_partner:"))
         self.application.add_handler(CallbackQueryHandler(self.partner_notifications_callback, pattern="^partner_notify_"))
+        
+        # P4.2: Break reason callback
+        if settings.enable_streak_recovery:
+            self.application.add_handler(CallbackQueryHandler(self.break_reason_callback, pattern="^break_"))
+        
+        # P4.4: NPS rating callback
+        if settings.enable_feedback_collection:
+            self.application.add_handler(CallbackQueryHandler(self.nps_callback, pattern="^nps_"))
+        
+        # P5.2: Data deletion confirmation callback (always enabled — compliance)
+        self.application.add_handler(CallbackQueryHandler(self.delete_data_callback, pattern="^delete_"))
         
         # Phase 3B: General message handler for emotional support and queries
         # This catches all non-command text messages
@@ -2541,13 +2603,31 @@ class TelegramBotManager:
             from src.utils.compliance import calculate_compliance_score
             from src.models.schemas import Tier1NonNegotiables
             
+            # Get original check-in to preserve continuous values and rest day settings if unmodified
+            orig_checkin = firestore_service.get_checkin(user_id, date)
+            orig_t1 = orig_checkin.tier1_non_negotiables if orig_checkin else None
+            
+            is_rest = False
+            if not items['training']:
+                if orig_t1 and orig_t1.training_intensity == 'rest':
+                    is_rest = True
+                else:
+                    is_rest = True  # Default to rest day when toggled off to avoid penalizing compliance
+            
             tier1 = Tier1NonNegotiables(
                 sleep=items['sleep'],
                 training=items['training'],
                 deep_work=items['deepwork'],
                 skill_building=items['skillbuilding'],
                 zero_porn=items['porn'],
-                boundaries=items['boundaries']
+                boundaries=items['boundaries'],
+                is_rest_day=is_rest,
+                # Preserve original continuous values if available
+                sleep_hours=orig_t1.sleep_hours if orig_t1 else (7.5 if items['sleep'] else 5.5),
+                deep_work_hours=orig_t1.deep_work_hours if orig_t1 else (2.5 if items['deepwork'] else 0.5),
+                skill_building_hours=orig_t1.skill_building_hours if orig_t1 else (2.5 if items['skillbuilding'] else 0.5),
+                training_intensity=orig_t1.training_intensity if orig_t1 else ('moderate' if items['training'] else 'rest'),
+                data_quality=orig_t1.data_quality if orig_t1 else 'migrated'
             )
             
             new_compliance = calculate_compliance_score(tier1)
@@ -3518,6 +3598,178 @@ class TelegramBotManager:
         await update.message.reply_text("\n".join(lines), parse_mode='HTML')
         logger.info(f"📊 Insights sent to {user_id}: {len(insights)} insights")
 
+    # ===== P4.2: Break Reason Callback =====
+
+    async def break_reason_callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle break reason selection from inline button."""
+        query = update.callback_query
+        await query.answer()
+
+        user_id = str(update.effective_user.id)
+        from src.services.streak_recovery_service import handle_break_reason_callback
+
+        message = await handle_break_reason_callback(
+            bot=context.bot,
+            user_id=user_id,
+            callback_data=query.data,
+        )
+
+        await query.edit_message_text(message, parse_mode='HTML')
+
+    # ===== P4.4: /feedback Command — NPS Collection =====
+
+    async def feedback_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /feedback command — collect NPS rating."""
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+
+        if not user:
+            await update.message.reply_text("Please run /start first.", parse_mode='HTML')
+            return
+
+        await update.message.reply_text(
+            "📣 <b>Your Feedback Matters</b>\n\n"
+            "How likely are you to recommend Accountability Agent to a friend?\n"
+            "(0 = not likely, 10 = very likely)",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(str(i), callback_data=f"nps_{i}") for i in range(0, 6)],
+                [InlineKeyboardButton(str(i), callback_data=f"nps_{i}") for i in range(6, 11)],
+            ]),
+            parse_mode='HTML'
+        )
+
+    async def nps_callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle NPS rating selection."""
+        query = update.callback_query
+        await query.answer()
+
+        user_id = str(update.effective_user.id)
+        rating = int(query.data.split("_")[1])
+
+        from src.services.feedback_service import feedback_service
+        feedback_service.store_feedback(
+            user_id=user_id,
+            feedback_type="nps",
+            rating=rating,
+        )
+
+        if rating >= 9:
+            await query.edit_message_text(
+                "🎉 <b>Thank you!</b>\n\n"
+                "What do you love most about the bot? Reply with a message.",
+                parse_mode='HTML'
+            )
+        elif rating >= 7:
+            await query.edit_message_text(
+                "✅ <b>Thanks!</b>\n\n"
+                "What's one thing we could improve? Reply with a message.",
+                parse_mode='HTML'
+            )
+        else:
+            await query.edit_message_text(
+                "💔 <b>I'm sorry to hear that.</b>\n\n"
+                "What's the biggest issue you're facing? Reply with a message.",
+                parse_mode='HTML'
+            )
+
+        logger.info(f"📝 NPS {rating} collected from {user_id}")
+
+    # ===== P5.2: /delete_my_data Command — GDPR Data Deletion =====
+
+    async def delete_my_data_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle /delete_my_data command — complete user data deletion (GDPR).
+
+        Requires explicit confirmation via inline button to prevent accidents.
+        """
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+
+        if not user:
+            await update.message.reply_text("Please run /start first.", parse_mode='HTML')
+            return
+
+        # Require explicit confirmation
+        await update.message.reply_text(
+            "🚨 <b>Delete All My Data</b>\n\n"
+            "This will permanently delete:\n"
+            "• Your profile\n"
+            "• All check-ins\n"
+            "• Goals & challenges\n"
+            "• Feedback history\n\n"
+            "<b>This action cannot be undone.</b>\n\n"
+            "Are you sure?",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("❌ Cancel", callback_data="delete_cancel"),
+                    InlineKeyboardButton("🗑️ Delete Everything", callback_data="delete_confirm"),
+                ]
+            ]),
+            parse_mode='HTML'
+        )
+
+    async def delete_data_callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle delete confirmation/cancellation."""
+        query = update.callback_query
+        await query.answer()
+
+        user_id = str(update.effective_user.id)
+
+        if query.data == "delete_cancel":
+            await query.edit_message_text(
+                "✅ Deletion cancelled. Your data is safe.",
+                parse_mode='HTML'
+            )
+            return
+
+        if query.data == "delete_confirm":
+            from src.services.data_deletion_service import data_deletion_service
+
+            await query.edit_message_text(
+                "🗑️ <b>Deleting your data...</b>\n\n"
+                "This may take a few seconds.",
+                parse_mode='HTML'
+            )
+
+            result = data_deletion_service.delete_all_user_data(user_id)
+
+            if result["success"]:
+                await query.edit_message_text(
+                    "✅ <b>Your data has been deleted.</b>\n\n"
+                    "All records have been removed from our systems.\n\n"
+                    "If you change your mind, you can start fresh with /start.",
+                    parse_mode='HTML'
+                )
+                logger.info(f"🗑️ User {user_id} deleted all their data")
+            else:
+                await query.edit_message_text(
+                    "⚠️ <b>Deletion completed with errors.</b>\n\n"
+                    f"Errors: {', '.join(result['errors'])}\n\n"
+                    "Please contact support if you need assistance.",
+                    parse_mode='HTML'
+                )
+                logger.error(f"❌ Data deletion for {user_id} failed: {result['errors']}")
+
     # ===== P1.2: /briefing Command — On-Demand Morning Briefing =====
 
     async def briefing_command(
@@ -3644,6 +3896,15 @@ class TelegramBotManager:
         """
         message_text = update.message.text
         user_id = str(update.effective_user.id)
+        
+        # SAFETY: If this command is in REGISTERED_COMMANDS, a handler in an
+        # earlier group already processed it. Don't double-respond.
+        # This prevents "Did you mean /X?" appearing after successful commands
+        # when handler group propagation behaves unexpectedly.
+        attempted = message_text.split()[0].lstrip('/').split('@')[0].lower()
+        if attempted in self.REGISTERED_COMMANDS:
+            logger.debug("Command /%s already handled by earlier group; skipping fuzzy match", attempted)
+            return
         
         best_cmd, score = self._fuzzy_match_command(message_text)
         

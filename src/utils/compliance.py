@@ -64,7 +64,7 @@ def calculate_compliance_score(tier1: Tier1NonNegotiables) -> float:
     # Count completed items (Phase 3D: Now 6 items)
     items = [
         tier1.sleep,
-        tier1.training,
+        tier1.training or tier1.is_rest_day,
         tier1.deep_work,
         tier1.skill_building,  # Phase 3D: New item
         tier1.zero_porn,
@@ -222,7 +222,7 @@ def calculate_compliance_score_normalized(
         # Pre-Phase 3D: 5 items (exclude skill_building)
         items = [
             tier1.sleep,
-            tier1.training,
+            tier1.training or tier1.is_rest_day,
             tier1.deep_work,
             tier1.zero_porn,
             tier1.boundaries
@@ -232,7 +232,7 @@ def calculate_compliance_score_normalized(
         # Post-Phase 3D: 6 items
         items = [
             tier1.sleep,
-            tier1.training,
+            tier1.training or tier1.is_rest_day,
             tier1.deep_work,
             tier1.skill_building,
             tier1.zero_porn,
@@ -266,7 +266,7 @@ def is_all_tier1_complete(tier1: Tier1NonNegotiables, checkin_date: Optional[str
     
     base_complete = (
         tier1.sleep and
-        tier1.training and
+        (tier1.training or tier1.is_rest_day) and
         tier1.deep_work and
         tier1.zero_porn and
         tier1.boundaries
@@ -348,7 +348,7 @@ def get_missed_items(tier1: Tier1NonNegotiables) -> list[str]:
     
     if not tier1.sleep:
         missed.append("sleep")
-    if not tier1.training:
+    if not (tier1.training or tier1.is_rest_day):
         missed.append("training")
     if not tier1.deep_work:
         missed.append("deep_work")

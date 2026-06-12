@@ -1,0 +1,13 @@
+---
+description: Planning and collaboration rule - always ask clarification questions and brainstorm before creating plans
+alwaysApply: true
+---
+
+# Planning and Collaboration Rules
+
+- **CRITICAL RULE:** Do NOT create, update, or draft any implementation plans (including `implementation_plan.md` or phase plans) without first asking the user clarification questions and brainstorming the proposed design/approach in chat.
+- **SEQUENCE REQUIREMENT:**
+  1. Brainstorm and discuss the problem/feature in chat.
+  2. Ask targeted clarification questions to resolve ambiguity.
+  3. Obtain user consensus on the conceptual design.
+  4. Only then, write/update the implementation plan.

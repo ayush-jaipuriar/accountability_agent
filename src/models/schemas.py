@@ -142,6 +142,16 @@ class User(BaseModel):
     last_churn_check: Optional[datetime] = None
     last_churn_intervention: Optional[datetime] = None
     
+    # ===== P4.1: Onboarding =====
+    onboarding_completed: bool = True  # Default True for backward compat with existing users
+    onboarding_step: Optional[str] = None  # Current step if incomplete
+    
+    # ===== P4.2: Streak Recovery =====
+    break_reasons: List[Dict] = Field(default_factory=list)  # [{"date": "2026-02-01", "reason": "sleep", "context": "..."}]
+    
+    # ===== P4.3: Feature Discovery =====
+    hints_sent: List[str] = Field(default_factory=list)  # IDs of hints already sent
+    
     def to_firestore(self) -> dict:
         """
         Convert to Firestore-compatible dictionary.
@@ -198,6 +208,16 @@ class User(BaseModel):
             "churn_risk_score": self.churn_risk_score,
             "last_churn_check": self.last_churn_check,
             "last_churn_intervention": self.last_churn_intervention,
+            
+            # P4.1: Onboarding
+            "onboarding_completed": self.onboarding_completed,
+            "onboarding_step": self.onboarding_step,
+            
+            # P4.2: Streak Recovery
+            "break_reasons": self.break_reasons,
+            
+            # P4.3: Feature Discovery
+            "hints_sent": self.hints_sent,
         }
     
     @classmethod
@@ -322,21 +342,42 @@ class Tier1NonNegotiables(BaseModel):
     # ===== Computed Properties (v2.0) =====
     @property
     def sleep_met(self) -> bool:
-        """Did user meet 7+ hour sleep target? Uses hours if available, falls back to boolean."""
+        """Did user meet sleep target (allowing micro-habit: 6+ hours)? Uses hours if available, falls back to boolean."""
+        if self.sleep_hours is not None:
+            return self.sleep_hours >= 6.0
+        return self.sleep
+    
+    @property
+    def sleep_met_full(self) -> bool:
+        """Did user meet the full 7+ hour sleep target?"""
         if self.sleep_hours is not None:
             return self.sleep_hours >= 7.0
         return self.sleep
     
     @property
     def deep_work_met(self) -> bool:
-        """Did user meet 2+ hour deep work target? Uses hours if available, falls back to boolean."""
+        """Did user meet deep work target (allowing micro-habit: 0.5+ hours)? Uses hours if available, falls back to boolean."""
+        if self.deep_work_hours is not None:
+            return self.deep_work_hours >= 0.5
+        return self.deep_work
+    
+    @property
+    def deep_work_met_full(self) -> bool:
+        """Did user meet the full 2+ hour deep work target?"""
         if self.deep_work_hours is not None:
             return self.deep_work_hours >= 2.0
         return self.deep_work
     
     @property
     def skill_building_met(self) -> bool:
-        """Did user meet 2+ hour skill building target? Uses hours if available, falls back to boolean."""
+        """Did user meet skill building target (allowing micro-habit: 0.5+ hours)? Uses hours if available, falls back to boolean."""
+        if self.skill_building_hours is not None:
+            return self.skill_building_hours >= 0.5
+        return self.skill_building
+    
+    @property
+    def skill_building_met_full(self) -> bool:
+        """Did user meet the full 2+ hour skill building target?"""
         if self.skill_building_hours is not None:
             return self.skill_building_hours >= 2.0
         return self.skill_building
