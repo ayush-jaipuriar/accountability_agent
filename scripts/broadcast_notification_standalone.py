@@ -22,21 +22,13 @@ FIRESTORE_BASE = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/dat
 TELEGRAM_BASE = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 MESSAGE = (
-    "✨ <b>Accountability Agent v2.1 is live — frictionless mobile check-ins and compounded consistency!</b>\n\n"
-    "Here is what's new in this update:\n\n"
-    "📱 <b>Frictionless Mobile Check-ins</b>\n"
-    "We have eliminated tedious text entry. Check-ins now use instant button taps (1–10) to rate your <b>Constitution Alignment</b>, <b>Energy</b>, and <b>Mood</b>. The final reflection note is entirely optional—write a quick sentence or tap <b>'Finish Check-In'</b> to skip and finish instantly!\n\n"
-    "🧠 <b>AI-Powered Reflections</b>\n"
-    "If you do decide to write a quick reflection note, our Gemini engine automatically parses it behind the scenes to extract tomorrow's priorities and obstacles, keeping your logs detailed without the typing friction.\n\n"
-    "😴 <b>Streak Preservation via Micro-Habits</b>\n"
-    "On extremely busy or difficult days, the bot now lets you log a 'micro-habit' target to preserve your streak:\n"
-    "• <b>Sleep:</b> 6+ hours\n"
-    "• <b>Deep Work / Skill Building:</b> 30+ minutes\n"
-    "Hitting these lower bounds keeps your momentum alive and prevents complete habit abandonment.\n\n"
-    "💪 <b>Scheduled Rest Days</b>\n"
-    "Scheduled rest days no longer penalize your compliance score or break streaks. Recovery is an active part of growth!\n\n"
-    "Questions or feedback? Just reply directly to this message.\n"
-    "Let's maintain the momentum together!"
+    "✨ <b>Accountability Agent v2.2 is live!</b>\n\n"
+    "We have adjusted the daily compliance logic to align strictly with your core targets while preserving streaks via micro-habits.\n\n"
+    "<b>What's new:</b>\n"
+    "🎯 <b>Strict Target Enforcement:</b> Your daily compliance score now requires hitting the full constitution targets (7h sleep, 2h deep work, 2h skill building) to count.\n"
+    "🔥 <b>Streak Protection:</b> Checking in and meeting micro-habit targets (6h sleep, 0.5h deep work, 0.5h skill building) keeps your streak active and prevents habit abandonment.\n"
+    "📈 <b>Updated Analytics:</b> Historical statistics have been corrected to accurately reflect these strict targets.\n\n"
+    "Let's keep pushing! 💪"
 )
 
 
