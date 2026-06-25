@@ -77,7 +77,7 @@ from src.models.schemas import Tier1NonNegotiables
 import logging
 import re
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +115,7 @@ class CheckInAgent:
         tomorrow_priority: str,
         tomorrow_obstacle: str,
         yesterday_checkin: dict = None,
+        ai_profile_memory: Optional[Any] = None,
     ) -> str:
         """
         Generate personalized check-in feedback using AI
@@ -129,17 +130,11 @@ class CheckInAgent:
             rating_reason: Why they gave that rating
             tomorrow_priority: What they plan to focus on tomorrow
             tomorrow_obstacle: What might get in the way
+            yesterday_checkin: Yesterday's check-in data dictionary
+            ai_profile_memory: Long-term AI memory profile for the user
             
         Returns:
             Personalized feedback message (150-250 words)
-            
-        Theory - Why This Works:
-        ------------------------
-        1. <b>Contextualization</b>: LLM has all the data to make specific observations
-        2. <b>Pattern Recognition</b>: Can identify trends from recent check-ins
-        3. <b>Personalization</b>: References actual numbers and user's own words
-        4. <b>Consistency</b>: Same prompt structure ensures reliable quality
-        5. <b>Scalability</b>: No need to write rules for every scenario
         """
         try:
             # Get recent check-ins for pattern analysis
@@ -165,6 +160,7 @@ class CheckInAgent:
                 constitution_excerpt=constitution_excerpt,
                 recent_checkins=recent_checkins,
                 yesterday_checkin=yesterday_checkin,
+                ai_profile_memory=ai_profile_memory,
             )
             
             # Generate feedback with Gemini
@@ -511,7 +507,7 @@ Return only the support note text."""
         constitution_excerpt = constitution_service.get_constitution_summary(max_chars=800)
         
         return constitution_excerpt
-    
+
     def _build_feedback_prompt(
         self,
         compliance_score: int,
@@ -526,6 +522,7 @@ Return only the support note text."""
         constitution_excerpt: str,
         recent_checkins: List[Dict],
         yesterday_checkin: dict = None,
+        ai_profile_memory: Optional[Any] = None,
     ) -> str:
         """
         Build the feedback generation prompt for Gemini
@@ -643,8 +640,23 @@ Return only the support note text."""
         else:
             streak_milestone = "🚀 Just getting started"
         
-        prompt = f"""You are a direct, no-nonsense constitution accountability coach. Generate personalized check-in feedback for this user.
+        # Format long-term AI profile memory
+        memory_section = ""
+        if ai_profile_memory and getattr(ai_profile_memory, 'last_updated', None):
+            memory_section = f"""
+LONG-TERM PROFILE MEMORY (AI-generated over weeks/months):
+---------------------------------------------------------
+Summary: {ai_profile_memory.summary}
+Strengths: {", ".join(ai_profile_memory.strengths) if ai_profile_memory.strengths else "None recorded yet"}
+Weaknesses: {", ".join(ai_profile_memory.weaknesses) if ai_profile_memory.weaknesses else "None recorded yet"}
+Recurring Obstacles: {", ".join([o.get('obstacle', '') if isinstance(o, dict) else str(o) for o in ai_profile_memory.recurring_obstacles]) if ai_profile_memory.recurring_obstacles else "None recorded yet"}
+Correlations: {", ".join(ai_profile_memory.correlations) if ai_profile_memory.correlations else "None recorded yet"}
+Coaching Notes: {ai_profile_memory.coaching_notes}
+Say-Do Ratio: {ai_profile_memory.say_do_ratio:.1f}%
+"""
 
+        prompt = f"""You are a direct, no-nonsense constitution accountability coach. Generate personalized check-in feedback for this user.
+ 
 TODAY'S CHECK-IN:
 -----------------
 Compliance Score: {compliance_score}%
@@ -653,24 +665,26 @@ Tier 1 Non-Negotiables:
 {recent_averages}
 Self-Rating: {self_rating}/10
 Reason: "{rating_reason}"
-
+ 
 Tomorrow's Priority: "{tomorrow_priority}"
 Tomorrow's Obstacle: "{tomorrow_obstacle}"
-
+ 
 USER CONTEXT:
 -------------
 Current Streak: {current_streak} days {streak_milestone}
 Longest Streak: {longest_streak} days
 Recent Trend: {trend}
-
+ 
 {recent_summary}
-
+{memory_section}
+ 
 {self._build_weekly_qualitative_section(recent_checkins)}
 CONSTITUTION PRINCIPLES (reference these):
 ------------------------------------------
 {constitution_excerpt}
 
 {self._build_yesterday_section(yesterday_checkin)}
+
 GENERATE FEEDBACK (150-250 words):
 ----------------------------------
 Write feedback that:
@@ -863,47 +877,55 @@ INSTRUCTIONS FOR USING YESTERDAY'S CONTEXT:
     async def parse_reflection_note(
         self,
         note_text: str,
-        alignment_rating: int,
-        tier1_completed: str
-    ) -> Dict[str, str]:
+        tier1_completed: str,
+        compliance_score: float
+    ) -> Dict[str, Any]:
         """
-        Use Gemini to parse a single-sentence reflection note into structured fields.
+        Use Gemini to parse a daily reflection note and grade alignment rating.
         
         Args:
             note_text: Raw user text note or transcription
-            alignment_rating: User's rating (1-10)
             tier1_completed: Summary of completed habits
+            compliance_score: Today's habit compliance score (0-100)
             
         Returns:
-            Dict containing challenges, rating_reason, tomorrow_priority, tomorrow_obstacle
+            Dict containing alignment_rating (int), challenges, rating_reason, tomorrow_priority, tomorrow_obstacle
         """
         if not note_text or not note_text.strip():
+            estimated_rating = int(max(1, min(10, round(compliance_score / 10.0))))
+            if compliance_score == 100.0:
+                estimated_rating = 10
             return {
+                "alignment_rating": estimated_rating,
                 "challenges": "None reported.",
-                "rating_reason": f"Alignment rating: {alignment_rating}/10.",
+                "rating_reason": f"System calculated alignment rating: {estimated_rating}/10.",
                 "tomorrow_priority": "Maintain consistency.",
                 "tomorrow_obstacle": "None reported."
             }
 
-        prompt = f"""You are a data extraction assistant. Parse this user's daily check-in reflection note into a structured JSON response.
+        prompt = f"""You are a daily check-in parser and behavior evaluator. Parse the user's daily check-in reflection note into a structured JSON response.
 
 USER INPUT NOTE:
 "{note_text}"
 
 CONTEXT:
-- User's self-alignment rating today: {alignment_rating}/10
-- Completed Tier 1 items today: {tier1_completed}
+- User completed today's Tier 1 items: {tier1_completed}
+- Today's objective habit compliance score: {compliance_score}%
 
 TASK:
-Extract or infer the following 4 fields. If a field cannot be inferred from the note, use the default values specified below.
-
-1. "challenges": What challenges did they face today? (Default: "None reported.")
-2. "rating_reason": Why did they rate today as {alignment_rating}/10? (Synthesize their note and rating. Default: "Cohesive alignment with targets.")
-3. "tomorrow_priority": What is their #1 priority for tomorrow? (Default: "Maintain consistency.")
-4. "tomorrow_obstacle": What is the biggest potential obstacle for tomorrow? (Default: "None reported.")
+1. Assign an objective "alignment_rating" (integer 1-10) for the day. Evaluate their self-reflection note together with their Tier 1 completions and compliance score.
+   - If they did all Tier 1 items (100% compliance) and their reflection is positive, it should be 10/10.
+   - If they did all items but struggled emotionally or made minor mistakes mentioned in reflection, it could be 8/10 or 9/10.
+   - Scale down accordingly if they missed habits or reported significant alignment issues.
+2. Extract the following 4 fields. If a field cannot be inferred from the note, use the default values specified below:
+   - "challenges": What challenges did they face today? (Default: "None reported.")
+   - "rating_reason": Why did you assign them this specific alignment rating? (Summarize their execution and reflection in one concise sentence. Do not mention "as an AI" or "based on the prompt".)
+   - "tomorrow_priority": What is their #1 priority for tomorrow? (Default: "Maintain consistency.")
+   - "tomorrow_obstacle": What is the biggest potential obstacle for tomorrow? (Default: "None reported.")
 
 Return ONLY a valid JSON object matching this schema, with no markdown formatting, no backticks, and no extra text:
 {{
+  "alignment_rating": 8,
   "challenges": "...",
   "rating_reason": "...",
   "tomorrow_priority": "...",
@@ -920,17 +942,23 @@ Return ONLY a valid JSON object matching this schema, with no markdown formattin
             
             import json
             parsed = json.loads(cleaned_response)
+            rating = int(parsed.get("alignment_rating", 8))
             return {
+                "alignment_rating": max(1, min(10, rating)),
                 "challenges": parsed.get("challenges", "None reported."),
-                "rating_reason": parsed.get("rating_reason", f"Alignment rating: {alignment_rating}/10."),
+                "rating_reason": parsed.get("rating_reason", f"Alignment rating: {rating}/10."),
                 "tomorrow_priority": parsed.get("tomorrow_priority", "Maintain consistency."),
                 "tomorrow_obstacle": parsed.get("tomorrow_obstacle", "None reported.")
             }
         except Exception as e:
             logger.error(f"Failed to parse reflection note with LLM: {e}")
+            estimated_rating = int(max(1, min(10, round(compliance_score / 10.0))))
+            if compliance_score == 100.0:
+                estimated_rating = 10
             return {
+                "alignment_rating": estimated_rating,
                 "challenges": "None reported." if len(note_text) < 5 else note_text,
-                "rating_reason": f"Self-rated {alignment_rating}/10. Note: {note_text}",
+                "rating_reason": f"Self-graded alignment: {estimated_rating}/10. Note: {note_text}",
                 "tomorrow_priority": "Maintain consistency.",
                 "tomorrow_obstacle": "None reported."
             }

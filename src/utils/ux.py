@@ -216,7 +216,12 @@ class ErrorMessages:
             f"🔧 <b>Temporary Issue</b>\n\n"
             f"We're experiencing a brief service disruption.\n"
             f"Please try again in a few minutes.\n\n"
-            f"If this persists, your data is safe - nothing is lost."
+            f"<blockquote expandable>"
+            f"<b>Details & Next Steps:</b>\n"
+            f"• Our servers are currently busy or undergoing brief maintenance.\n"
+            f"• Your check-in streak is protected and your data is safe.\n"
+            f"• If this continues, try checking in later today."
+            f"</blockquote>"
         )
     
     @staticmethod
@@ -252,7 +257,12 @@ class ErrorMessages:
             f"{EMOJI['error']} <b>Something Went Wrong</b>\n\n"
             f"An unexpected error occurred.\n"
             f"Please try again, or use /help if you need assistance.\n\n"
-            f"Your data is safe - nothing was lost."
+            f"<blockquote expandable>"
+            f"<b>Technical Safeguards:</b>\n"
+            f"• Your current progress/streak has been locked and saved.\n"
+            f"• No data was lost during this error.\n"
+            f"• The system administrators have been automatically notified."
+            f"</blockquote>"
         )
 
 
@@ -305,7 +315,12 @@ class TimeoutManager:
             f"{EMOJI['clock']} <b>Check-In Timeout</b>\n\n"
             f"Your check-in will expire in {minutes_remaining} minutes.\n"
             f"Send your answer to continue, or use /cancel to stop.\n\n"
-            f"💡 <i>Tip: You can resume later with /resume</i>"
+            f"<blockquote expandable>"
+            f"<b>What happens on timeout?</b>\n"
+            f"• Your current check-in progress is saved in the cloud.\n"
+            f"• You can use /resume later to pick up exactly where you left off.\n"
+            f"• Resuming keeps your streak intact."
+            f"</blockquote>"
         )
     
     @staticmethod

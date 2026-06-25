@@ -726,19 +726,18 @@ async def handle_tier1_response(
             await finish_checkin_quick(update, context)
             return ConversationHandler.END
         else:
-            # Move to Q2: Alignment Rating
-            align_keyboard = [
-                [InlineKeyboardButton(str(i), callback_data=f"align_{i}") for i in range(1, 6)],
-                [InlineKeyboardButton(str(i), callback_data=f"align_{i}") for i in range(6, 11)],
+            # Move to Q3: Energy Rating directly (manual alignment rating bypassed)
+            energy_keyboard = [
+                [InlineKeyboardButton(str(i), callback_data=f"energy_{i}") for i in range(1, 6)],
+                [InlineKeyboardButton(str(i), callback_data=f"energy_{i}") for i in range(6, 11)],
             ]
             await query.message.reply_text(
-                "📋 <b>Question 2/4: Self-Alignment</b>\n\n"
-                "Rate today 1-10 on alignment with your constitution:\n"
-                "(1 = completely misaligned, 10 = perfect alignment)",
-                reply_markup=InlineKeyboardMarkup(align_keyboard),
+                "📋 <b>Question 2/3: Energy & Mood</b>\n\n"
+                "⚡ <b>Rate your energy today?</b> (1 = exhausted, 10 = unstoppable)",
+                reply_markup=InlineKeyboardMarkup(energy_keyboard),
                 parse_mode='HTML'
             )
-            return Q2_ALIGNMENT_RATING
+            return Q3_ENERGY_MOOD
     
     # Ask next step
     await ask_tier1_step(query.message, context)
@@ -1000,7 +999,7 @@ async def handle_mood_callback(
 ) -> int:
     """
     Handle mood rating selection via inline button.
-    Stores mood and prompts for optional reflection note (Q4).
+    Stores mood and prompts for mandatory reflection note (Q3).
     """
     query = update.callback_query
     await query.answer()
@@ -1011,20 +1010,15 @@ async def handle_mood_callback(
 
     # Update the message to show ratings
     energy = context.user_data.get('energy_rating', '?')
-    align = context.user_data.get('rating', '?')
-    
-    keyboard = [
-        [InlineKeyboardButton("🏁 Finish Check-In", callback_data="ref_skip")]
-    ]
 
     await query.edit_message_text(
-        f"🎯 Alignment: <b>{align}/10</b>\n"
         f"⚡ Energy: <b>{energy}/10</b>\n"
         f"😊 Mood: <b>{mood_rating}/10</b>\n\n"
-        f"📝 <b>Question 4/4: Optional Reflection</b>\n\n"
-        f"Write a short reflection or priority for tomorrow in one sentence (or send a voice note).\n\n"
-        f"_Tap the button below to skip and finish immediately._",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        f"📝 <b>Question 3/3: Daily Reflection (Mandatory)</b>\n\n"
+        f"To maintain true accountability, please type a short reflection (minimum 20 characters) describing:\n"
+        f"1. How today went and any challenges or mistakes you encountered.\n"
+        f"2. Your #1 focus and expected obstacle for tomorrow.\n\n"
+        f"<i>(You can also record and send a voice note reflecting on your day)</i>",
         parse_mode='HTML'
     )
 
@@ -1071,13 +1065,23 @@ async def handle_reflection_response(
     """
     note_text = update.message.text.strip()
     
+    # Enforce minimum length (20 characters)
+    if len(note_text) < 20:
+        await update.message.reply_text(
+            "⚠️ <b>Reflection note too short!</b>\n\n"
+            "Please write at least 20 characters reflecting on today's execution "
+            "and tomorrow's plan so the AI coach can analyze your patterns.",
+            parse_mode='HTML'
+        )
+        return Q4_REFLECTION_NOTE
+
     # Send a progress indicator
     progress_msg = await update.message.reply_text(
         "🧠 <i>Analyzing your reflection and structuring daily focus...</i>",
         parse_mode='HTML'
     )
     
-    rating = context.user_data.get('rating', 8)
+    compliance_score = context.user_data.get('compliance_score', 0.0)
     
     # Format a summary of Tier 1 metrics for LLM context
     tier1 = context.user_data.get('tier1')
@@ -1091,15 +1095,19 @@ async def handle_reflection_response(
         if tier1.boundaries: t1_completed.append("boundaries")
     t1_str = ", ".join(t1_completed) if t1_completed else "none"
     
-    # Call Gemini to parse reflection
+    # Call Gemini to parse reflection and grade alignment rating
     agent = get_checkin_agent(settings.gcp_project_id)
     parsed = await agent.parse_reflection_note(
         note_text=note_text,
-        alignment_rating=rating,
-        tier1_completed=t1_str
+        tier1_completed=t1_str,
+        compliance_score=compliance_score
     )
     
+    # Extract AI-graded alignment rating
+    rating = parsed.get("alignment_rating", 8)
+    
     # Store parsed data in context.user_data
+    context.user_data['rating'] = rating
     context.user_data['challenges'] = parsed.get("challenges", "None reported.")
     context.user_data['rating_reason'] = parsed.get("rating_reason", f"Alignment rating: {rating}/10.")
     context.user_data['tomorrow_priority'] = parsed.get("tomorrow_priority", "Maintain consistency.")
@@ -1238,6 +1246,19 @@ async def finish_checkin(
         
         firestore_service.store_checkin_with_streak_update(user_id, checkin, streak_updates)
         
+        # Phase 4: Long-Term Memory Synthesis
+        updated_memory = getattr(user, 'ai_profile_memory', None)
+        total_checkins = streak_updates.get('total_checkins', 0)
+        if total_checkins > 0 and total_checkins % 5 == 0:
+            from src.services.memory_service import memory_service
+            logger.info(f"Triggering long-term memory synthesis for user {user_id} (check-in count: {total_checkins})")
+            try:
+                synthesized = await memory_service.update_user_memory(user_id)
+                if synthesized:
+                    updated_memory = synthesized
+            except Exception as e:
+                logger.error(f"Failed to synthesize memory in check-in flow: {e}")
+
         # Extract milestone if hit (Phase 3C Day 4)
         milestone_hit = streak_updates.get('milestone_hit')
         if milestone_hit:
@@ -1268,6 +1289,7 @@ async def finish_checkin(
                 tomorrow_priority=context.user_data['tomorrow_priority'],
                 tomorrow_obstacle=context.user_data['tomorrow_obstacle'],
                 yesterday_checkin=context.user_data.get('yesterday_checkin'),
+                ai_profile_memory=updated_memory,
             )
 
             support_guidance = None

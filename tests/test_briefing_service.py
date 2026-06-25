@@ -180,7 +180,9 @@ class TestGenerateBriefing:
 
     @pytest.mark.asyncio
     async def test_already_sent_today_skips(self, briefing_service, sample_user_with_settings, perfect_checkin):
-        sample_user_with_settings.settings["last_briefing_date"] = datetime.utcnow().strftime("%Y-%m-%d")
+        from src.utils.timezone_utils import get_current_time
+        now_local = get_current_time(sample_user_with_settings.timezone)
+        sample_user_with_settings.settings["last_briefing_date"] = now_local.strftime("%Y-%m-%d")
         with patch.object(briefing_service.firestore, 'get_checkin', return_value=perfect_checkin):
             result = await briefing_service.generate_briefing(sample_user_with_settings)
         assert result is None

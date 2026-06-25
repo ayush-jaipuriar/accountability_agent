@@ -121,6 +121,7 @@ class TestReflectionParser:
         mock_llm = MagicMock()
         mock_llm.generate_text = AsyncMock(return_value="""
         {
+          "alignment_rating": 8,
           "challenges": "Felt tired in the afternoon",
           "rating_reason": "Good alignment but sleep was a bit off",
           "tomorrow_priority": "Get to bed by 10 PM",
@@ -133,10 +134,11 @@ class TestReflectionParser:
         
         result = await agent.parse_reflection_note(
             note_text="I felt pretty tired today, but managed to do everything. Tomorrow I need to sleep early.",
-            alignment_rating=8,
+            compliance_score=80.0,
             tier1_completed="sleep, deep work, boundaries"
         )
         
+        assert result["alignment_rating"] == 8
         assert result["challenges"] == "Felt tired in the afternoon"
         assert result["tomorrow_priority"] == "Get to bed by 10 PM"
         assert result["tomorrow_obstacle"] == "Distractions from social media"
@@ -152,10 +154,11 @@ class TestReflectionParser:
         
         result = await agent.parse_reflection_note(
             note_text="My short reflection",
-            alignment_rating=8,
+            compliance_score=80.0,
             tier1_completed="sleep"
         )
         
         # Should gracefully fall back to defaults or raw text
+        assert result["alignment_rating"] == 8
         assert result["tomorrow_priority"] == "Maintain consistency."
         assert "My short reflection" in result["rating_reason"]

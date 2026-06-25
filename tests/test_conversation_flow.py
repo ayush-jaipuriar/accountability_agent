@@ -219,7 +219,7 @@ class TestHandleTier1Response:
         assert context.user_data['tier1_step'] == 1
 
     @pytest.mark.asyncio
-    async def test_all_six_answered_moves_to_q2(self):
+    async def test_all_six_answered_moves_to_q3(self):
         update = _make_callback_update(data="tier1_boundaries_yes")
         context = _make_context(user_data={
             'user_id': '111',
@@ -234,7 +234,7 @@ class TestHandleTier1Response:
                                    'skill_building_hours', 'training_intensity', 'zero_porn'],
         })
         result = await handle_tier1_response(update, context)
-        assert result == Q2_ALIGNMENT_RATING
+        assert result == Q3_ENERGY_MOOD
 
     @pytest.mark.asyncio
     async def test_undo_removes_last_answer(self):

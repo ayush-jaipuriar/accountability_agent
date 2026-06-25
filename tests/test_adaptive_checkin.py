@@ -18,7 +18,7 @@ from src.models.schemas import (
     User, UserStreaks, Tier1NonNegotiables, CheckInResponses, DailyCheckIn
 )
 from src.bot.conversation import (
-    Q1_TIER1, Q2_ALIGNMENT_RATING,
+    Q1_TIER1, Q3_ENERGY_MOOD,
     start_checkin,
     handle_tier1_response,
 )
@@ -209,8 +209,8 @@ class TestStrugglingUserFraming:
 class TestCheckinFlowTransitions:
 
     @pytest.mark.asyncio
-    async def test_completion_goes_to_alignment_rating(self):
-        """When all Tier 1 steps are completed, transition to alignment rating."""
+    async def test_completion_goes_to_energy_rating(self):
+        """When all Tier 1 steps are completed, transition to energy rating."""
         update = _make_callback_update(data="tier1_boundaries_yes")
         context = _make_context(user_data={
             'user_id': '111',
@@ -226,11 +226,11 @@ class TestCheckinFlowTransitions:
         })
 
         result = await handle_tier1_response(update, context)
-        assert result == Q2_ALIGNMENT_RATING
+        assert result == Q3_ENERGY_MOOD
         assert context.user_data.get('compliance_score') is not None
-        # Should have sent alignment rating question with inline keyboard
+        # Should have sent energy & mood rating question with inline keyboard
         text = update.callback_query.message.reply_text.call_args[0][0]
-        assert "Self-Alignment" in text
+        assert "Energy & Mood" in text
 
 
 # ===== Adaptive Context Stored =====

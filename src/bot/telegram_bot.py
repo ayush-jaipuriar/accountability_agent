@@ -86,6 +86,7 @@ class TelegramBotManager:
         "goals", "goal_new", "goal_progress", "goal_complete",
         "challenges", "challenge_new", "challenge_accept", "challenge_decline",
         "insights", "feedback", "delete_my_data",
+        "profile", "memory",
         "admin_status",
     ]
     
@@ -219,6 +220,8 @@ class TelegramBotManager:
             "insights": self.insights_command,
             "feedback": self.feedback_command,
             "delete_my_data": self.delete_my_data_command,
+            "profile": self.profile_command,
+            "memory": self.profile_command,
             "admin_status": self.admin_status_command,
         }
     
@@ -309,6 +312,10 @@ class TelegramBotManager:
         
         # P1.2: Settings toggle command (always enabled — core UX)
         self.application.add_handler(CommandHandler("settings", self.settings_command))
+        
+        # AI Profile Memory commands (always enabled)
+        self.application.add_handler(CommandHandler("profile", self.profile_command))
+        self.application.add_handler(CommandHandler("memory", self.profile_command))
         
         # P2.1: Constitution viewer command
         if settings.enable_constitution_viewer:
@@ -1147,6 +1154,7 @@ class TelegramBotManager:
         mode_info = (
             f"<b>🎯 Constitution Modes</b>\n\n"
             f"<b>Current Mode:</b> {current_emoji} {user.constitution_mode.title()} ✅\n\n"
+            f"<blockquote expandable>"
             f"<b>🚀 Optimization Mode:</b>\n"
             f"• All systems firing - aggressive growth\n"
             f"• 6x/week training, 3+ hours deep work\n"
@@ -1158,7 +1166,8 @@ class TelegramBotManager:
             f"<b>🛡️ Survival Mode:</b>\n"
             f"• Crisis mode - protect bare minimums\n"
             f"• 3x/week training, 1+ hour deep work\n"
-            f"• Target: 60%+ compliance\n\n"
+            f"• Target: 60%+ compliance"
+            f"</blockquote>\n\n"
             f"Tap a button below to switch, or type:\n"
             f"/mode optimization | /mode maintenance | /mode survival"
         )
@@ -3875,6 +3884,83 @@ class TelegramBotManager:
             f"Career Mode: {user.career_mode}\n",
             parse_mode='HTML'
         )
+
+    async def profile_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle /profile (or /memory) command.
+        Displays user's long-term behavior profile memory synthesized by Gemini.
+        """
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+
+        if not user:
+            await update.message.reply_text(
+                "Please run /start first to set up your account.",
+                parse_mode='HTML'
+            )
+            return
+
+        mem = user.ai_profile_memory
+        
+        # Check if memory has been synthesized at least once
+        if not mem or not mem.last_updated:
+            await update.message.reply_text(
+                "🧠 <b>I'm still studying your habits!</b>\n\n"
+                "I synthesize your behavioral profile (strengths, weaknesses, and patterns) "
+                "every 5 check-ins. You need to complete at least 5 check-ins with "
+                "daily reflections to unlock your AI Profile.\n\n"
+                "Use /checkin to log today's progress! 💪",
+                parse_mode='HTML'
+            )
+            return
+
+        # Format strengths and weaknesses
+        strengths_list = "\n".join([f"✅ {s}" for s in mem.strengths]) if mem.strengths else "<i>No strengths recorded yet</i>"
+        weaknesses_list = "\n".join([f"⚠️ {w}" for w in mem.weaknesses]) if mem.weaknesses else "<i>No weaknesses recorded yet</i>"
+        
+        # Format obstacles
+        obstacles_lines = []
+        if mem.recurring_obstacles:
+            for obs in mem.recurring_obstacles:
+                if isinstance(obs, dict):
+                    obstacle = obs.get("obstacle", "Unknown")
+                    frequency = obs.get("frequency", "medium")
+                    obstacles_lines.append(f"• <b>{obstacle}</b> (Frequency: {frequency})")
+                else:
+                    obstacles_lines.append(f"• {obs}")
+        obstacles_list = "\n".join(obstacles_lines) if obstacles_lines else "<i>No recurring obstacles recorded yet</i>"
+
+        # Format correlations
+        correlations_list = "\n".join([f"• {c}" for c in mem.correlations]) if mem.correlations else "<i>No correlations calculated yet</i>"
+
+        # Construct beautiful HTML response
+        last_updated_str = mem.last_updated.strftime("%Y-%m-%d %H:%M UTC") if isinstance(mem.last_updated, datetime) else str(mem.last_updated)
+        
+        response_text = (
+            f"🧠 <b>AI Accountability Profile & Memory</b>\n"
+            f"<i>Last updated: {last_updated_str}</i>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📝 <b>Behavior Summary:</b>\n"
+            f"<blockquote>{mem.summary}</blockquote>\n\n"
+            f"🎯 <b>Say-Do Ratio (Priority Integrity):</b>\n"
+            f"👉 <b>{mem.say_do_ratio:.1f}%</b> of committed priorities executed successfully.\n\n"
+            f"💪 <b>Key Strengths:</b>\n"
+            f"{strengths_list}\n\n"
+            f"⚠️ <b>Weaknesses & Triggers:</b>\n"
+            f"{weaknesses_list}\n\n"
+            f"🛡️ <b>Recurring Obstacles:</b>\n"
+            f"{obstacles_list}\n\n"
+            f"📊 <b>Habit Correlations:</b>\n"
+            f"{correlations_list}\n\n"
+            f"💡 <b>Coaching Guidance:</b>\n"
+            f"<blockquote>{mem.coaching_notes}</blockquote>"
+        )
+
+        await update.message.reply_text(response_text, parse_mode='HTML')
 
     # ===== Fuzzy Command Matching Handler =====
     

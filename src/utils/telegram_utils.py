@@ -16,7 +16,7 @@ from telegram import Update
 
 
 # Allowed Telegram HTML tags
-ALLOWED_HTML_TAGS = {"b", "i", "u", "s", "code", "pre", "a", "tg-spoiler"}
+ALLOWED_HTML_TAGS = {"b", "i", "u", "s", "code", "pre", "a", "tg-spoiler", "blockquote"}
 
 
 def _escape_unsafe_html(text: str) -> str:
@@ -33,6 +33,7 @@ def _escape_unsafe_html(text: str) -> str:
     Examples:
         "Sleep <6 hours" → "Sleep &lt;6 hours"
         "<b>Bold</b>"   → "<b>Bold</b>" (allowed tag, restored)
+        "<blockquote expandable>quote</blockquote>" → "<blockquote expandable>quote</blockquote>"
     """
     if not text:
         return text
@@ -40,16 +41,21 @@ def _escape_unsafe_html(text: str) -> str:
     # Step 1: Escape everything
     text = html.escape(text)
 
-    # Step 2: Restore allowed tags
-    for tag in ALLOWED_HTML_TAGS:
-        # Restore opening tags: &lt;b&gt; → <b>
-        text = text.replace(f"&lt;{tag}&gt;", f"<{tag}>")
-        text = text.replace(f"&lt;{tag} &quot;", f'<{tag} "')  # Handle attrs with quotes
-        # Note: this is simplified; full attr support would need regex
-        # Restore closing tags
-        text = text.replace(f"&lt;/{tag}&gt;", f"</{tag}>")
+    # Step 2: Restore allowed tags, including attributes
+    # Pattern matches opening tags (with optional attributes) and closing tags
+    # e.g., &lt;blockquote expandable&gt;, &lt;a href=&quot;...&quot;&gt;, &lt;/a&gt;
+    allowed_tags_joined = "|".join(re.escape(tag) for tag in ALLOWED_HTML_TAGS)
+    pattern = rf"&lt;(/?)(?:{allowed_tags_joined})(?:\s+(?:[^&]|&(?!gt;))*)?&gt;"
 
-    return text
+    def restore_tag(match: re.Match) -> str:
+        tag_str = match.group(0)
+        # Convert &lt; to < and &gt; to >
+        tag_str = tag_str.replace("&lt;", "<").replace("&gt;", ">")
+        # Restore quotes and ampersands in attributes
+        tag_str = tag_str.replace("&quot;", '"').replace("&#x27;", "'").replace("&#39;", "'").replace("&amp;", "&")
+        return tag_str
+
+    return re.sub(pattern, restore_tag, text, flags=re.IGNORECASE)
 
 
 def safe_reply_html(message, text: str, **kwargs) -> None:

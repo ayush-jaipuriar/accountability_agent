@@ -76,6 +76,21 @@ class UserStreaks(BaseModel):
     last_reset_date: Optional[str] = None              # Date of last streak reset (YYYY-MM-DD)
 
 
+class AIProfileMemory(BaseModel):
+    """
+    Long-term AI-derived memory of user's behavior patterns, strengths, weaknesses,
+    and habit correlations (synthesized periodically).
+    """
+    summary: str = "New user starting their journey."
+    strengths: List[str] = Field(default_factory=list)
+    weaknesses: List[str] = Field(default_factory=list)
+    recurring_obstacles: List[Dict] = Field(default_factory=list)  # [{"obstacle": "social media", "frequency": "high", "last_seen": "YYYY-MM-DD"}]
+    correlations: List[str] = Field(default_factory=list)
+    coaching_notes: str = ""
+    say_do_ratio: float = Field(default=0.0, ge=0.0, le=100.0)
+    last_updated: Optional[datetime] = None
+
+
 class User(BaseModel):
     """
     User profile stored in Firestore users/ collection.
@@ -152,6 +167,9 @@ class User(BaseModel):
     # ===== P4.3: Feature Discovery =====
     hints_sent: List[str] = Field(default_factory=list)  # IDs of hints already sent
     
+    # ===== AI Memory Upgrade =====
+    ai_profile_memory: AIProfileMemory = Field(default_factory=AIProfileMemory)
+    
     def to_firestore(self) -> dict:
         """
         Convert to Firestore-compatible dictionary.
@@ -218,6 +236,9 @@ class User(BaseModel):
             
             # P4.3: Feature Discovery
             "hints_sent": self.hints_sent,
+            
+            # AI Memory Upgrade
+            "ai_profile_memory": self.ai_profile_memory.model_dump() if hasattr(self.ai_profile_memory, 'model_dump') else self.ai_profile_memory,
         }
     
     @classmethod
@@ -253,6 +274,10 @@ class User(BaseModel):
                     data[churn_field] = datetime.fromisoformat(data[churn_field])
                 except (ValueError, TypeError):
                     data[churn_field] = None
+        
+        # AI Memory Upgrade
+        if "ai_profile_memory" in data and isinstance(data["ai_profile_memory"], dict):
+            data["ai_profile_memory"] = AIProfileMemory(**data["ai_profile_memory"])
         
         return cls(**data)
 

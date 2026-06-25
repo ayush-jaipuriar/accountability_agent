@@ -452,7 +452,13 @@ Generate a response using this EXACT structure:
 
 3. TRIGGER (1 question): Ask what specifically triggered this feeling right now. Use protocol's trigger question.
 
-4. ACTION (3 specific steps): List 3 immediate concrete actions from the protocol. Number them clearly.
+4. ACTION (3 specific steps): List 3 immediate concrete actions from the protocol. Wrap them inside an expandable blockquote for a clean mobile layout:
+<blockquote expandable>
+<b>Immediate Actions:</b>
+1. [Action 1]
+2. [Action 2]
+3. [Action 3]
+</blockquote>
 
 Requirements:
 - Tone: Firm but compassionate. Like a coach, not a therapist.
@@ -460,7 +466,7 @@ Requirements:
 - Structure: Must follow 4-step protocol exactly
 - Personalization: Reference their streak/mode if relevant
 - Direct: No fluff, no platitudes
-- Action-oriented: End with clear next steps
+- Formatting: Do not escape or modify the <blockquote expandable> and </blockquote> tags; output them exactly as written.
 
 Generate the response now:
 """
