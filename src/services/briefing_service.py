@@ -94,28 +94,180 @@ class BriefingService:
         else:
             sections.append("📭 <b>Yesterday:</b> No check-in recorded\n")
 
-        # Priority follow-up
-        if yesterday_checkin and yesterday_checkin.responses.tomorrow_priority:
+        # Priority and obstacle follow-up (closing the loop)
+        if yesterday_checkin:
             priority = yesterday_checkin.responses.tomorrow_priority
-            # Truncate if too long
-            if len(priority) > 120:
-                priority = priority[:117] + "..."
-            sections.append(f"🎯 <b>Your stated priority:</b> \"{priority}\"\n")
+            obstacle = yesterday_checkin.responses.tomorrow_obstacle
+            
+            if priority:
+                if len(priority) > 120:
+                    priority = priority[:117] + "..."
+                sections.append(f"🎯 <b>Your stated priority:</b> \"{priority}\"")
+                
+            if obstacle:
+                if len(obstacle) > 120:
+                    obstacle = obstacle[:117] + "..."
+                sections.append(f"⚠️ <b>Anticipated obstacle:</b> \"{obstacle}\"\n")
 
         # Day-of-week insight
         dow_insight = self._generate_dow_insight(history, user.timezone)
         if dow_insight:
             sections.append(dow_insight + "\n")
 
-        # Suggestion
-        suggestion = self._generate_suggestion(user, yesterday_checkin, history)
-        if suggestion:
-            sections.append(f"💡 <b>Today's focus:</b> {suggestion}\n")
+        # Active Goals Integration
+        try:
+            from src.services.goal_service import goal_service
+            active_goals = goal_service.get_user_goals(user.user_id, status="active")
+            if active_goals:
+                goal_lines = ["🏁 <b>Active Goals:</b>"]
+                for goal in active_goals[:2]:  # limit to 2 for brevity
+                    consecutive = goal_service._count_consecutive_met(goal.progress)
+                    pct = min(100, int((consecutive / goal.target_days) * 100))
+                    goal_lines.append(f"• 🎯 {goal.title} ({consecutive}/{goal.target_days}d, {pct}%)")
+                sections.append("\n".join(goal_lines) + "\n")
+        except Exception as e:
+            logger.warning(f"Error fetching active goals for briefing: {e}")
+
+        # Partner Challenges Integration
+        try:
+            from src.services.challenge_service import challenge_service
+            active_challenges = challenge_service.get_user_challenges(user.user_id, status="active")
+            if active_challenges:
+                challenge_lines = ["👥 <b>Active Challenges:</b>"]
+                for ch in active_challenges[:1]:  # limit to 1
+                    challenge_lines.append(f"• 🔥 {ch.title} vs partner")
+                sections.append("\n".join(challenge_lines) + "\n")
+        except Exception as e:
+            logger.warning(f"Error fetching active challenges for briefing: {e}")
+
+        # Coach's Guidance / Daily Suggestion
+        gemini_sug = await self._generate_gemini_suggestion(user, yesterday_checkin, history)
+        if gemini_sug:
+            sections.append(f"💡 <b>Coach's Guidance:</b>\n{gemini_sug}\n")
+        else:
+            suggestion = self._generate_suggestion(user, yesterday_checkin, history)
+            if suggestion:
+                sections.append(f"💡 <b>Today's focus:</b> {suggestion}\n")
 
         # Footer
         sections.append("<i>/checkin when ready →</i>")
 
         return "\n".join(sections)
+
+    async def _generate_gemini_suggestion(
+        self,
+        user: User,
+        yesterday_checkin: Optional[DailyCheckIn],
+        history: List[DailyCheckIn]
+    ) -> Optional[str]:
+        """Generate a personalized suggestion using Gemini API."""
+        try:
+            from src.config import settings
+            from src.services.llm_service import get_llm_service
+            
+            # 1. Instantiate the LLM service
+            project_id = getattr(settings, 'gcp_project_id', 'accountability-agent')
+            llm = get_llm_service(project_id=project_id)
+            
+            # 2. Gather user context
+            streak = user.streaks.current_streak if user.streaks else 0
+            
+            # Yesterday's details
+            yesterday_summary = "No check-in recorded yesterday."
+            priority = "Not specified"
+            obstacle = "Not specified"
+            mood_text = ""
+            
+            if yesterday_checkin:
+                compliance = yesterday_checkin.compliance_score
+                yesterday_summary = f"- Compliance Score: {compliance:.0f}%\n"
+                
+                wins = []
+                misses = []
+                tier1 = yesterday_checkin.tier1_non_negotiables
+                
+                if tier1.sleep: wins.append("sleep")
+                else: misses.append("sleep")
+                if tier1.deep_work: wins.append("deep work")
+                else: misses.append("deep work")
+                if tier1.training: wins.append("training")
+                else: misses.append("training")
+                if tier1.skill_building: wins.append("skill building")
+                else: misses.append("skill building")
+                
+                if wins:
+                    yesterday_summary += f"- Accomplished: {', '.join(wins)}\n"
+                if misses:
+                    yesterday_summary += f"- Missed: {', '.join(misses)}\n"
+                    
+                priority = yesterday_checkin.responses.tomorrow_priority or "Not specified"
+                obstacle = yesterday_checkin.responses.tomorrow_obstacle or "Not specified"
+                
+                mood_rating = getattr(yesterday_checkin.responses, 'mood_rating', None)
+                energy_rating = getattr(yesterday_checkin.responses, 'energy_rating', None)
+                if mood_rating is not None or energy_rating is not None:
+                    mood_parts = []
+                    if mood_rating is not None:
+                        mood_parts.append(f"Mood: {mood_rating}/10")
+                    if energy_rating is not None:
+                        mood_parts.append(f"Energy: {energy_rating}/10")
+                    mood_text = f"Yesterday's Mood/Energy:\n- {', '.join(mood_parts)}\n"
+            
+            # 30-day history trend
+            compliance_avg = 0
+            dow_trend_text = "No long-term day of week trend available."
+            if history:
+                scores = [c.compliance_score for c in history if c.compliance_score is not None]
+                if scores:
+                    compliance_avg = mean(scores)
+                
+                # Check for DOW insight
+                dow_insight = self._generate_dow_insight(history, user.timezone)
+                if dow_insight:
+                    import re
+                    clean_insight = re.sub(r'<[^>]+>', '', dow_insight)
+                    dow_trend_text = clean_insight
+            
+            # Build final prompt
+            prompt = f"""You are a supportive, high-performance accountability coach. Write a highly personalized, concise morning briefing note for the user based on their check-in data.
+
+User: {user.name}
+Current Streak: {streak} days
+
+Yesterday's Check-in Summary:
+{yesterday_summary}
+{mood_text}
+Yesterday's Stated Focus for Today:
+- Today's Priority: "{priority}"
+- Anticipated Obstacle: "{obstacle}"
+
+Historical Trend (Past 30 Days):
+- Compliance Average: {compliance_avg:.0f}%
+- Day of Week Trend: {dow_trend_text}
+
+Instructions:
+1. Write a 2-3 sentence daily coaching note.
+2. Address the user's priority for today and their anticipated obstacle.
+3. Suggest a concrete, highly actionable strategy to overcome that obstacle.
+4. Keep the tone empathetic, encouraging, and brief (under 60 words).
+5. Output ONLY the note. Do not include any greeting, markdown headings, or conversational filler.
+"""
+            
+            response = await llm.generate_text(
+                prompt=prompt,
+                max_output_tokens=150,
+                temperature=0.7
+            )
+            
+            note = response.strip()
+            if note.startswith('"') and note.endswith('"'):
+                note = note[1:-1].strip()
+            
+            return note
+            
+        except Exception as e:
+            logger.warning(f"Failed to generate Gemini morning briefing suggestion: {e}", exc_info=True)
+            return None
 
     def _format_yesterday_summary(self, checkin: DailyCheckIn) -> str:
         """Format yesterday's check-in as a brief summary."""

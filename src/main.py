@@ -1293,7 +1293,8 @@ async def morning_briefing(request: Request):
 
             # Update last_briefing_date to prevent duplicate sends
             settings_dict = getattr(user, 'settings', {}) or {}
-            settings_dict["last_briefing_date"] = datetime.utcnow().strftime("%Y-%m-%d")
+            from src.utils.timezone_utils import get_current_date
+            settings_dict["last_briefing_date"] = get_current_date(user.timezone)
             firestore_service.update_user(user_id=user.user_id, updates={"settings": settings_dict})
 
             results["sent"] += 1

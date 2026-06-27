@@ -195,6 +195,22 @@ class TestGenerateBriefing:
         assert result is not None
         assert "sleep" in result.lower() or "training" in result.lower()
 
+    @pytest.mark.asyncio
+    async def test_gemini_briefing_pathway(self, briefing_service, sample_user_with_settings, perfect_checkin):
+        from unittest.mock import AsyncMock
+        mock_llm = MagicMock()
+        mock_llm.generate_text = AsyncMock(return_value="Mocked coaching advice from Gemini.")
+        
+        with patch.object(briefing_service.firestore, 'get_checkin', return_value=perfect_checkin), \
+             patch.object(briefing_service.firestore, 'get_recent_checkins', return_value=[]), \
+             patch('src.services.llm_service.get_llm_service', return_value=mock_llm):
+            result = await briefing_service.generate_briefing(sample_user_with_settings)
+            
+        assert result is not None
+        assert "Coach's Guidance:" in result
+        assert "Mocked coaching advice from Gemini." in result
+
+
 
 # ===== _format_yesterday_summary Tests =====
 
