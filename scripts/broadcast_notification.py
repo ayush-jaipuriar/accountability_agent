@@ -52,17 +52,10 @@ async def send_broadcast():
     
     # Notification message
     message = (
-        "🚀 <b>Accountability Agent v3.0: Daily Focus Engine is Live!</b>\n\n"
-        "We've combined your morning briefs, to-do lists, and check-ins into one loop:\n\n"
-        "🎯 <b>Commit in the Morning</b>\n"
-        "Your Morning Brief now has interactive buttons. State your primary priority, tap \"+ Add Task\" for secondary items, and tap \"Commit & Start\" to lock in your day.\n\n"
-        "✅ <b>Inline Checkboxes</b>\n"
-        "Check off your tasks throughout the day by clicking the checkboxes directly inside your morning brief message.\n\n"
-        "⏰ <b>Mid-day Support Nudge</b>\n"
-        "If your primary task is incomplete by 3:00 PM, you will get a supportive nudge. Tap the \"Need Support\" button to talk with your AI Coach and work through obstacles.\n\n"
-        "📊 <b>80/20 Compliance Scoring</b>\n"
-        "Your daily tasks are now integrated into your daily score! Compliance is now weighted: 80% Tier 1 habits + 20% committed daily tasks.\n\n"
-        "👉 <i>Type <b>/briefing</b> to start today's focus list! 💪</i>"
+        "🛠️ <b>Update: Morning Briefing is Fixed!</b>\n\n"
+        "We resolved a minor issue with today's scheduled morning briefings. Everything is back online and running smoothly.\n\n"
+        "If you didn't receive your morning brief today, you can request it on-demand right now:\n\n"
+        "👉 <i>Type <b>/briefing</b> to load your interactive daily focus list and lock in today's commitments! 💪</i>"
     )
     
     # Send messages with rate limiting
