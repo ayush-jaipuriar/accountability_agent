@@ -115,7 +115,7 @@ class TestRootEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["service"] == "Constitution Accountability Agent"
-        assert data["version"] == "1.0.0"
+        assert data["version"] == "3.0.0"
         assert data["status"] == "running"
 
     async def test_root_includes_endpoints(self, app_client):
@@ -391,3 +391,46 @@ class TestWeeklyReport:
             response = await app_client.post("/trigger/weekly-report")
         
         assert response.status_code == 500
+
+
+# ===== Morning Briefing Tests =====
+
+class TestMorningBriefingCron:
+    """Tests for POST /cron/morning_briefing."""
+
+    @patch('src.utils.timezone_utils.get_timezones_at_local_time')
+    @patch('src.services.briefing_service.briefing_service.generate_briefing')
+    @patch('src.services.task_service.task_service.get_daily_tasks')
+    async def test_morning_briefing_success(
+        self, mock_get_tasks, mock_gen_briefing, mock_get_tzs,
+        app_client, mock_services, test_user_obj
+    ):
+        """Should successfully generate and send morning briefings."""
+        mock_get_tzs.return_value = ["Asia/Kolkata"]
+        mock_fs = mock_services['firestore']
+        mock_fs.get_users_by_timezones.return_value = [test_user_obj]
+        mock_gen_briefing.return_value = "Mocked Morning Brief"
+        
+        from src.models.schemas import DailyTaskList
+        mock_get_tasks.return_value = DailyTaskList(
+            user_id="111222333",
+            date="2026-06-28",
+            tasks=[],
+            committed=False
+        )
+        
+        response = await app_client.post("/cron/morning_briefing")
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["results"]["sent"] == 1
+        assert data["results"]["errors"] == 0
+        
+        # Verify bot sent the message
+        mock_bot = mock_services['bot']
+        mock_bot.bot.send_message.assert_called_once()
+        args, kwargs = mock_bot.bot.send_message.call_args
+        assert kwargs["chat_id"] == test_user_obj.telegram_id
+        assert kwargs["text"] == "Mocked Morning Brief"
+

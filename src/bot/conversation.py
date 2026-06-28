@@ -543,8 +543,42 @@ async def handle_tier1_response(
             return Q4_TOMORROW
         else:
             # User chose to answer anyway — proceed to Q2
+            user_id = context.user_data['user_id']
+            date = context.user_data.get('date') or get_checkin_date(tz="UTC")
             yesterday = context.user_data.get('yesterday_checkin')
-            if yesterday and yesterday.get('tomorrow_priority'):
+            
+            from src.services.task_service import task_service
+            task_list = task_service.get_daily_tasks(user_id, date)
+            
+            missed_tasks = []
+            completed_tasks = []
+            if task_list and task_list.committed:
+                missed_tasks = [t for t in task_list.tasks if not t.completed]
+                completed_tasks = [t for t in task_list.tasks if t.completed]
+            
+            if missed_tasks:
+                missed_str = "\n".join([f"• \"{t.title}\"" for t in missed_tasks])
+                obstacle = yesterday.get('tomorrow_obstacle') if yesterday else ""
+                obstacle_str = f"You anticipated that <b>\"{obstacle}\"</b> might get in the way.\n" if obstacle else ""
+                
+                q2_text = (
+                    f"📋 <b>Question 2/4</b>\n\n"
+                    f"<b>Challenges & Reflection:</b>\n"
+                    f"I noticed you didn't complete all of today's committed tasks:\n"
+                    f"{missed_str}\n\n"
+                    f"{obstacle_str}"
+                    f"What got in the way? Did your anticipated obstacle happen, or was it something else?\n\n"
+                    f"📝 Type your response (10-500 characters)."
+                )
+            elif completed_tasks:
+                q2_text = (
+                    f"📋 <b>Question 2/4</b>\n\n"
+                    f"<b>Challenges & Reflection:</b>\n"
+                    f"Amazing! You completed all committed tasks today, including your primary focus!\n\n"
+                    f"What challenges (if any) did you face today, and what went well to help you succeed?\n\n"
+                    f"📝 Type your response (10-500 characters)."
+                )
+            elif yesterday and yesterday.get('tomorrow_priority'):
                 priority = yesterday['tomorrow_priority']
                 q2_text = (
                     f"📋 <b>Question 2/4</b>\n\n"
@@ -701,7 +735,13 @@ async def handle_tier1_response(
         context.user_data['tier1'] = tier1
         
         # Calculate compliance score early for adaptive branching (P1.3)
-        compliance_score = calculate_compliance_score(tier1)
+        user_id = context.user_data['user_id']
+        date = context.user_data.get('date') or get_checkin_date(tz="UTC")
+        from src.services.task_service import task_service
+        task_list = task_service.get_daily_tasks(user_id, date)
+        committed_tasks = task_list.tasks if (task_list and task_list.committed) else None
+        
+        compliance_score = calculate_compliance_score(tier1, committed_tasks)
         context.user_data['compliance_score'] = compliance_score
         
         # Phase 3E: Check if this is a quick check-in
@@ -1169,7 +1209,7 @@ async def finish_checkin(
     5. Send feedback message
     """
     user_id = context.user_data['user_id']
-    date = context.user_data['date']
+    date = context.user_data.get('date') or get_checkin_date(tz="UTC")
     
     try:
         # Calculate check-in duration
@@ -1212,8 +1252,13 @@ async def finish_checkin(
             mood_rating=context.user_data.get('mood_rating'),
         )
         
+        # Load committed tasks for today
+        from src.services.task_service import task_service
+        task_list = task_service.get_daily_tasks(user_id, date)
+        committed_tasks = task_list.tasks if (task_list and task_list.committed) else None
+
         # Calculate compliance score
-        compliance_score = calculate_compliance_score(tier1)
+        compliance_score = calculate_compliance_score(tier1, committed_tasks)
         
         # Create DailyCheckIn object
         checkin = DailyCheckIn(
@@ -1224,7 +1269,8 @@ async def finish_checkin(
             responses=responses,
             compliance_score=compliance_score,
             completed_at=datetime.utcnow(),
-            duration_seconds=duration
+            duration_seconds=duration,
+            committed_tasks=committed_tasks
         )
         
         # Store check-in + update streak ATOMICALLY in a single transaction.
@@ -1669,7 +1715,7 @@ async def finish_checkin_quick(
     - 1-2 sentences acknowledge wins + suggest focus area
     """
     user_id = context.user_data['user_id']
-    date = context.user_data['date']
+    date = context.user_data.get('date') or get_checkin_date(tz="UTC")
     
     try:
         # Calculate check-in duration
@@ -1712,8 +1758,13 @@ async def finish_checkin_quick(
             mood_rating=context.user_data.get('mood_rating'),
         )
         
+        # Load committed tasks for today
+        from src.services.task_service import task_service
+        task_list = task_service.get_daily_tasks(user_id, date)
+        committed_tasks = task_list.tasks if (task_list and task_list.committed) else None
+
         # Calculate compliance score
-        compliance_score = calculate_compliance_score(tier1)
+        compliance_score = calculate_compliance_score(tier1, committed_tasks)
         
         # Create DailyCheckIn object with is_quick_checkin=True
         checkin = DailyCheckIn(
@@ -1725,7 +1776,8 @@ async def finish_checkin_quick(
             compliance_score=compliance_score,
             completed_at=datetime.utcnow(),
             duration_seconds=duration,
-            is_quick_checkin=True  # Phase 3E: Mark as quick check-in
+            is_quick_checkin=True,  # Phase 3E: Mark as quick check-in
+            committed_tasks=committed_tasks
         )
         
         # Store check-in + update streak ATOMICALLY (same transaction fix as full check-in)

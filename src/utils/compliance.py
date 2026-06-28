@@ -16,14 +16,66 @@ Compliance Score Formula:
 Where total_items = 6 (Tier 1 non-negotiables - Phase 3D expansion)
 """
 
-from typing import Optional
+from typing import Optional, List
 
-from src.models.schemas import Tier1NonNegotiables
+from src.models.schemas import Tier1NonNegotiables, DailyTaskItem
 
 
-def calculate_compliance_score(tier1: Tier1NonNegotiables) -> float:
+def calculate_task_score(tasks: List[DailyTaskItem]) -> float:
+    """
+    Calculate the task score (0.0 to 100.0) based on task completion.
+    
+    Scoring logic:
+    - Primary task represents:
+      - 100% of task score if it's the only task committed.
+      - 60% of task score if there is 1 secondary task.
+      - 50% of task score if there are 2 secondary tasks.
+    - Secondary tasks represent the remainder (40% or 50% total, split equally).
+    """
+    if not tasks:
+        return 100.0
+
+    primary_tasks = [t for t in tasks if t.is_primary]
+    secondary_tasks = [t for t in tasks if not t.is_primary]
+
+    if not primary_tasks and not secondary_tasks:
+        return 100.0
+
+    if primary_tasks and not secondary_tasks:
+        # Only primary task committed
+        return 100.0 if primary_tasks[0].completed else 0.0
+
+    if not primary_tasks and secondary_tasks:
+        # Only secondary tasks
+        completed_sec = sum(1 for t in secondary_tasks if t.completed)
+        return (completed_sec / len(secondary_tasks)) * 100.0
+
+    # Both primary and secondary tasks are present
+    primary_completed = primary_tasks[0].completed
+    completed_sec = sum(1 for t in secondary_tasks if t.completed)
+    total_sec = len(secondary_tasks)
+
+    if total_sec == 1:
+        # Primary: 60%, Secondary: 40%
+        primary_weight = 60.0
+        sec_weight = 40.0
+    else:
+        # Primary: 50%, Secondary: 50% (25% each if 2 tasks)
+        primary_weight = 50.0
+        sec_weight = 50.0
+
+    sec_score = (completed_sec / total_sec) * sec_weight
+    pri_score = primary_weight if primary_completed else 0.0
+    return pri_score + sec_score
+
+
+def calculate_compliance_score(
+    tier1: Tier1NonNegotiables,
+    committed_tasks: Optional[List[DailyTaskItem]] = None
+) -> float:
     """
     Calculate compliance score as percentage of Tier 1 items completed.
+    Optionally incorporates committed_tasks (20% weight) if present.
     
     <b>Phase 3D Expansion: 5 items → 6 items</b>
     
@@ -31,7 +83,7 @@ def calculate_compliance_score(tier1: Tier1NonNegotiables) -> float:
     1. Sleep: 7+ hours
     2. Training: Workout OR rest day
     3. Deep Work: 2+ hours
-    4. Skill Building: 2+ hours career-focused learning (NEW in Phase 3D)
+    4. Skill Building: 2+ hours career-focused learning
     5. Zero Porn: No consumption (absolute)
     6. Boundaries: No toxic interactions
     
@@ -42,24 +94,10 @@ def calculate_compliance_score(tier1: Tier1NonNegotiables) -> float:
     
     Args:
         tier1: Tier 1 non-negotiables responses
+        committed_tasks: Optional list of committed daily tasks
         
     Returns:
         float: Score from 0.0 to 100.0
-        
-    Examples:
-        >>> tier1 = Tier1NonNegotiables(
-        ...     sleep=True, training=True, deep_work=False,
-        ...     skill_building=True, zero_porn=True, boundaries=True
-        ... )
-        >>> calculate_compliance_score(tier1)
-        83.33  # 5/6 items completed
-        
-        >>> tier1_perfect = Tier1NonNegotiables(
-        ...     sleep=True, training=True, deep_work=True,
-        ...     skill_building=True, zero_porn=True, boundaries=True
-        ... )
-        >>> calculate_compliance_score(tier1_perfect)
-        100.0  # 6/6 items completed
     """
     # Count completed items (Phase 3D: Now 6 items)
     items = [
@@ -73,8 +111,13 @@ def calculate_compliance_score(tier1: Tier1NonNegotiables) -> float:
     
     completed = sum(1 for item in items if item)
     total = len(items)
+    tier1_score = (completed / total) * 100.0
     
-    return (completed / total) * 100.0
+    if committed_tasks:
+        task_score = calculate_task_score(committed_tasks)
+        return (tier1_score * 0.8) + (task_score * 0.2)
+        
+    return tier1_score
 
 
 def get_compliance_level(score: float) -> str:
@@ -181,7 +224,8 @@ def format_compliance_message(score: float, streak: int) -> str:
 
 def calculate_compliance_score_normalized(
     tier1: Tier1NonNegotiables,
-    checkin_date: Optional[str] = None
+    checkin_date: Optional[str] = None,
+    committed_tasks: Optional[List[DailyTaskItem]] = None
 ) -> float:
     """
     Calculate compliance score with Phase 3D backward compatibility.
@@ -207,6 +251,7 @@ def calculate_compliance_score_normalized(
     Args:
         tier1: Tier 1 non-negotiables
         checkin_date: Check-in date in YYYY-MM-DD format. If None, uses 6-item formula.
+        committed_tasks: Optional list of committed daily tasks
         
     Returns:
         float: Normalized compliance score (0.0 to 100.0)
@@ -241,7 +286,13 @@ def calculate_compliance_score_normalized(
         total = 6
     
     completed = sum(1 for item in items if item)
-    return (completed / total) * 100.0
+    tier1_score = (completed / total) * 100.0
+    
+    if committed_tasks:
+        task_score = calculate_task_score(committed_tasks)
+        return (tier1_score * 0.8) + (task_score * 0.2)
+        
+    return tier1_score
 
 
 def is_all_tier1_complete(tier1: Tier1NonNegotiables, checkin_date: Optional[str] = None) -> bool:

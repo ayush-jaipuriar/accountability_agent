@@ -455,6 +455,51 @@ class CheckInResponses(BaseModel):
     mood_rating: Optional[int] = Field(None, ge=1, le=10, description="Mood level 1-10")
 
 
+class DailyTaskItem(BaseModel):
+    """
+    Individual task item for a user's daily focus list.
+    """
+    id: str
+    title: str
+    is_primary: bool
+    completed: bool
+    completed_at: Optional[datetime] = None
+
+
+class DailyTaskList(BaseModel):
+    """
+    User's daily focus list (tasks) for a specific date.
+    
+    Stored in Firestore: daily_tasks/{user_id}/tasks/{date}
+    """
+    user_id: str
+    date: str                                     # YYYY-MM-DD format
+    tasks: List[DailyTaskItem] = Field(default_factory=list)
+    committed: bool = False
+    committed_at: Optional[datetime] = None
+
+    def to_firestore(self) -> dict:
+        """Convert to Firestore-compatible dictionary."""
+        return {
+            "user_id": self.user_id,
+            "date": self.date,
+            "tasks": [t.model_dump() for t in self.tasks],
+            "committed": self.committed,
+            "committed_at": self.committed_at,
+        }
+
+    @classmethod
+    def from_firestore(cls, data: dict) -> "DailyTaskList":
+        """Create DailyTaskList object from Firestore document."""
+        data = dict(data)  # Avoid mutating caller's dict
+        if "tasks" in data and isinstance(data["tasks"], list):
+            data["tasks"] = [
+                DailyTaskItem(**t) if isinstance(t, dict) else t
+                for t in data["tasks"]
+            ]
+        return cls(**data)
+
+
 class DailyCheckIn(BaseModel):
     """
     Complete daily check-in record.
@@ -490,6 +535,9 @@ class DailyCheckIn(BaseModel):
     # Correction tracking: set when /correct command updates this check-in
     corrected_at: Optional[datetime] = None  # Timestamp of correction (None = not corrected)
     
+    # Added for daily tasks integration
+    committed_tasks: Optional[List[DailyTaskItem]] = None
+    
     def to_firestore(self) -> dict:
         """Convert to Firestore-compatible dictionary."""
         data = {
@@ -505,17 +553,28 @@ class DailyCheckIn(BaseModel):
         }
         if self.corrected_at:
             data["corrected_at"] = self.corrected_at
+        if self.committed_tasks is not None:
+            data["committed_tasks"] = [t.model_dump() for t in self.committed_tasks]
+        else:
+            data["committed_tasks"] = None
         return data
     
     @classmethod
     def from_firestore(cls, data: dict) -> "DailyCheckIn":
         """Create DailyCheckIn object from Firestore document."""
+        data = dict(data)  # Avoid mutating caller's dict
         # Convert nested dicts back to models
         if "tier1_non_negotiables" in data and isinstance(data["tier1_non_negotiables"], dict):
             data["tier1_non_negotiables"] = Tier1NonNegotiables(**data["tier1_non_negotiables"])
         
         if "responses" in data and isinstance(data["responses"], dict):
             data["responses"] = CheckInResponses(**data["responses"])
+            
+        if "committed_tasks" in data and data["committed_tasks"] is not None:
+            data["committed_tasks"] = [
+                DailyTaskItem(**t) if isinstance(t, dict) else t
+                for t in data["committed_tasks"]
+            ]
         
         return cls(**data)
 

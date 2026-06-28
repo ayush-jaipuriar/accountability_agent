@@ -22,9 +22,9 @@ between check-ins and increasing engagement.
 import logging
 from datetime import datetime, timedelta
 from statistics import mean
-from typing import Optional, List
+from typing import Optional, List, Any
 
-from src.models.schemas import User, DailyCheckIn
+from src.models.schemas import User, DailyCheckIn, DailyTaskList
 from src.services.firestore_service import firestore_service
 from src.utils.timezone_utils import get_current_time
 
@@ -73,6 +73,15 @@ class BriefingService:
         # Fetch yesterday's check-in
         yesterday_checkin = self.firestore.get_checkin(user.user_id, yesterday)
 
+        # Get or create today's daily focus list
+        today_yyyy_mm_dd = now_local.strftime("%Y-%m-%d")
+        yesterday_priority = ""
+        if yesterday_checkin:
+            yesterday_priority = yesterday_checkin.responses.tomorrow_priority or ""
+
+        from src.services.task_service import task_service
+        task_list = task_service.create_or_get_daily_tasks(user.user_id, today_yyyy_mm_dd, yesterday_priority)
+
         # Fetch 30-day history for patterns
         history = self.firestore.get_recent_checkins(user.user_id, days=30)
 
@@ -96,18 +105,27 @@ class BriefingService:
 
         # Priority and obstacle follow-up (closing the loop)
         if yesterday_checkin:
-            priority = yesterday_checkin.responses.tomorrow_priority
             obstacle = yesterday_checkin.responses.tomorrow_obstacle
-            
-            if priority:
-                if len(priority) > 120:
-                    priority = priority[:117] + "..."
-                sections.append(f"🎯 <b>Your stated priority:</b> \"{priority}\"")
-                
             if obstacle:
                 if len(obstacle) > 120:
                     obstacle = obstacle[:117] + "..."
-                sections.append(f"⚠️ <b>Anticipated obstacle:</b> \"{obstacle}\"\n")
+                sections.append(f"⚠️ <b>Anticipated obstacle for today:</b> \"{obstacle}\"\n")
+
+        # Daily Focus List rendering
+        if task_list:
+            if not task_list.committed:
+                sections.append("🎯 <b>Today's Focus List (Uncommitted):</b>")
+                for t in task_list.tasks:
+                    prefix = "🎯 [Primary]" if t.is_primary else "• [Secondary]"
+                    sections.append(f"   {prefix} {t.title}")
+                sections.append("<i>Use the buttons below to add secondary tasks or commit to your list.</i>\n")
+            else:
+                sections.append("🎯 <b>Today's Active Focus:</b>")
+                for t in task_list.tasks:
+                    status_icon = "✅" if t.completed else "⬜️"
+                    prefix = "[Primary]" if t.is_primary else "[Secondary]"
+                    sections.append(f"   {status_icon} {prefix} {t.title}")
+                sections.append("")
 
         # Day-of-week insight
         dow_insight = self._generate_dow_insight(history, user.timezone)
@@ -413,6 +431,43 @@ Instructions:
         """Suggest optimal training time based on history."""
         # Simple heuristic: suggest morning
         return "7 AM before the day gets away"
+
+    def get_briefing_keyboard(self, task_list: Optional[DailyTaskList]) -> Optional[Any]:
+        """Generate Telegram inline keyboard for daily focus tasks."""
+        if not task_list:
+            return None
+            
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
+        keyboard = []
+        if not task_list.committed:
+            # Uncommitted: Show Add Task and Commit buttons
+            secondary_tasks = [t for t in task_list.tasks if not t.is_primary]
+            buttons_row = []
+            if len(secondary_tasks) < 2:
+                buttons_row.append(InlineKeyboardButton("➕ Add Task", callback_data="task_add"))
+            buttons_row.append(InlineKeyboardButton("🚀 Commit & Start", callback_data="task_commit"))
+            keyboard.append(buttons_row)
+        else:
+            # Committed: Show checkboxes for toggling each task
+            for t in task_list.tasks:
+                status_icon = "✅" if t.completed else "⬜️"
+                label = "Primary" if t.is_primary else "Secondary"
+                button_text = f"{status_icon} {label}: {t.title}"
+                if len(button_text) > 30:
+                    button_text = button_text[:27] + "..."
+                
+                new_state = 0 if t.completed else 1
+                keyboard.append([
+                    InlineKeyboardButton(button_text, callback_data=f"task_toggle:{t.id}:{new_state}")
+                ])
+                
+            # Add Need Support button
+            keyboard.append([
+                InlineKeyboardButton("🛡️ Need Support", callback_data="task_support")
+            ])
+            
+        return InlineKeyboardMarkup(keyboard)
 
 
 # Singleton instance

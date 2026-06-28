@@ -139,6 +139,21 @@ def history_30_days():
     return checkins
 
 
+@pytest.fixture(autouse=True)
+def mock_task_service_calls():
+    from src.services.task_service import task_service
+    from src.models.schemas import DailyTaskList, DailyTaskItem
+    
+    def mock_create(user_id, date, primary_title):
+        title = primary_title if primary_title else "Maintain consistency"
+        p_task = DailyTaskItem(id="task_primary", title=title, is_primary=True, completed=False)
+        return DailyTaskList(user_id=user_id, date=date, tasks=[p_task], committed=False)
+        
+    with patch.object(task_service, 'create_or_get_daily_tasks', side_effect=mock_create) as mock_c, \
+         patch.object(task_service, 'get_daily_tasks', return_value=None) as mock_g:
+        yield mock_c, mock_g
+
+
 # ===== generate_briefing Tests =====
 
 class TestGenerateBriefing:

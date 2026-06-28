@@ -73,7 +73,7 @@ from src.services.llm_service import get_llm_service
 from src.services.firestore_service import firestore_service
 from src.services.constitution_service import constitution_service
 from src.config import settings
-from src.models.schemas import Tier1NonNegotiables
+from src.models.schemas import Tier1NonNegotiables, DailyTaskItem
 import logging
 import re
 from datetime import datetime, timedelta
@@ -116,6 +116,7 @@ class CheckInAgent:
         tomorrow_obstacle: str,
         yesterday_checkin: dict = None,
         ai_profile_memory: Optional[Any] = None,
+        committed_tasks: Optional[List[DailyTaskItem]] = None,
     ) -> str:
         """
         Generate personalized check-in feedback using AI
@@ -132,6 +133,7 @@ class CheckInAgent:
             tomorrow_obstacle: What might get in the way
             yesterday_checkin: Yesterday's check-in data dictionary
             ai_profile_memory: Long-term AI memory profile for the user
+            committed_tasks: Optional list of committed daily tasks
             
         Returns:
             Personalized feedback message (150-250 words)
@@ -161,6 +163,7 @@ class CheckInAgent:
                 recent_checkins=recent_checkins,
                 yesterday_checkin=yesterday_checkin,
                 ai_profile_memory=ai_profile_memory,
+                committed_tasks=committed_tasks,
             )
             
             # Generate feedback with Gemini
@@ -523,6 +526,7 @@ Return only the support note text."""
         recent_checkins: List[Dict],
         yesterday_checkin: dict = None,
         ai_profile_memory: Optional[Any] = None,
+        committed_tasks: Optional[List[DailyTaskItem]] = None,
     ) -> str:
         """
         Build the feedback generation prompt for Gemini
@@ -654,6 +658,14 @@ Correlations: {", ".join(ai_profile_memory.correlations) if ai_profile_memory.co
 Coaching Notes: {ai_profile_memory.coaching_notes}
 Say-Do Ratio: {ai_profile_memory.say_do_ratio:.1f}%
 """
+        task_summary = ""
+        if committed_tasks:
+            task_lines = ["Daily Focus Tasks (Committed):"]
+            for t in committed_tasks:
+                status = "COMPLETED" if t.completed else "FAILED"
+                prefix = "Primary" if t.is_primary else "Secondary"
+                task_lines.append(f"- [{prefix}] \"{t.title}\": {status}")
+            task_summary = "\n".join(task_lines) + "\n"
 
         prompt = f"""You are a direct, no-nonsense constitution accountability coach. Generate personalized check-in feedback for this user.
  
@@ -665,7 +677,7 @@ Tier 1 Non-Negotiables:
 {recent_averages}
 Self-Rating: {self_rating}/10
 Reason: "{rating_reason}"
- 
+{task_summary} 
 Tomorrow's Priority: "{tomorrow_priority}"
 Tomorrow's Obstacle: "{tomorrow_obstacle}"
  
@@ -692,8 +704,9 @@ Write feedback that:
 1. <b>ACKNOWLEDGE TODAY</b> (1-2 sentences):
    - Reference exact compliance score
    - If perfect (100%): Strong praise
-   - If good (80-99%): Acknowledge + note what was missed
+   - If good (80-99%): Acknowledge + note what was missed (including missed focus tasks)
    - If struggling (<80%): Direct but supportive
+   - **Daily Focus Tasks**: If focus tasks were committed and any were missed, address the failed execution directly; hold them accountable to their morning commitments.
 
 2. <b>STREAK CONTEXT</b> (1-2 sentences):
    - Mention current streak number
@@ -716,6 +729,7 @@ Write feedback that:
    - ONE specific action for tomorrow
    - Reference their stated priority or obstacle
    - Make it actionable and concrete
+   - **Daily Focus Tasks Outcome**: Address the outcome of today's committed daily focus list. If they failed to execute on their primary task, call them out on it and suggest how to overcome the obstacle tomorrow. If they completed it, reinforce the win.
    - **CRITICAL**: If the user missed "Skill Building" or "Training" today or recently, recommend starting with micro-habits and smaller incremental blocks of time tomorrow (e.g., "instead of doing 2 hours, commit to just 15-30 minutes of learning or a 15-minute workout to maintain momentum"). Encourage lowering the bar to maintain the streak.
 
 TONE REQUIREMENTS:

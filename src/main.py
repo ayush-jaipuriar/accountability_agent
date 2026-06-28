@@ -253,7 +253,7 @@ async def health_check():
         return {
             "status": "healthy",
             "service": "constitution-agent",
-            "version": "1.0.0",
+            "version": "3.0.0",
             "environment": settings.environment,
             "uptime": uptime["uptime_human"],
             "checks": {
@@ -370,7 +370,7 @@ async def root():
     """
     return {
         "service": "Constitution Accountability Agent",
-        "version": "1.0.0",
+        "version": "3.0.0",
         "status": "running",
         "environment": settings.environment,
         "endpoints": {
@@ -1284,10 +1284,19 @@ async def morning_briefing(request: Request):
                 results["skipped"] += 1
                 continue
 
+            # Fetch daily tasks for the inline keyboard
+            from src.services.task_service import task_service
+            from src.utils.timezone_utils import get_current_time
+            now_local = get_current_time(user.timezone)
+            today_str = now_local.strftime("%Y-%m-%d")
+            task_list = task_service.get_daily_tasks(user.user_id, today_str)
+
             # Send briefing
+            keyboard = briefing_service.get_briefing_keyboard(task_list)
             await bot_manager.bot.send_message(
                 chat_id=user.telegram_id,
                 text=briefing,
+                reply_markup=keyboard,
                 parse_mode='HTML'
             )
 
@@ -1305,6 +1314,91 @@ async def morning_briefing(request: Request):
             results["errors"] += 1
 
     logger.info(f"🌅 Morning briefing complete: {results}")
+    return {"status": "success", "timezones": target_timezones, "results": results}
+
+
+@app.post("/cron/midday_nudge")
+async def midday_nudge(request: Request):
+    """
+    Send mid-day nudges to users at 3:00 PM local time if their primary task is incomplete.
+    """
+    verify_cron_request(request)
+
+    from src.services.task_service import task_service
+    from src.utils.timezone_utils import get_timezones_at_local_time, get_current_time
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    from datetime import timedelta
+
+    results = {"sent": 0, "skipped": 0, "errors": 0}
+
+    # Find timezones at 3:00 PM (tolerance 15 mins)
+    utc_now = datetime.utcnow()
+    target_timezones = get_timezones_at_local_time(utc_now, target_hour=15, tolerance_minutes=15)
+    logger.info(f"⏰ Sending midday nudges to timezones at 3 PM: {target_timezones}")
+
+    if not target_timezones:
+        return {"status": "no_timezones_at_3pm", "results": results}
+
+    users = firestore_service.get_users_by_timezones(target_timezones)
+
+    for user in users:
+        try:
+            now_local = get_current_time(user.timezone)
+            today_str = now_local.strftime("%Y-%m-%d")
+            
+            task_list = task_service.get_daily_tasks(user.user_id, today_str)
+            if not task_list or not task_list.committed:
+                results["skipped"] += 1
+                continue
+
+            primary_task = next((t for t in task_list.tasks if t.is_primary), None)
+            if not primary_task or primary_task.completed:
+                results["skipped"] += 1
+                continue
+
+            # Fetch yesterday's check-in for the anticipated obstacle
+            yesterday_str = (now_local - timedelta(days=1)).strftime("%Y-%m-%d")
+            yesterday_checkin = firestore_service.get_checkin(user.user_id, yesterday_str)
+            obstacle = yesterday_checkin.responses.tomorrow_obstacle if yesterday_checkin else None
+
+            # Construct supportive message
+            msg_parts = [
+                f"⏰ <b>Mid-day Focus Check!</b>",
+                f"Hey {user.name}, just checking in on your primary focus for today:",
+                f"🎯 <b>\"{primary_task.title}\"</b>\n"
+            ]
+            if obstacle:
+                msg_parts.append(f"You anticipated that <b>\"{obstacle}\"</b> might get in the way.")
+                msg_parts.append("Have you run into it? If you're struggling, let's navigate it together.\n")
+            else:
+                msg_parts.append("How are you progressing with it?\n")
+
+            msg_parts.append("Type /support for CBT-style coaching, or use the buttons below:")
+            text = "\n".join(msg_parts)
+
+            # Build keyboard
+            keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("✅ Mark Done", callback_data=f"task_toggle:{primary_task.id}:1"),
+                    InlineKeyboardButton("🛡️ Need Support", callback_data="task_support")
+                ]
+            ])
+
+            # Send message
+            await bot_manager.bot.send_message(
+                chat_id=user.telegram_id,
+                text=text,
+                reply_markup=keyboard,
+                parse_mode='HTML'
+            )
+
+            results["sent"] += 1
+            logger.info(f"⏰ Midday nudge sent to {user.user_id}")
+
+        except Exception as e:
+            logger.error(f"❌ Failed to send midday nudge to {user.user_id}: {e}")
+            results["errors"] += 1
+
     return {"status": "success", "timezones": target_timezones, "results": results}
 
 

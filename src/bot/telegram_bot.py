@@ -352,6 +352,7 @@ class TelegramBotManager:
         # Phase 3A: Callback query handlers for inline keyboard buttons
         self.application.add_handler(CallbackQueryHandler(self.mode_selection_callback, pattern="^mode_"))
         self.application.add_handler(CallbackQueryHandler(self.timezone_confirmation_callback, pattern="^tz_"))
+        self.application.add_handler(CallbackQueryHandler(self.task_callback, pattern="^task_"))
         
         # Mode change callback (from /mode command inline buttons)
         # Uses "change_mode_" prefix to avoid conflict with "mode_" (onboarding)
@@ -574,6 +575,120 @@ class TelegramBotManager:
         
         logger.info(f"✅ /start command from {user_id} ({user.first_name})")
     
+    async def task_callback(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle inline button callback queries for daily focus tasks.
+        Callbacks matched:
+        - task_add
+        - task_commit
+        - task_toggle:<task_id>:<completed>
+        - task_support
+        """
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = str(query.from_user.id)
+        data = query.data
+        
+        user = firestore_service.get_user(user_id)
+        if not user:
+            return
+            
+        from src.services.task_service import task_service
+        from src.services.briefing_service import briefing_service
+        from src.utils.timezone_utils import get_current_time
+        from datetime import timedelta
+        
+        now_local = get_current_time(user.timezone)
+        today_yyyy_mm_dd = now_local.strftime("%Y-%m-%d")
+        
+        if data == "task_add":
+            # Set state to wait for task input
+            context.user_data['adding_task'] = True
+            context.user_data['briefing_msg_id'] = query.message.message_id
+            await query.message.reply_text(
+                "➕ <b>Add Secondary Task</b>\n\n"
+                "Please type and send the title of your secondary task (max 60 characters).",
+                parse_mode='HTML'
+            )
+            return
+            
+        elif data == "task_commit":
+            success, msg = task_service.commit_daily_tasks(user_id, today_yyyy_mm_dd)
+            if success:
+                # Re-generate briefing and keyboard
+                task_list = task_service.get_daily_tasks(user_id, today_yyyy_mm_dd)
+                
+                # Mock last_briefing_date to re-generate text
+                settings_dict = getattr(user, 'settings', {}) or {}
+                saved_last_date = settings_dict.get("last_briefing_date")
+                settings_dict["last_briefing_date"] = None
+                user.settings = settings_dict
+                
+                briefing_text = await briefing_service.generate_briefing(user)
+                
+                settings_dict["last_briefing_date"] = saved_last_date
+                user.settings = settings_dict
+                
+                keyboard = briefing_service.get_briefing_keyboard(task_list)
+                await query.message.edit_text(
+                    briefing_text,
+                    reply_markup=keyboard,
+                    parse_mode='HTML'
+                )
+            else:
+                await query.message.reply_text(f"❌ {msg}")
+                
+        elif data.startswith("task_toggle:"):
+            parts = data.split(":")
+            task_id = parts[1]
+            completed = int(parts[2]) == 1
+            
+            success, task_list = task_service.toggle_task_completion(
+                user_id, today_yyyy_mm_dd, task_id, completed
+            )
+            
+            if success and task_list:
+                # Re-generate briefing and keyboard
+                settings_dict = getattr(user, 'settings', {}) or {}
+                saved_last_date = settings_dict.get("last_briefing_date")
+                settings_dict["last_briefing_date"] = None
+                user.settings = settings_dict
+                
+                briefing_text = await briefing_service.generate_briefing(user)
+                
+                settings_dict["last_briefing_date"] = saved_last_date
+                user.settings = settings_dict
+                
+                keyboard = briefing_service.get_briefing_keyboard(task_list)
+                await query.message.edit_text(
+                    briefing_text,
+                    reply_markup=keyboard,
+                    parse_mode='HTML'
+                )
+                
+        elif data == "task_support":
+            # Initiate support mode
+            context.user_data['support_mode'] = True
+            
+            # Context info: yesterday's obstacle
+            yesterday_checkin = firestore_service.get_checkin(user_id, (now_local - timedelta(days=1)).strftime("%Y-%m-%d"))
+            obstacle = yesterday_checkin.responses.tomorrow_obstacle if yesterday_checkin else None
+            
+            prompt_message = "💙 <b>I'm here.</b>\n\n"
+            if obstacle:
+                prompt_message += (
+                    f"You mentioned that today's obstacle would be <b>\"{obstacle}\"</b>.\n"
+                    "Let's talk through what's going on and how we can navigate this.\n\n"
+                )
+            else:
+                prompt_message += "What's going on? Let's talk through what you're struggling with right now.\n\n"
+            
+            prompt_message += "Just type naturally — I'll listen and help you work through it."
+            await query.message.reply_text(prompt_message, parse_mode='HTML')
+
     async def mode_selection_callback(
         self,
         update: Update,
@@ -3815,7 +3930,15 @@ class TelegramBotManager:
         settings_dict["last_briefing_date"] = saved_last_date
 
         if briefing:
-            await update.message.reply_text(briefing, parse_mode='HTML')
+            from src.services.task_service import task_service
+            from src.utils.timezone_utils import get_current_time
+            now_local = get_current_time(user.timezone)
+            today_yyyy_mm_dd = now_local.strftime("%Y-%m-%d")
+            task_list = task_service.get_daily_tasks(user_id, today_yyyy_mm_dd)
+            keyboard = briefing_service.get_briefing_keyboard(task_list)
+            
+            msg = await update.message.reply_text(briefing, reply_markup=keyboard, parse_mode='HTML')
+            context.user_data['briefing_msg_id'] = msg.message_id
             logger.info(f"🌅 On-demand briefing sent to {user_id}")
         else:
             await update.message.reply_text(
@@ -4083,6 +4206,54 @@ class TelegramBotManager:
         message_text = update.message.text
         
         logger.info(f"📩 General message from {user_id}: '{message_text[:50]}...'")
+
+        if context.user_data.get('adding_task'):
+            context.user_data.pop('adding_task', None)
+            from src.services.task_service import task_service
+            from src.utils.timezone_utils import get_current_time
+            user = firestore_service.get_user(user_id)
+            if not user:
+                await update.message.reply_text("❌ User not found.")
+                return
+            now_local = get_current_time(user.timezone)
+            today_yyyy_mm_dd = now_local.strftime("%Y-%m-%d")
+            
+            success, msg = task_service.add_secondary_task(user_id, today_yyyy_mm_dd, message_text)
+            if success:
+                # Retrieve the updated task list to re-render the briefing
+                task_list = task_service.get_daily_tasks(user_id, today_yyyy_mm_dd)
+                await update.message.reply_text(f"✅ {msg}")
+                
+                # Update briefing message in place if msg id is saved
+                briefing_msg_id = context.user_data.get('briefing_msg_id')
+                if briefing_msg_id:
+                    # Re-generate the briefing text
+                    from src.services.briefing_service import briefing_service
+                    settings_dict = getattr(user, 'settings', {}) or {}
+                    saved_last_date = settings_dict.get("last_briefing_date")
+                    settings_dict["last_briefing_date"] = None
+                    user.settings = settings_dict
+                    
+                    briefing_text = await briefing_service.generate_briefing(user)
+                    
+                    # Restore setting
+                    settings_dict["last_briefing_date"] = saved_last_date
+                    user.settings = settings_dict
+                    
+                    keyboard = briefing_service.get_briefing_keyboard(task_list)
+                    try:
+                        await context.bot.edit_message_text(
+                            chat_id=user_id,
+                            message_id=briefing_msg_id,
+                            text=briefing_text,
+                            reply_markup=keyboard,
+                            parse_mode='HTML'
+                        )
+                    except Exception as edit_err:
+                        logger.warning(f"Could not edit briefing message: {edit_err}")
+            else:
+                await update.message.reply_text(f"❌ {msg}")
+            return
 
         if context.user_data.pop('suppress_general_message_once', False):
             logger.info(f"🛑 Suppressed post-checkin general routing for {user_id}")
