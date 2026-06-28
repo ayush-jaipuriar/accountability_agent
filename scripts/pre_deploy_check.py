@@ -250,6 +250,56 @@ def check_model_name_centralization() -> bool:
         return True
 
 
+def check_static_analysis() -> bool:
+    """Run pyflakes static analysis and fail on critical issues (undefined name, syntax error)."""
+    import subprocess
+    print(f"\n{'='*60}")
+    print("🔍 Static analysis (pyflakes)")
+    print(f"{'='*60}")
+    try:
+        # Run pyflakes on the src directory
+        result = subprocess.run(
+            ["./venv/bin/pyflakes", "src/"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        
+        # Analyze stdout/stderr
+        output = result.stdout + result.stderr
+        critical_issues = []
+        warnings = []
+        
+        for line in output.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if "undefined name" in line or "invalid syntax" in line:
+                critical_issues.append(line)
+            else:
+                warnings.append(line)
+                
+        if warnings:
+            print(f"⚠️  Found {len(warnings)} static analysis warnings (non-blocking):")
+            for warn in warnings[:10]:
+                print(f"   {warn}")
+            if len(warnings) > 10:
+                print(f"   ... and {len(warnings) - 10} more warnings.")
+                
+        if critical_issues:
+            print(f"❌ CRITICAL: Found {len(critical_issues)} undefined names or syntax errors:")
+            for issue in critical_issues:
+                print(f"   {issue}")
+            return False
+            
+        print("✅ Static analysis (pyflakes) — PASSED")
+        return True
+        
+    except Exception as e:
+        print(f"💥 Static analysis check error: {e}")
+        return False
+
+
 def main() -> int:
     """Run all pre-deploy checks."""
     print("🚀 Accountability Agent — Pre-Deploy Validation")
@@ -262,6 +312,9 @@ def main() -> int:
         ["python3", "-m", "compileall", "src/"],
         "Source compilation check",
     ))
+
+    # 1.5. Static analysis (pyflakes)
+    checks.append(check_static_analysis())
 
     # 2. Test suite
     checks.append(run_command(

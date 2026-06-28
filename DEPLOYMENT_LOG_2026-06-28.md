@@ -4,6 +4,22 @@
 
 ---
 
+## Deployment 2: Static Analysis Gate Integration (v3.0.2)
+
+- **Phases Deployed**: static analysis linting gate + telegram bot datetime fixes
+- **Test Count**: 17 passed (endpoints suite), 1,073 passed total
+- **Pre-Deploy Check**: 17/17 passed
+- **Image Tag**: `manual-20260628-110400`
+- **Revision**: `accountability-agent-00022-cv4`
+- **Deployed At**: 2026-06-28 11:06:32 UTC
+
+### Features Deployed
+1. **Integrated Static Analysis (Pyflakes)**: Integrated `pyflakes` check into the `scripts/pre_deploy_check.py` validation runner. This checks for undefined variables, syntax errors, and other namespace collisions. Critical failures halt the deployment check, while style/unused warnings remain non-blocking.
+2. **Fixed Undefined Telegram Bot Names**: Fixed missing module-level import of `datetime` and `timedelta` in `src/bot/telegram_bot.py`.
+3. **Pushed to Git**: All code and validation changes pushed to the remote repository.
+
+---
+
 ## Deployment 1: Morning Briefing Cron Keyboard Hotfix (v3.0.1)
 
 - **Phases Deployed**: morning_briefing endpoint hotfix
