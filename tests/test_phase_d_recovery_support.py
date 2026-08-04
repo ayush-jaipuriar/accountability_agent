@@ -938,7 +938,7 @@ class TestInterventionSupportBridgeEndToEnd:
         msg = agent._build_ghosting_intervention(pattern, user)
         bridged = add_support_bridge(msg, "low")
         
-        assert "Missed you" in bridged
+        assert "missed you" in bridged.lower()
         assert "/support" in bridged
 
     def test_ghosting_day5_has_critical_bridge(self):
@@ -965,7 +965,7 @@ class TestInterventionSupportBridgeEndToEnd:
         msg = agent._build_ghosting_intervention(pattern, user)
         bridged = add_support_bridge(msg, "critical")
         
-        assert "EMERGENCY" in bridged
+        assert "We're Here" in bridged
         assert "🆘" in bridged
         assert "/support" in bridged
 

@@ -237,9 +237,9 @@ class TestInterventionAgent:
             
             msg = agent._build_ghosting_intervention(pattern, test_user)
             
-            assert "Missed you" in msg
+            assert "missed you" in msg.lower()
             assert "47-day streak" in msg
-            assert "/checkin" in msg
+            assert "/quickcheckin" in msg
 
     def test_ghosting_day3_warning(self, test_user):
         """Day 3 ghosting should produce warning message."""
@@ -256,11 +256,11 @@ class TestInterventionAgent:
             
             msg = agent._build_ghosting_intervention(pattern, test_user)
             
-            assert "3 Days Missing" in msg
-            assert "constitution violation" in msg.lower()
+            assert "3 Days Away" in msg
+            assert "/quickcheckin" in msg
 
     def test_ghosting_day4_critical(self, test_user):
-        """Day 4 ghosting should reference historical pattern."""
+        """Day 4 ghosting should ask low-friction question."""
         from src.agents.pattern_detection import Pattern
         from src.agents.intervention import InterventionAgent
         
@@ -274,11 +274,11 @@ class TestInterventionAgent:
             
             msg = agent._build_ghosting_intervention(pattern, test_user)
             
-            assert "CRITICAL" in msg
-            assert "Feb 2025" in msg  # Historical reference
+            assert "4 Days" in msg
+            assert "one thing you did for yourself" in msg
 
     def test_ghosting_day5_emergency_with_partner(self, test_user):
-        """Day 5+ should mention partner notification."""
+        """Day 5+ should mention partner notification and lead with empathy."""
         from src.agents.pattern_detection import Pattern
         from src.agents.intervention import InterventionAgent
         
@@ -292,7 +292,7 @@ class TestInterventionAgent:
             
             msg = agent._build_ghosting_intervention(pattern, test_user)
             
-            assert "EMERGENCY" in msg
+            assert "We're Here" in msg
             assert "Partner User" in msg  # Partner notification
             assert "shield" in msg.lower()  # Shield info
 
@@ -320,7 +320,7 @@ class TestInterventionAgent:
             
             msg = agent._build_ghosting_intervention(pattern, user_no_partner)
             
-            assert "EMERGENCY" in msg
+            assert "We're Here" in msg
             assert "Partner" not in msg  # No partner mentioned
 
     def test_snooze_trap_intervention(self, test_user):

@@ -108,9 +108,11 @@ class TestMicroHabitStreakPreservation:
         assert tier1.deep_work is False
         assert tier1.skill_building is False
         
-        # Compliance score should only be 50.0% (3/6 items: training, zero_porn, boundaries)
+        # Compliance score now reflects proportional credit for continuous habits (v3 scoring)
+        # Sleep (6h/7h = 85.7%), Deep Work (0.5h/2h = 25%), Skill Building (0.5h/2h = 25%), Training (100%), Zero Porn (100%), Boundaries (100%)
+        # Total: (0.857 + 0.25 + 0.25 + 1.0 + 1.0 + 1.0) / 6 = 72.6%
         score = calculate_compliance_score(tier1)
-        assert score == 50.0
+        assert pytest.approx(72.62, abs=0.1) == score
 
 
 

@@ -358,6 +358,41 @@ async def start_checkin(
         'recent_count': len(recent_scores),
     }
     
+    # ===== 2A: Post-Ghosting "Why Did You Miss?" =====
+    # If user has been away 2+ days, ask a quick return-reason question
+    # before starting the check-in. This gathers data on WHY users ghost
+    # so the app can adapt interventions.
+    days_away = 0
+    if user.streaks and user.streaks.last_checkin_date:
+        try:
+            from datetime import datetime as dt
+            last_date = dt.strptime(user.streaks.last_checkin_date, "%Y-%m-%d").date()
+            today_date = dt.strptime(checkin_date, "%Y-%m-%d").date()
+            days_away = (today_date - last_date).days
+        except (ValueError, TypeError):
+            days_away = 0
+    
+    if days_away >= 2 and not is_quick_checkin:
+        context.user_data['days_away'] = days_away
+        keyboard = [
+            [InlineKeyboardButton("🔵 Life got busy / forgot", callback_data="return_busy")],
+            [InlineKeyboardButton("🟡 Felt overwhelmed by habits", callback_data="return_overwhelmed")],
+            [InlineKeyboardButton("🔴 Didn't want to report failure", callback_data="return_avoidance")],
+            [InlineKeyboardButton("⚪ Check-in felt pointless", callback_data="return_pointless")],
+            [InlineKeyboardButton("💬 Something else", callback_data="return_other")],
+            [InlineKeyboardButton("⏭️ Skip — just check in", callback_data="return_skip")],
+        ]
+        await update.message.reply_text(
+            f"👋 <b>Welcome back!</b> You've been away {days_away} days.\n\n"
+            "No judgment — just want to understand what happened.\n"
+            "This helps me support you better:",
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        context.user_data['return_reason'] = None
+        logger.info(f"✅ Full check-in started for {user_id} (days_away={days_away}, awaiting return reason)")
+        return Q1_TIER1
+    
     # P1.3: Struggling user — empathetic framing
     if is_struggling and not is_quick_checkin:
         await update.message.reply_text(
@@ -376,7 +411,45 @@ async def start_checkin(
     await ask_tier1_question(update.message, context)
     
     logger_msg = "⚡ Quick check-in" if is_quick_checkin else "✅ Full check-in"
-    logger.info(f"{logger_msg} started for {user_id}")
+    logger.info(f"{logger_msg} started for {user_id} (days_away={days_away})")
+    return Q1_TIER1
+
+
+async def handle_return_reason_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """
+    Handle return reason selection when user returns after ghosting (2A).
+    Stores return_reason in user_data and proceeds to Question 1 (Tier 1).
+    """
+    query = update.callback_query
+    await query.answer()
+    
+    reason_code = query.data.replace("return_", "")
+    reason_map = {
+        "busy": "Life got busy / forgot",
+        "overwhelmed": "Felt overwhelmed by habits",
+        "avoidance": "Didn't want to report failure",
+        "pointless": "Check-in felt pointless",
+        "other": "Something else",
+        "skip": None,
+    }
+    reason_text = reason_map.get(reason_code)
+    context.user_data['return_reason'] = reason_text
+    
+    if reason_text:
+        await query.edit_message_text(
+            f"👍 Got it (<i>{reason_text}</i>). Thanks for letting me know!\n\n"
+            f"Let's get back on track with today's check-in...",
+            parse_mode='HTML'
+        )
+    else:
+        await query.edit_message_text(
+            "👍 Let's jump straight to today's check-in..."
+        )
+    
+    await ask_tier1_question(query.message, context)
     return Q1_TIER1
 
 
@@ -721,11 +794,12 @@ async def handle_tier1_response(
             deep_work_hours=dw_hours,
             skill_building_hours=sb_hours,
             training_intensity=training_intensity,
-            # Set boolean fields to represent FULL targets (not micro-habits)
-            sleep=sleep_hours >= 7.0,
+            # Set boolean fields to represent micro-habit thresholds (1A fix)
+            # Full targets tracked via continuous fields; booleans = "did something meaningful"
+            sleep=sleep_hours >= 6.0,
             training=training_intensity in ('light', 'moderate', 'intense'),
-            deep_work=dw_hours >= 2.0,
-            skill_building=sb_hours >= 2.0,
+            deep_work=dw_hours >= 0.5,
+            skill_building=sb_hours >= 0.5,
             is_rest_day=training_intensity == 'rest',
             zero_porn=tier1_data.get('zero_porn', False),
             boundaries=tier1_data.get('boundaries', False),
@@ -1196,6 +1270,66 @@ async def handle_voice_reflection(
 
 # ===== Finish Check-In =====
 
+def format_progress_summary(tier1) -> str:
+    """
+    Build a visual progress summary showing actual vs target for continuous habits.
+    
+    Returns an HTML-formatted block with progress bars using block characters.
+    Only includes habits where continuous data is available.
+    
+    Why this exists:
+    Impact analysis (2026-08-04) showed users couldn't see their actual effort.
+    A user logging 1.5h deep work saw "❌ Deep Work" — now they see
+    "Deep Work: 1.5h/2h ██████░░ 75%" which reflects real progress.
+    """
+    lines = []
+    
+    def bar(actual, target, width=8):
+        """Render a text progress bar."""
+        if target <= 0:
+            return "" 
+        ratio = min(actual / target, 1.0)
+        filled = int(ratio * width)
+        empty = width - filled
+        pct = int(ratio * 100)
+        return f"{'█' * filled}{'░' * empty} {pct}%"
+    
+    # Sleep
+    if tier1.sleep_hours is not None:
+        b = bar(tier1.sleep_hours, 7.0)
+        emoji = "✅" if tier1.sleep_hours >= 7.0 else ("🟡" if tier1.sleep_hours >= 6.0 else "❌")
+        lines.append(f"  {emoji} Sleep: {tier1.sleep_hours:.1f}h / 7h  {b}")
+    
+    # Training
+    intensity = tier1.training_intensity or ("done" if tier1.training else "skipped")
+    if tier1.is_rest_day:
+        lines.append(f"  🛌 Training: Rest Day")
+    elif intensity in ('light', 'moderate', 'intense'):
+        lines.append(f"  ✅ Training: {intensity.title()}")
+    else:
+        lines.append(f"  ❌ Training: Skipped")
+    
+    # Deep Work
+    if tier1.deep_work_hours is not None:
+        b = bar(tier1.deep_work_hours, 2.0)
+        emoji = "✅" if tier1.deep_work_hours >= 2.0 else ("🟡" if tier1.deep_work_hours >= 0.5 else "❌")
+        lines.append(f"  {emoji} Deep Work: {tier1.deep_work_hours:.1f}h / 2h  {b}")
+    
+    # Skill Building
+    if tier1.skill_building_hours is not None:
+        b = bar(tier1.skill_building_hours, 2.0)
+        emoji = "✅" if tier1.skill_building_hours >= 2.0 else ("🟡" if tier1.skill_building_hours >= 0.5 else "❌")
+        lines.append(f"  {emoji} Skill Building: {tier1.skill_building_hours:.1f}h / 2h  {b}")
+    
+    # Zero Porn
+    lines.append(f"  {'✅' if tier1.zero_porn else '❌'} Zero Porn")
+    
+    # Boundaries
+    lines.append(f"  {'✅' if tier1.boundaries else '❌'} Boundaries")
+    
+    return "\n".join(lines)
+
+
 async def finish_checkin(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
@@ -1270,7 +1404,8 @@ async def finish_checkin(
             compliance_score=compliance_score,
             completed_at=datetime.utcnow(),
             duration_seconds=duration,
-            committed_tasks=committed_tasks
+            committed_tasks=committed_tasks,
+            return_reason=context.user_data.get('return_reason')
         )
         
         # Store check-in + update streak ATOMICALLY in a single transaction.
@@ -1364,7 +1499,12 @@ async def finish_checkin(
             # Build final message with header and AI feedback
             feedback_parts = []
             feedback_parts.append("🎉 <b>Check-In Complete!</b>\n")
-            feedback_parts.append(f"📊 Compliance: {compliance_score}%")
+            feedback_parts.append(f"📊 Compliance: {compliance_score:.1f}%")
+            
+            # Progress summary — show actual effort with visual bars (1C)
+            progress = format_progress_summary(tier1)
+            if progress:
+                feedback_parts.append(f"\n{progress}")
             
             # Phase D: Show recovery message on reset, normal streak otherwise
             if streak_updates.get('is_reset') and streak_updates.get('recovery_message'):
@@ -1403,7 +1543,12 @@ async def finish_checkin(
             # Fallback to Phase 1 hardcoded feedback
             feedback_parts = []
             feedback_parts.append("🎉 <b>Check-In Complete!</b>\n")
-            feedback_parts.append(f"📊 Compliance: {compliance_score}%")
+            feedback_parts.append(f"📊 Compliance: {compliance_score:.1f}%")
+            
+            # Progress summary — show actual effort with visual bars (1C)
+            progress = format_progress_summary(tier1)
+            if progress:
+                feedback_parts.append(f"\n{progress}")
             
             # Phase D: Show recovery message on reset, normal streak otherwise
             if streak_updates.get('is_reset') and streak_updates.get('recovery_message'):
@@ -1777,7 +1922,8 @@ async def finish_checkin_quick(
             completed_at=datetime.utcnow(),
             duration_seconds=duration,
             is_quick_checkin=True,  # Phase 3E: Mark as quick check-in
-            committed_tasks=committed_tasks
+            committed_tasks=committed_tasks,
+            return_reason=context.user_data.get('return_reason')
         )
         
         # Store check-in + update streak ATOMICALLY (same transaction fix as full check-in)
@@ -2061,6 +2207,7 @@ def create_checkin_conversation_handler() -> ConversationHandler:
         ],
         states={
             Q1_TIER1: [
+                CallbackQueryHandler(handle_return_reason_callback, pattern="^return_"),
                 CallbackQueryHandler(handle_tier1_response)
             ],
             Q2_ALIGNMENT_RATING: [

@@ -46,11 +46,13 @@ def check_available_models():
             # So we'll try to access specific models
             
             models_to_try = [
-                "gemini-1.5-pro",
+                "gemini-3.1-flash-lite",
+                "gemini-3.5-flash",
+                "gemini-2.5-flash",
+                "gemini-2.5-flash-lite",
+                "gemini-2.0-flash-exp",
                 "gemini-1.5-flash",
-                "gemini-1.0-pro",
-                "gemini-pro",
-                "gemini-pro-vision"
+                "gemini-1.5-pro"
             ]
             
             available_models = []

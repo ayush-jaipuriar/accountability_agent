@@ -50,12 +50,27 @@ async def send_broadcast():
         logger.error(f"❌ Failed to fetch users: {e}")
         return
     
-    # Notification message
+    # Notification message (v3.1.0 release)
     message = (
-        "🛠️ <b>Update: Morning Briefing is Fixed!</b>\n\n"
-        "We resolved a minor issue with today's scheduled morning briefings. Everything is back online and running smoothly.\n\n"
-        "If you didn't receive your morning brief today, you can request it on-demand right now:\n\n"
-        "👉 <i>Type <b>/briefing</b> to load your interactive daily focus list and lock in today's commitments! 💪</i>"
+        "🚀 <b>Release Notes: Accountability Agent v3.1.0 Update</b>\n\n"
+        "We've deployed a core architecture and scoring engine upgrade (<b>v3.1.0</b>) to improve behavior-change dynamics and telemetry accuracy.\n\n"
+        "<b>What's Changed in v3.1.0:</b>\n\n"
+        "1️⃣ <b>Proportional Habit Scoring (v3 Engine)</b> 📈\n"
+        "• Replaced binary pass/fail cutoffs with continuous proportional credit curves:\n"
+        "  <code>credit = min(actual_hours / target_hours, 1.0)</code>\n"
+        "• Logging 1.5h deep work (2.0h target) or 0.7h skill building now earns <b>75% and 35% credit</b> respectively instead of 0%. Eliminates single-threshold penalty traps.\n\n"
+        "2️⃣ <b>Visual Telemetry & Progress Bars</b> 📊\n"
+        "• Post check-in feedback now renders real-time visual progress bars per habit vector:\n"
+        "  <code>Deep Work: 1.5h / 2.0h  ██████░░ 75%</code>\n"
+        "• Evaluates continuous metrics directly from your Tier 1 schema.\n\n"
+        "3️⃣ <b>Low-Friction Intervention Engine</b> 💙\n"
+        "• Reduced activation energy on missed check-in triggers (Days 2–5+).\n"
+        "• Introduces single-emoji state queries (🟢/🟡/🔴) and 30-second <code>/quickcheckin</code> routes to prevent ghosting cascades.\n\n"
+        "4️⃣ <b>Return Telemetry & Contextual Adaptation</b> 🧠\n"
+        "• Returning after an absence now captures a <code>return_reason</code> classification (<i>Overwhelmed</i>, <i>Avoidance</i>, <i>Schedule Conflict</i>, etc.) to dynamically tune downstream coaching logic.\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "Run a check-in tonight to inspect your updated telemetry:\n"
+        "👉 <b>/checkin</b>"
     )
     
     # Send messages with rate limiting

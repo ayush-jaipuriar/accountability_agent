@@ -538,6 +538,8 @@ class DailyCheckIn(BaseModel):
     # Added for daily tasks integration
     committed_tasks: Optional[List[DailyTaskItem]] = None
     
+    return_reason: Optional[str] = None  # Why user returned after ghosting (2A)
+    
     def to_firestore(self) -> dict:
         """Convert to Firestore-compatible dictionary."""
         data = {
@@ -557,6 +559,8 @@ class DailyCheckIn(BaseModel):
             data["committed_tasks"] = [t.model_dump() for t in self.committed_tasks]
         else:
             data["committed_tasks"] = None
+        if self.return_reason is not None:
+            data["return_reason"] = self.return_reason
         return data
     
     @classmethod

@@ -4203,6 +4203,9 @@ class TelegramBotManager:
         
         This handler intelligently routes these messages.
         """
+        if not update.effective_user or not update.message:
+            return
+
         user_id = str(update.effective_user.id)
         message_text = update.message.text
         

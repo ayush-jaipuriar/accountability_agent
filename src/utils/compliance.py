@@ -10,15 +10,65 @@ Why Pure Functions?
 - No Side Effects: Doesn't modify database or external state
 - Reusable: Can be called from anywhere
 
-Compliance Score Formula:
-    score = (completed_items / total_items) * 100
-    
-Where total_items = 6 (Tier 1 non-negotiables - Phase 3D expansion)
+Compliance Score Formula (v3 — Proportional Credit):
+    For continuous habits (sleep, deep work, skill building):
+        credit = min(actual_hours / target_hours, 1.0)
+    For binary habits (training, zero_porn, boundaries):
+        credit = 1.0 if met else 0.0
+    score = (sum_of_credits / 6) * 100
+
+    This replaced the v2 binary formula (completed_items / 6 * 100) which
+    gave zero credit for partial effort, causing learned helplessness.
+    See impact_analysis_2026-08-04.md for the data that motivated this change.
 """
 
 from typing import Optional, List
 
 from src.models.schemas import Tier1NonNegotiables, DailyTaskItem
+
+
+def habit_credit(
+    actual: Optional[float],
+    target: float,
+    floor: float = 0.0
+) -> float:
+    """
+    Calculate proportional credit for a continuous habit.
+
+    Returns a value from 0.0 to 1.0 representing how much of the
+    target the user achieved. Effort below `floor` (as a fraction
+    of target) scores 0 — this prevents gaming with trivially small
+    values.
+
+    Why Proportional Credit?
+    - 1.5h deep work against a 2h target = 0.75 credit, not 0
+    - 0.7h skill building against a 2h target = 0.35 credit, not 0
+    - This rewards real effort instead of punishing near-misses
+
+    Args:
+        actual: Actual hours logged (None = no data, falls through)
+        target: Target hours for full credit (e.g. 7.0 for sleep)
+        floor: Minimum ratio to earn any credit (0.0 = any effort counts)
+
+    Returns:
+        float: Credit between 0.0 and 1.0
+
+    Examples:
+        >>> habit_credit(7.5, 7.0)
+        1.0
+        >>> habit_credit(5.0, 7.0)
+        0.7142857142857143
+        >>> habit_credit(1.5, 2.0)
+        0.75
+        >>> habit_credit(0.0, 2.0)
+        0.0
+        >>> habit_credit(None, 2.0)
+        0.0
+    """
+    if actual is None or actual <= 0:
+        return 0.0
+    ratio = min(actual / target, 1.0)
+    return ratio if ratio >= floor else 0.0
 
 
 def calculate_task_score(tasks: List[DailyTaskItem]) -> float:
@@ -74,23 +124,33 @@ def calculate_compliance_score(
     committed_tasks: Optional[List[DailyTaskItem]] = None
 ) -> float:
     """
-    Calculate compliance score as percentage of Tier 1 items completed.
+    Calculate compliance score with proportional credit for continuous habits.
     Optionally incorporates committed_tasks (20% weight) if present.
     
-    <b>Phase 3D Expansion: 5 items → 6 items</b>
+    <b>v3 — Proportional Credit (replaces binary pass/fail)</b>
     
     Tier 1 Non-Negotiables (6 items):
-    1. Sleep: 7+ hours
-    2. Training: Workout OR rest day
-    3. Deep Work: 2+ hours
-    4. Skill Building: 2+ hours career-focused learning
-    5. Zero Porn: No consumption (absolute)
-    6. Boundaries: No toxic interactions
+    1. Sleep: Proportional credit up to 7h target
+    2. Training: Binary — workout OR rest day
+    3. Deep Work: Proportional credit up to 2h target
+    4. Skill Building: Proportional credit up to 2h target
+    5. Zero Porn: Binary — no consumption (absolute)
+    6. Boundaries: Binary — no toxic interactions
     
-    <b>Impact on Scoring:</b>
-    - Before Phase 3D: Each item = 20% (5 items)
-    - After Phase 3D: Each item = 16.67% (6 items)
-    - 100% requires all 6 items completed
+    <b>Why Proportional?</b>
+    Impact analysis (2026-08-04) showed that binary scoring caused users to
+    abandon deep work and skill building after months of "doing the work but
+    scoring 0%." Users averaged 1.39h deep work and 0.72h skill building —
+    real effort — but scored 0% for both because they didn't hit 2h.
+    
+    Now: 1.5h deep work = 75% credit for that habit. 0.7h skill building =
+    35% credit. Any effort is reflected in the score.
+    
+    <b>Backward Compatibility:</b>
+    - Binary habits (training, zero_porn, boundaries) score identically
+    - When continuous data is absent (legacy check-ins), falls back to
+      boolean fields which behave the same as before
+    - Historical scores stored in Firestore are NOT retroactively changed
     
     Args:
         tier1: Tier 1 non-negotiables responses
@@ -99,19 +159,31 @@ def calculate_compliance_score(
     Returns:
         float: Score from 0.0 to 100.0
     """
-    # Count completed items (Phase 3D: Now 6 items)
-    items = [
-        tier1.sleep,
-        tier1.training or tier1.is_rest_day,
-        tier1.deep_work,
-        tier1.skill_building,  # Phase 3D: New item
-        tier1.zero_porn,
-        tier1.boundaries
+    # Proportional credit for continuous habits, binary for the rest
+    credits = [
+        # Sleep: proportional up to 7h, fallback to boolean
+        habit_credit(tier1.sleep_hours, 7.0) if tier1.sleep_hours is not None
+        else (1.0 if tier1.sleep else 0.0),
+
+        # Training: binary (did they train or rest?)
+        1.0 if (tier1.training or tier1.is_rest_day) else 0.0,
+
+        # Deep work: proportional up to 2h, fallback to boolean
+        habit_credit(tier1.deep_work_hours, 2.0) if tier1.deep_work_hours is not None
+        else (1.0 if tier1.deep_work else 0.0),
+
+        # Skill building: proportional up to 2h, fallback to boolean
+        habit_credit(tier1.skill_building_hours, 2.0) if tier1.skill_building_hours is not None
+        else (1.0 if tier1.skill_building else 0.0),
+
+        # Zero porn: binary
+        1.0 if tier1.zero_porn else 0.0,
+
+        # Boundaries: binary
+        1.0 if tier1.boundaries else 0.0,
     ]
     
-    completed = sum(1 for item in items if item)
-    total = len(items)
-    tier1_score = (completed / total) * 100.0
+    tier1_score = (sum(credits) / len(credits)) * 100.0
     
     if committed_tasks:
         task_score = calculate_task_score(committed_tasks)
@@ -264,7 +336,7 @@ def calculate_compliance_score_normalized(
         is_pre_phase3d = checkin_date < settings.phase_3d_deployment_date
     
     if is_pre_phase3d:
-        # Pre-Phase 3D: 5 items (exclude skill_building)
+        # Pre-Phase 3D: 5 items, binary (no continuous data available)
         items = [
             tier1.sleep,
             tier1.training or tier1.is_rest_day,
@@ -272,21 +344,27 @@ def calculate_compliance_score_normalized(
             tier1.zero_porn,
             tier1.boundaries
         ]
-        total = 5
+        completed = sum(1 for item in items if item)
+        tier1_score = (completed / 5) * 100.0
     else:
-        # Post-Phase 3D: 6 items
-        items = [
-            tier1.sleep,
-            tier1.training or tier1.is_rest_day,
-            tier1.deep_work,
-            tier1.skill_building,
-            tier1.zero_porn,
-            tier1.boundaries
+        # Post-Phase 3D: 6 items, proportional credit (v3 scoring)
+        credits = [
+            habit_credit(tier1.sleep_hours, 7.0) if tier1.sleep_hours is not None
+            else (1.0 if tier1.sleep else 0.0),
+
+            1.0 if (tier1.training or tier1.is_rest_day) else 0.0,
+
+            habit_credit(tier1.deep_work_hours, 2.0) if tier1.deep_work_hours is not None
+            else (1.0 if tier1.deep_work else 0.0),
+
+            habit_credit(tier1.skill_building_hours, 2.0) if tier1.skill_building_hours is not None
+            else (1.0 if tier1.skill_building else 0.0),
+
+            1.0 if tier1.zero_porn else 0.0,
+
+            1.0 if tier1.boundaries else 0.0,
         ]
-        total = 6
-    
-    completed = sum(1 for item in items if item)
-    tier1_score = (completed / total) * 100.0
+        tier1_score = (sum(credits) / len(credits)) * 100.0
     
     if committed_tasks:
         task_score = calculate_task_score(committed_tasks)

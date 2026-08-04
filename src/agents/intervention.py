@@ -517,26 +517,33 @@ Reply with your plan to break this pattern.
         # Day 2: Gentle Nudge
         if days == 2:
             return (
-                "👋 <b>Missed you yesterday!</b>\n\n"
-                f"You had a {streak}-day streak going. Everything okay?\n\n"
-                "Quick check-in: /checkin"
+                "👋 <b>Hey — missed you yesterday.</b>\n\n"
+                f"You had a {streak}-day streak going. How's it going?\n\n"
+                "Just reply with an emoji:\n"
+                "🟢 Doing fine, just forgot\n"
+                "🟡 Rough patch, but managing\n"
+                "🔴 Need to talk\n\n"
+                "Or jump right in: /quickcheckin"
             )
         
         # Day 3: Firm Warning
         elif days == 3:
             return (
-                "⚠️ <b>3 Days Missing</b>\n\n"
-                f"Your {streak}-day streak is at risk. This is a constitution violation.\n\n"
-                "Check in NOW to save your progress: /checkin"
+                "⚠️ <b>3 Days Away</b>\n\n"
+                f"Your {streak}-day streak is fading. We get it — some days are harder than others.\n\n"
+                "You don't have to be perfect. Even a 30-second check-in counts:\n"
+                "/quickcheckin\n\n"
+                "What's getting in the way?"
             )
         
         # Day 4: Critical with Historical Reference
         elif days == 4:
             return (
-                "🚨 <b>4-Day Absence - CRITICAL</b>\n\n"
-                f"You had a {streak}-day streak. Last time this happened (Feb 2025): "
-                "6-month spiral.\n\n"
-                "<b>Don't let history repeat.</b> Check in immediately: /checkin"
+                "🔶 <b>4 Days — Let's Reset</b>\n\n"
+                "No judgment. No lecture. Just one question:\n\n"
+                "<b>What's one thing you did for yourself today?</b>\n"
+                "(A workout, a good meal, 20 min of reading — anything counts)\n\n"
+                "Reply with anything and we'll count today as a win."
             )
         
         # Day 5+: Emergency with Partner/Shield Info
@@ -557,17 +564,15 @@ Reply with your plan to break this pattern.
                     f"({user.accountability_partner_name})."
                 )
             
-            return (
-                "🔴 <b>EMERGENCY - 5+ Days Missing</b>\n\n"
-                f"Your {streak}-day streak is gone. This is exactly how the Feb 2025 "
-                "regression started.\n\n"
-                "<b>You need help. Do this NOW:</b>\n"
-                "1. Check in: /checkin\n"
-                "2. Text a friend\n"
-                "3. Review your constitution"
-                f"{shield_text}"
-                f"{partner_text}"
+            result = (
+                "💙 <b>We're Here When You're Ready</b>\n\n"
+                f"It's been {days} days. No shame — life happens.\n\n"
+                "When you're ready, pick what feels right:\n"
+                "• <b>Quick restart</b> — 30 seconds: /quickcheckin\n"
+                "• <b>Full check-in</b> — reflect on today: /checkin\n"
+                "• <b>Just talk</b> — tell me what's going on\n"
             )
+            return result + shield_text + partner_text
     
     def _build_snooze_trap_intervention(self, pattern: Pattern, user) -> str:
         """

@@ -76,7 +76,7 @@ def main():
         "POST",
         "/webhook/telegram",
         200,
-        json={"update_id": 1, "message": {"chat": {"id": 1}, "text": "/start", "date": 1700000000}},
+        json={"update_id": 1, "message": {"message_id": 1, "from": {"id": 1, "is_bot": False, "first_name": "Test"}, "chat": {"id": 1, "type": "private"}, "text": "/start", "date": 1700000000}},
     )
 
     # 3. Cron endpoints (should return 200 if auth is skipped, or 401/403 if auth is enabled)

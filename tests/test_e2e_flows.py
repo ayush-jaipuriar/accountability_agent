@@ -163,10 +163,8 @@ class TestReminderToGhostingFlow:
             
             msg = agent._build_ghosting_intervention(pattern, ghosting_user)
             
-            # Should be emergency level
-            assert "EMERGENCY" in msg
-            # Should reference historical spiral
-            assert "Feb 2025" in msg
+            # Should lead with empathy
+            assert "We're Here" in msg
             # Should mention partner notification
             assert "Partner User" in msg
             # Should mention streak shields
