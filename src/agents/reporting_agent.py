@@ -366,6 +366,18 @@ async def generate_and_send_weekly_report(
         except Exception as e:
             logger.warning(f"Could not update last_report_date for {user_id}: {e}")
         
+        # Dispatch Partner Weekly Status Report if user has a partner
+        if user.accountability_partner_id and days == 7:
+            try:
+                from src.services.partner_notification_service import send_partner_weekly_report
+                await send_partner_weekly_report(
+                    bot=bot,
+                    user=user,
+                    checkins=checkins,
+                )
+            except Exception as e:
+                logger.error(f"Failed to send partner weekly report for {user_id}: {e}")
+
         result["status"] = "sent"
         logger.info(
             "%s report sent to %s (%s): %d/4 graphs",

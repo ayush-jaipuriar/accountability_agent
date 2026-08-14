@@ -230,5 +230,82 @@ class TaskService:
             return False, None
 
 
+    def save_committed_task_list(
+        self,
+        user_id: str,
+        date: str,
+        primary_title: str,
+        sec1_title: Optional[str] = None,
+        sec2_title: Optional[str] = None,
+    ) -> DailyTaskList:
+        """
+        Create and automatically commit the 3 daily to-dos for tomorrow during check-in.
+        
+        Args:
+            user_id: User ID
+            date: Tomorrow's date string (YYYY-MM-DD)
+            primary_title: Primary task title (Must-do #1)
+            sec1_title: Optional secondary task title #2
+            sec2_title: Optional secondary task title #3
+            
+        Returns:
+            DailyTaskList: The committed task list
+        """
+        tasks: List[DailyTaskItem] = []
+        
+        # 1. Primary Task
+        p_title = primary_title.strip() if primary_title and primary_title.strip() else "Maintain consistency"
+        tasks.append(DailyTaskItem(
+            id="task_primary",
+            title=p_title,
+            is_primary=True,
+            completed=False,
+            completed_at=None,
+        ))
+        
+        # 2. Secondary Task 1
+        if sec1_title and sec1_title.strip():
+            tasks.append(DailyTaskItem(
+                id="task_sec_1",
+                title=sec1_title.strip(),
+                is_primary=False,
+                completed=False,
+                completed_at=None,
+            ))
+            
+        # 3. Secondary Task 2
+        if sec2_title and sec2_title.strip():
+            tasks.append(DailyTaskItem(
+                id="task_sec_2",
+                title=sec2_title.strip(),
+                is_primary=False,
+                completed=False,
+                completed_at=None,
+            ))
+            
+        task_list = DailyTaskList(
+            user_id=user_id,
+            date=date,
+            tasks=tasks,
+            committed=True,
+            committed_at=datetime.utcnow(),
+        )
+        
+        try:
+            doc_ref = (
+                self.firestore.db.collection("daily_tasks")
+                .document(user_id)
+                .collection("tasks")
+                .document(date)
+            )
+            doc_ref.set(task_list.to_firestore())
+            logger.info(f"Saved {len(tasks)} committed to-dos for user {user_id} on {date}")
+        except Exception as e:
+            logger.error(f"Error saving committed to-dos: {e}", exc_info=True)
+            
+        return task_list
+
+
 # Singleton instance
 task_service = TaskService()
+

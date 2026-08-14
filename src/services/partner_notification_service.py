@@ -151,3 +151,118 @@ async def send_partner_checkin_notification(
         result["reason"] = "delivery_failed"
         result["error"] = str(e)
         return result
+
+
+def build_partner_weekly_summary_message(
+    partner_name: str,
+    performance: Dict[str, Any]
+) -> str:
+    """
+    Format weekly partner status report highlighting strongest and weakest habit areas.
+    """
+    if not performance.get("has_data"):
+        return f"🤝 <b>Weekly Partner Snapshot: {partner_name}</b>\n\nNo check-in records logged this week."
+
+    lines = [
+        f"🤝 <b>Weekly Partner Snapshot: {partner_name}</b>",
+        f"<i>Summary of your partner's execution over the last 7 days:</i>\n",
+    ]
+
+    # Strongest Areas
+    lines.append("🔥 <b>Strongest Areas:</b>")
+    strongest = performance.get("strongest", [])
+    if strongest:
+        for name, data in strongest:
+            lines.append(f"• <b>{name}</b>: {data['pct']:.0f}% ({data['detail']})")
+    else:
+        lines.append("• Building baseline consistency")
+
+    lines.append("")
+
+    # Weakest / Needs Support
+    lines.append("⚠️ <b>Needs Support / Growth Areas:</b>")
+    weakest = performance.get("weakest", [])
+    if weakest:
+        for name, data in weakest:
+            lines.append(f"• <b>{name}</b>: {data['pct']:.0f}% ({data['detail']})")
+    else:
+        lines.append("• None — all areas meeting targets!")
+
+    lines.append("")
+    lines.append(f"📊 <b>Weekly Compliance Avg:</b> {performance['avg_compliance']:.1f}%")
+
+    # Tasks / To-Dos
+    tasks_stat = performance.get("tasks_stat")
+    if tasks_stat:
+        lines.append(
+            f"🎯 <b>To-Dos Completed:</b> {tasks_stat['completed']}/{tasks_stat['total']} "
+            f"({tasks_stat['pct']:.0f}%)"
+        )
+
+    # Dynamic Coaching Tip
+    weakest_names = [name for name, _ in weakest]
+    focus_topic = weakest_names[0] if weakest_names else "consistency"
+    lines.append(
+        f"\n💡 <i>Tip: Send {partner_name} an encouraging text about their "
+        f"{focus_topic.lower()} goals this week!</i>"
+    )
+
+    return "\n".join(lines)
+
+
+async def send_partner_weekly_report(
+    bot: Any,
+    user: User,
+    checkins: list,
+) -> Dict[str, Any]:
+    """
+    Send weekly status report of user's performance to their accountability partner.
+    """
+    from src.services.analytics_service import calculate_partner_weekly_performance
+
+    result: Dict[str, Any] = {
+        "sent": False,
+        "reason": None,
+        "partner": None,
+    }
+
+    if not user.accountability_partner_id:
+        result["reason"] = "no_partner"
+        return result
+
+    if not getattr(user, "partner_checkin_notifications_enabled", True):
+        result["reason"] = "disabled"
+        return result
+
+    partner = firestore_service.get_user(user.accountability_partner_id)
+    result["partner"] = partner
+
+    if not partner:
+        result["reason"] = "partner_missing"
+        return result
+
+    if not getattr(partner, "partner_checkin_notifications_enabled", True):
+        result["reason"] = "disabled"
+        return result
+
+    perf = calculate_partner_weekly_performance(checkins)
+    user_name = get_preferred_first_name(user)
+    message = build_partner_weekly_summary_message(user_name, perf)
+
+    try:
+        await bot.send_message(
+            chat_id=partner.telegram_id,
+            text=message,
+            parse_mode="HTML",
+        )
+        result["sent"] = True
+        logger.info(f"✅ Sent weekly partner status report for {user.user_id} to partner {partner.user_id}")
+        return result
+    except Exception as e:
+        logger.error(
+            f"❌ Failed to send weekly partner status report for {user.user_id}: {e}"
+        )
+        result["reason"] = "delivery_failed"
+        result["error"] = str(e)
+        return result
+

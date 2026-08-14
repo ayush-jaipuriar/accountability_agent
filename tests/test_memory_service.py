@@ -145,8 +145,7 @@ class TestReflectionValidation:
 
     @pytest.mark.asyncio
     @patch("src.bot.conversation.get_checkin_agent")
-    @patch("src.bot.conversation.finish_checkin", new_callable=AsyncMock)
-    async def test_reflection_valid_length(self, mock_finish, mock_get_agent):
+    async def test_reflection_valid_length(self, mock_get_agent):
         """A message with 20 or more characters should proceed to parse."""
         update = MagicMock(spec=Update)
         update.message = AsyncMock()
@@ -175,11 +174,11 @@ class TestReflectionValidation:
         }
         mock_get_agent.return_value = mock_agent
 
+        from src.bot.conversation import Q5_TODO_PRIMARY
         result = await handle_reflection_response(update, context)
         
-        assert result == ConversationHandler.END
+        assert result == Q5_TODO_PRIMARY
         mock_agent.parse_reflection_note.assert_called_once()
-        mock_finish.assert_called_once_with(update, context)
         assert context.user_data["rating"] == 8
         assert context.user_data["rating_reason"] == "Good work on priorities"
 

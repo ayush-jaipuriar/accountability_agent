@@ -894,3 +894,130 @@ def format_mood_energy_summary(checkins: List[DailyCheckIn]) -> str:
         f"  😊 Avg Mood: {stats['mood']['avg']:.1f}/10",
     ]
     return "\n".join(lines)
+
+
+def calculate_partner_weekly_performance(checkins: List[DailyCheckIn]) -> Dict[str, Any]:
+    """
+    Calculate 7-day habit performance metrics to identify strongest and weakest areas
+    for the partner weekly status report.
+    
+    Returns structured dict with:
+    - has_data: bool
+    - checkin_count: int
+    - avg_compliance: float
+    - habits: dict of habit stats
+    - strongest: list of (habit_name, habit_stat)
+    - weakest: list of (habit_name, habit_stat)
+    - tasks_stat: optional dict of task stats
+    """
+    if not checkins:
+        return {"has_data": False, "checkin_count": 0}
+
+    total = len(checkins)
+    valid_scores = [c.compliance_score for c in checkins if c.compliance_score is not None]
+    avg_compliance = mean(valid_scores) if valid_scores else 0.0
+
+    habits = {}
+
+    # 1. Sleep
+    sleep_met_count = sum(1 for c in checkins if c.tier1_non_negotiables.sleep_met)
+    sleep_hours_list = [
+        c.tier1_non_negotiables.sleep_hours
+        for c in checkins
+        if c.tier1_non_negotiables.sleep_hours is not None
+    ]
+    avg_sleep = mean(sleep_hours_list) if sleep_hours_list else None
+    habits["Sleep"] = {
+        "pct": (sleep_met_count / total) * 100,
+        "detail": f"avg {avg_sleep:.1f}h" if avg_sleep is not None else f"{sleep_met_count}/{total} days",
+        "key": "sleep"
+    }
+
+    # 2. Training
+    training_done_count = sum(
+        1 for c in checkins
+        if (c.tier1_non_negotiables.training_done or c.tier1_non_negotiables.is_rest_day)
+    )
+    habits["Training"] = {
+        "pct": (training_done_count / total) * 100,
+        "detail": f"{training_done_count}/{total} sessions/rests",
+        "key": "training"
+    }
+
+    # 3. Deep Work
+    dw_met_count = sum(1 for c in checkins if c.tier1_non_negotiables.deep_work_met)
+    dw_hours_list = [
+        c.tier1_non_negotiables.deep_work_hours
+        for c in checkins
+        if c.tier1_non_negotiables.deep_work_hours is not None
+    ]
+    avg_dw = mean(dw_hours_list) if dw_hours_list else None
+    habits["Deep Work"] = {
+        "pct": (dw_met_count / total) * 100,
+        "detail": f"avg {avg_dw:.1f}h vs 2.0h target" if avg_dw is not None else f"{dw_met_count}/{total} days",
+        "key": "deep_work"
+    }
+
+    # 4. Skill Building
+    sb_met_count = sum(1 for c in checkins if c.tier1_non_negotiables.skill_building_met)
+    sb_hours_list = [
+        c.tier1_non_negotiables.skill_building_hours
+        for c in checkins
+        if c.tier1_non_negotiables.skill_building_hours is not None
+    ]
+    avg_sb = mean(sb_hours_list) if sb_hours_list else None
+    habits["Skill Building"] = {
+        "pct": (sb_met_count / total) * 100,
+        "detail": f"avg {avg_sb:.1f}h vs 2.0h target" if avg_sb is not None else f"{sb_met_count}/{total} days",
+        "key": "skill_building"
+    }
+
+    # 5. Zero Porn
+    zp_count = sum(1 for c in checkins if c.tier1_non_negotiables.zero_porn)
+    habits["Zero Porn"] = {
+        "pct": (zp_count / total) * 100,
+        "detail": f"{zp_count}/{total} days clean",
+        "key": "zero_porn"
+    }
+
+    # 6. Boundaries
+    b_count = sum(1 for c in checkins if c.tier1_non_negotiables.boundaries)
+    habits["Boundaries"] = {
+        "pct": (b_count / total) * 100,
+        "detail": f"{b_count}/{total} days held",
+        "key": "boundaries"
+    }
+
+    # 7. Tasks / To-Dos
+    all_tasks = []
+    for c in checkins:
+        if c.committed_tasks:
+            all_tasks.extend(c.committed_tasks)
+
+    tasks_stat = None
+    if all_tasks:
+        tasks_completed = sum(1 for t in all_tasks if t.completed)
+        tasks_stat = {
+            "completed": tasks_completed,
+            "total": len(all_tasks),
+            "pct": (tasks_completed / len(all_tasks)) * 100
+        }
+
+    # Sort habits by percentage descending
+    sorted_habits = sorted(habits.items(), key=lambda x: x[1]["pct"], reverse=True)
+
+    # Strongest = top 2 habits
+    strongest = sorted_habits[:2]
+    # Weakest = bottom 2 habits
+    weakest = sorted_habits[-2:]
+
+    return {
+        "has_data": True,
+        "checkin_count": total,
+        "avg_compliance": avg_compliance,
+        "habits": habits,
+        "strongest": strongest,
+        "weakest": weakest,
+        "tasks_stat": tasks_stat
+    }
+

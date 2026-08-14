@@ -20,7 +20,7 @@ from telegram.ext import ConversationHandler
 
 from src.models.schemas import User, UserStreaks, Tier1NonNegotiables
 from src.bot.conversation import (
-    Q1_TIER1, Q2_ALIGNMENT_RATING, Q3_ENERGY_MOOD, Q4_REFLECTION_NOTE,
+    Q1_TIER1, Q2_ALIGNMENT_RATING, Q3_ENERGY_MOOD, Q4_REFLECTION_NOTE, Q5_TODO_PRIMARY,
     get_skill_building_question,
     start_checkin,
     handle_tier1_response,
@@ -305,14 +305,12 @@ class TestHandleReflectionSkipCallback:
             'mood_rating': 8,
         })
         
-        with patch('src.bot.conversation.finish_checkin', new_callable=AsyncMock) as mock_finish:
-            result = await handle_reflection_skip_callback(update, context)
+        result = await handle_reflection_skip_callback(update, context)
             
-        assert result == ConversationHandler.END
+        assert result == Q5_TODO_PRIMARY
         assert context.user_data['challenges'] == "None reported."
         assert "alignment" in context.user_data['rating_reason'].lower()
         assert context.user_data['tomorrow_priority'] == "Maintain consistency."
-        mock_finish.assert_called_once()
 
 
 # =============================================
@@ -348,18 +346,16 @@ class TestHandleReflectionResponse:
             "tomorrow_obstacle": "None reported."
         }
         
-        with patch('src.bot.conversation.get_checkin_agent') as mock_agent_get, \
-             patch('src.bot.conversation.finish_checkin', new_callable=AsyncMock) as mock_finish:
+        with patch('src.bot.conversation.get_checkin_agent') as mock_agent_get:
             mock_agent = MagicMock()
             mock_agent.parse_reflection_note = AsyncMock(return_value=mock_parsed)
             mock_agent_get.return_value = mock_agent
             
             result = await handle_reflection_response(update, context)
             
-        assert result == ConversationHandler.END
+        assert result == Q5_TODO_PRIMARY
         assert context.user_data['challenges'] == "None reported."
         assert context.user_data['tomorrow_priority'] == "Study."
-        mock_finish.assert_called_once()
 
 
 # =============================================
@@ -392,12 +388,10 @@ class TestHandleVoiceReflection:
             'mood_rating': 8,
         })
         
-        with patch('src.bot.conversation.finish_checkin', new_callable=AsyncMock) as mock_finish:
-            result = await handle_voice_reflection(update, context)
+        result = await handle_voice_reflection(update, context)
             
-        assert result == ConversationHandler.END
+        assert result == Q5_TODO_PRIMARY
         assert "voice" in context.user_data['challenges'].lower()
-        mock_finish.assert_called_once()
 
 
 # =============================================

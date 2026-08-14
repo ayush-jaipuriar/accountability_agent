@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 
 # ===== Conversation States =====
-Q1_TIER1, Q2_ALIGNMENT_RATING, Q3_ENERGY_MOOD, Q4_REFLECTION_NOTE = range(4)
+Q1_TIER1, Q2_ALIGNMENT_RATING, Q3_ENERGY_MOOD, Q4_REFLECTION_NOTE, Q0_TASK_VERIFICATION, Q5_TODO_PRIMARY, Q6_TODO_SECONDARY_1, Q7_TODO_SECONDARY_2 = range(8)
 
 # Legacy states kept for test compilation compatibility
 Q2_CHALLENGES = 99
@@ -407,6 +407,17 @@ async def start_checkin(
             f"Quick mode available anytime with /quickcheckin."
         )
     
+    # Check for committed to-dos for today (Feature 1: Next-Day Verification)
+    if not is_quick_checkin:
+        from src.services.task_service import task_service
+        task_list = task_service.get_daily_tasks(user_id, checkin_date)
+        if task_list and task_list.committed and task_list.tasks:
+            context.user_data['tasks_for_today'] = task_list.tasks
+            context.user_data['committed_tasks'] = task_list.tasks
+            await ask_task_verification(update.message, context)
+            logger.info(f"📋 To-do verification started for {user_id} ({len(task_list.tasks)} tasks)")
+            return Q0_TASK_VERIFICATION
+
     # Start Question 1: Tier 1 non-negotiables
     await ask_tier1_question(update.message, context)
     
@@ -415,13 +426,81 @@ async def start_checkin(
     return Q1_TIER1
 
 
+def build_task_verification_keyboard(tasks: list) -> InlineKeyboardMarkup:
+    """Build inline keyboard to toggle task completion."""
+    keyboard = []
+    for task in tasks:
+        icon = "✅" if task.completed else "❌"
+        tag = " (Primary)" if task.is_primary else ""
+        label = f"{icon} {task.title[:30]}{tag}"
+        keyboard.append([
+            InlineKeyboardButton(label, callback_data=f"tverify_toggle_{task.id}")
+        ])
+    keyboard.append([
+        InlineKeyboardButton("➡️ Continue to Tier 1 Non-Negotiables", callback_data="tverify_done")
+    ])
+    return InlineKeyboardMarkup(keyboard)
+
+
+async def ask_task_verification(message, context):
+    """Prompt user to verify yesterday's to-dos."""
+    tasks = context.user_data.get('tasks_for_today', [])
+    keyboard = build_task_verification_keyboard(tasks)
+    
+    text = (
+        "📋 <b>Yesterday's To-Dos for Today:</b>\n\n"
+        "Tap each item to mark whether you completed it today:\n"
+    )
+    await message.reply_text(text, reply_markup=keyboard, parse_mode='HTML')
+
+
+async def handle_task_verification_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Handle task verification toggle and completion callbacks."""
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    user_id = context.user_data['user_id']
+    date = context.user_data.get('date') or get_checkin_date(tz="UTC")
+    
+    if data.startswith("tverify_toggle_"):
+        task_id = data.replace("tverify_toggle_", "")
+        tasks = context.user_data.get('tasks_for_today', [])
+        from src.services.task_service import task_service
+        for task in tasks:
+            if task.id == task_id:
+                task.completed = not task.completed
+                task_service.toggle_task_completion(user_id, date, task_id, task.completed)
+                break
+        context.user_data['tasks_for_today'] = tasks
+        context.user_data['committed_tasks'] = tasks
+        keyboard = build_task_verification_keyboard(tasks)
+        await query.edit_message_reply_markup(reply_markup=keyboard)
+        return Q0_TASK_VERIFICATION
+        
+    elif data == "tverify_done":
+        tasks = context.user_data.get('tasks_for_today', [])
+        context.user_data['committed_tasks'] = tasks
+        completed_count = sum(1 for t in tasks if t.completed)
+        await query.edit_message_text(
+            f"📋 <b>To-Dos Verified:</b> {completed_count}/{len(tasks)} completed.\n\n"
+            f"Moving to Tier 1 non-negotiables...",
+            parse_mode='HTML'
+        )
+        await ask_tier1_question(query.message, context)
+        return Q1_TIER1
+
+
 async def handle_return_reason_callback(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     """
     Handle return reason selection when user returns after ghosting (2A).
-    Stores return_reason in user_data and proceeds to Question 1 (Tier 1).
+    Stores return_reason in user_data and proceeds to to-do check or Question 1 (Tier 1).
     """
     query = update.callback_query
     await query.answer()
@@ -437,6 +516,8 @@ async def handle_return_reason_callback(
     }
     reason_text = reason_map.get(reason_code)
     context.user_data['return_reason'] = reason_text
+    user_id = context.user_data['user_id']
+    checkin_date = context.user_data.get('date') or get_checkin_date(tz="UTC")
     
     if reason_text:
         await query.edit_message_text(
@@ -448,6 +529,15 @@ async def handle_return_reason_callback(
         await query.edit_message_text(
             "👍 Let's jump straight to today's check-in..."
         )
+    
+    # Check for committed to-dos for today
+    from src.services.task_service import task_service
+    task_list = task_service.get_daily_tasks(user_id, checkin_date)
+    if task_list and task_list.committed and task_list.tasks:
+        context.user_data['tasks_for_today'] = task_list.tasks
+        context.user_data['committed_tasks'] = task_list.tasks
+        await ask_task_verification(query.message, context)
+        return Q0_TASK_VERIFICATION
     
     await ask_tier1_question(query.message, context)
     return Q1_TIER1
@@ -1163,9 +1253,18 @@ async def handle_reflection_skip_callback(
     context.user_data['tomorrow_priority'] = "Maintain consistency."
     context.user_data['tomorrow_obstacle'] = "None reported."
     
-    # Finish check-in
-    await finish_checkin(update, context)
-    return ConversationHandler.END
+    # Move to To-Do commitment for tomorrow (or finish quick check-in)
+    if context.user_data.get('checkin_type') == 'quick':
+        await finish_checkin_quick(update, context)
+        return ConversationHandler.END
+
+    await query.message.reply_text(
+        "🎯 <b>Top 3 To-Dos for Tomorrow (1/3)</b>\n\n"
+        "What is your <b>#1 Primary Focus (Must-Do)</b> for tomorrow?\n\n"
+        "<i>(Type your primary task below)</i>",
+        parse_mode='HTML'
+    )
+    return Q5_TODO_PRIMARY
 
 
 async def handle_reflection_response(
@@ -1175,7 +1274,7 @@ async def handle_reflection_response(
     """
     Handle free-text reflection note response.
     Parses using Gemini to extract challenges, rating reason, priority, obstacle,
-    saves the check-in, and completes.
+    and proceeds to To-Do prompts.
     """
     note_text = update.message.text.strip()
     
@@ -1234,12 +1333,13 @@ async def handle_reflection_response(
         logger.warning(f"Could not delete progress message: {e}")
         
     await update.message.reply_text(
-        "💾 Reflection parsed. Saving check-in and generating feedback...",
+        "💾 Reflection parsed.\n\n"
+        "🎯 <b>Top 3 To-Dos for Tomorrow (1/3)</b>\n\n"
+        "What is your <b>#1 Primary Focus (Must-Do)</b> for tomorrow?\n\n"
+        "<i>(Type your primary task below)</i>",
         parse_mode='HTML'
     )
-    
-    await finish_checkin(update, context)
-    return ConversationHandler.END
+    return Q5_TODO_PRIMARY
 
 
 async def handle_voice_reflection(
@@ -1247,15 +1347,8 @@ async def handle_voice_reflection(
     context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     """
-    Handle voice reflection note by acknowledging and completing with defaults.
+    Handle voice reflection note by acknowledging and proceeding to To-Dos.
     """
-    await update.message.reply_text(
-        "🎤 <b>Voice note received!</b> (Audio transcription is not configured in this version, "
-        "so I will complete your check-in with standard defaults).\n\n"
-        "💾 Saving check-in and generating feedback...",
-        parse_mode='HTML'
-    )
-    
     # Populate neutral values
     rating = context.user_data.get('rating', 8)
     context.user_data['challenges'] = "Voice reflection recorded (audio file)."
@@ -1263,24 +1356,106 @@ async def handle_voice_reflection(
     context.user_data['tomorrow_priority'] = "Maintain consistency."
     context.user_data['tomorrow_obstacle'] = "None reported."
     
-    # Finish check-in
+    await update.message.reply_text(
+        "🎤 <b>Voice note received!</b>\n\n"
+        "🎯 <b>Top 3 To-Dos for Tomorrow (1/3)</b>\n\n"
+        "What is your <b>#1 Primary Focus (Must-Do)</b> for tomorrow?\n\n"
+        "<i>(Type your primary task below)</i>",
+        parse_mode='HTML'
+    )
+    return Q5_TODO_PRIMARY
+
+
+async def handle_todo_primary(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Handle Primary Task input for tomorrow."""
+    text = update.message.text.strip() if update.message and update.message.text else "Maintain consistency."
+    context.user_data['todo_primary'] = text
+    context.user_data['tomorrow_priority'] = text
+    
+    await update.message.reply_text(
+        f"🎯 <b>Primary Focus (#1):</b> {text}\n\n"
+        "🥈 <b>Top 3 To-Dos for Tomorrow (2/3)</b>\n\n"
+        "What is your <b>#2 Secondary Task</b> for tomorrow?\n\n"
+        "<i>(Type your task below, or type 'skip' to skip)</i>",
+        parse_mode='HTML'
+    )
+    return Q6_TODO_SECONDARY_1
+
+
+async def handle_todo_secondary_1(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Handle Secondary Task 1 input for tomorrow."""
+    text = update.message.text.strip() if update.message and update.message.text else ""
+    if text.lower() not in ("skip", "/skip", "none", "no"):
+        context.user_data['todo_sec1'] = text
+        sec1_display = f"🥈 <b>Secondary Task #2:</b> {text}\n\n"
+    else:
+        context.user_data['todo_sec1'] = None
+        sec1_display = "🥈 <i>Skipped secondary task #2</i>\n\n"
+        
+    await update.message.reply_text(
+        f"{sec1_display}"
+        "🥉 <b>Top 3 To-Dos for Tomorrow (3/3)</b>\n\n"
+        "What is your <b>#3 Secondary Task</b> for tomorrow?\n\n"
+        "<i>(Type your task below, or type 'skip' to finish)</i>",
+        parse_mode='HTML'
+    )
+    return Q7_TODO_SECONDARY_2
+
+
+async def handle_todo_secondary_2(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Handle Secondary Task 2 input for tomorrow and finalize check-in."""
+    text = update.message.text.strip() if update.message and update.message.text else ""
+    if text.lower() not in ("skip", "/skip", "none", "no"):
+        context.user_data['todo_sec2'] = text
+    else:
+        context.user_data['todo_sec2'] = None
+        
+    user_id = context.user_data['user_id']
+    user_tz = context.user_data.get('timezone', 'Asia/Kolkata')
+    today_str = context.user_data.get('date') or get_checkin_date(tz=user_tz)
+    from datetime import timedelta as td
+    tomorrow_str = (datetime.strptime(today_str, "%Y-%m-%d") + td(days=1)).strftime("%Y-%m-%d")
+    
+    primary = context.user_data.get('todo_primary', 'Maintain consistency.')
+    sec1 = context.user_data.get('todo_sec1')
+    sec2 = context.user_data.get('todo_sec2')
+    
+    from src.services.task_service import task_service
+    task_service.save_committed_task_list(
+        user_id=user_id,
+        date=tomorrow_str,
+        primary_title=primary,
+        sec1_title=sec1,
+        sec2_title=sec2
+    )
+    
+    await update.message.reply_text(
+        "💾 <b>To-Dos locked in for tomorrow!</b> Saving check-in and generating feedback...",
+        parse_mode='HTML'
+    )
+    
     await finish_checkin(update, context)
     return ConversationHandler.END
 
 
 # ===== Finish Check-In =====
 
-def format_progress_summary(tier1) -> str:
+def format_progress_summary(tier1, committed_tasks=None) -> str:
     """
-    Build a visual progress summary showing actual vs target for continuous habits.
+    Build a visual progress summary showing actual vs target for continuous habits
+    and daily focus / to-do execution.
     
     Returns an HTML-formatted block with progress bars using block characters.
     Only includes habits where continuous data is available.
-    
-    Why this exists:
-    Impact analysis (2026-08-04) showed users couldn't see their actual effort.
-    A user logging 1.5h deep work saw "❌ Deep Work" — now they see
-    "Deep Work: 1.5h/2h ██████░░ 75%" which reflects real progress.
     """
     lines = []
     
@@ -1326,6 +1501,19 @@ def format_progress_summary(tier1) -> str:
     
     # Boundaries
     lines.append(f"  {'✅' if tier1.boundaries else '❌'} Boundaries")
+
+    # Daily Focus / To-Dos (Feature 1)
+    if committed_tasks:
+        completed_tasks = sum(1 for t in committed_tasks if t.completed)
+        total_tasks = len(committed_tasks)
+        pct = int((completed_tasks / total_tasks) * 100) if total_tasks > 0 else 0
+        filled = int((completed_tasks / total_tasks) * 8) if total_tasks > 0 else 0
+        task_bar = f"{'█' * filled}{'░' * (8 - filled)} {pct}%" if total_tasks > 0 else ""
+        lines.append(f"\n  🎯 <b>Daily Focus:</b> {completed_tasks}/{total_tasks} completed  {task_bar}")
+        for t in committed_tasks:
+            icon = "✅" if t.completed else "❌"
+            tag = " (Primary)" if t.is_primary else ""
+            lines.append(f"    {icon} {t.title}{tag}")
     
     return "\n".join(lines)
 
@@ -1388,8 +1576,10 @@ async def finish_checkin(
         
         # Load committed tasks for today
         from src.services.task_service import task_service
-        task_list = task_service.get_daily_tasks(user_id, date)
-        committed_tasks = task_list.tasks if (task_list and task_list.committed) else None
+        committed_tasks = context.user_data.get('committed_tasks')
+        if committed_tasks is None:
+            task_list = task_service.get_daily_tasks(user_id, date)
+            committed_tasks = task_list.tasks if (task_list and task_list.committed) else None
 
         # Calculate compliance score
         compliance_score = calculate_compliance_score(tier1, committed_tasks)
@@ -1502,7 +1692,7 @@ async def finish_checkin(
             feedback_parts.append(f"📊 Compliance: {compliance_score:.1f}%")
             
             # Progress summary — show actual effort with visual bars (1C)
-            progress = format_progress_summary(tier1)
+            progress = format_progress_summary(tier1, committed_tasks)
             if progress:
                 feedback_parts.append(f"\n{progress}")
             
@@ -1546,7 +1736,7 @@ async def finish_checkin(
             feedback_parts.append(f"📊 Compliance: {compliance_score:.1f}%")
             
             # Progress summary — show actual effort with visual bars (1C)
-            progress = format_progress_summary(tier1)
+            progress = format_progress_summary(tier1, committed_tasks)
             if progress:
                 feedback_parts.append(f"\n{progress}")
             
@@ -2206,6 +2396,9 @@ def create_checkin_conversation_handler() -> ConversationHandler:
             CommandHandler("quickcheckin", start_checkin)  # Phase 3E: Quick check-in entry
         ],
         states={
+            Q0_TASK_VERIFICATION: [
+                CallbackQueryHandler(handle_task_verification_callback, pattern="^tverify_")
+            ],
             Q1_TIER1: [
                 CallbackQueryHandler(handle_return_reason_callback, pattern="^return_"),
                 CallbackQueryHandler(handle_tier1_response)
@@ -2221,7 +2414,16 @@ def create_checkin_conversation_handler() -> ConversationHandler:
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reflection_response),
                 MessageHandler(filters.VOICE, handle_voice_reflection),
                 CallbackQueryHandler(handle_reflection_skip_callback, pattern="^ref_")
-            ]
+            ],
+            Q5_TODO_PRIMARY: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_todo_primary),
+            ],
+            Q6_TODO_SECONDARY_1: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_todo_secondary_1),
+            ],
+            Q7_TODO_SECONDARY_2: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_todo_secondary_2),
+            ],
         },
         fallbacks=[
             CommandHandler("cancel", cancel_checkin)
