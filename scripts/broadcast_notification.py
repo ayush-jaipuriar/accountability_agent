@@ -24,12 +24,28 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.services.firestore_service import firestore_service
-from src.bot.telegram_bot import bot_manager
 from src.config import settings
+from telegram import Bot
 import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
+def get_live_bot_token() -> str:
+    """Retrieve live bot token from settings or Secret Manager."""
+    token = settings.telegram_bot_token
+    if token and not token.startswith("dummy_"):
+        return token
+    try:
+        from google.cloud import secretmanager
+        client = secretmanager.SecretManagerServiceClient()
+        name = f"projects/{settings.gcp_project_id}/secrets/telegram-bot-token/versions/latest"
+        response = client.access_secret_version(request={"name": name})
+        return response.payload.data.decode("UTF-8").strip()
+    except Exception as e:
+        logger.warning(f"Could not load token from Secret Manager: {e}")
+        return token
 
 
 async def send_broadcast():
@@ -38,8 +54,9 @@ async def send_broadcast():
     logger.info("🚀 Starting broadcast notification...")
     logger.info(f"   Environment: {settings.environment}")
     
-    # Initialize bot application
-    await bot_manager.application.initialize()
+    token = get_live_bot_token()
+    bot = Bot(token=token)
+    await bot.initialize()
     logger.info("✅ Telegram bot initialized")
     
     # Get all users
@@ -50,27 +67,30 @@ async def send_broadcast():
         logger.error(f"❌ Failed to fetch users: {e}")
         return
     
-    # Notification message (v3.1.0 release)
+    # Notification message (v3.2.0 release)
     message = (
-        "🚀 <b>Release Notes: Accountability Agent v3.1.0 Update</b>\n\n"
-        "We've deployed a core architecture and scoring engine upgrade (<b>v3.1.0</b>) to improve behavior-change dynamics and telemetry accuracy.\n\n"
-        "<b>What's Changed in v3.1.0:</b>\n\n"
-        "1️⃣ <b>Proportional Habit Scoring (v3 Engine)</b> 📈\n"
-        "• Replaced binary pass/fail cutoffs with continuous proportional credit curves:\n"
-        "  <code>credit = min(actual_hours / target_hours, 1.0)</code>\n"
-        "• Logging 1.5h deep work (2.0h target) or 0.7h skill building now earns <b>75% and 35% credit</b> respectively instead of 0%. Eliminates single-threshold penalty traps.\n\n"
-        "2️⃣ <b>Visual Telemetry & Progress Bars</b> 📊\n"
-        "• Post check-in feedback now renders real-time visual progress bars per habit vector:\n"
-        "  <code>Deep Work: 1.5h / 2.0h  ██████░░ 75%</code>\n"
-        "• Evaluates continuous metrics directly from your Tier 1 schema.\n\n"
-        "3️⃣ <b>Low-Friction Intervention Engine</b> 💙\n"
-        "• Reduced activation energy on missed check-in triggers (Days 2–5+).\n"
-        "• Introduces single-emoji state queries (🟢/🟡/🔴) and 30-second <code>/quickcheckin</code> routes to prevent ghosting cascades.\n\n"
-        "4️⃣ <b>Return Telemetry & Contextual Adaptation</b> 🧠\n"
-        "• Returning after an absence now captures a <code>return_reason</code> classification (<i>Overwhelmed</i>, <i>Avoidance</i>, <i>Schedule Conflict</i>, etc.) to dynamically tune downstream coaching logic.\n\n"
+        "🚀 <b>Update: Accountability Agent v3.2.0 Release</b>\n\n"
+        "We've deployed <b>v3.2.0</b> featuring the <b>Daily Focus Engine</b> and <b>Partner Weekly Performance Reports</b>.\n\n"
+        "<b>What's New in v3.2.0:</b>\n\n"
+        "1️⃣ <b>Top 3 To-Dos Commitment</b> 🎯\n"
+        "• At the end of /checkin, you will now be prompted to lock in tomorrow's priorities:\n"
+        "  - <b>#1 Primary Focus (Must-Do)</b>\n"
+        "  - <b>#2 Secondary Task</b>\n"
+        "  - <b>#3 Secondary Task</b>\n"
+        "• Helps you close your day with clear intention for tomorrow.\n\n"
+        "2️⃣ <b>Next-Day Task Verification & 80/20 Scoring</b> ⚖️\n"
+        "• At the start of your check-in, tap inline buttons (<code>[ ✅ / ❌ ]</code>) to mark which to-dos you completed.\n"
+        "• <b>Compliance Score Blending:</b>\n"
+        "  - <b>80%</b> Tier 1 Habits (Sleep, Training, Deep Work, etc.)\n"
+        "  - <b>20%</b> Daily Focus Tasks (Primary: 50%, Secondaries: 25% each)\n"
+        "• Visual progress bars now display your task completion breakdown.\n\n"
+        "3️⃣ <b>Partner Weekly Performance Reports</b> 🤝\n"
+        "• Sunday weekly reports delivered to your accountability partner now include a performance snapshot highlighting:\n"
+        "  - 🔥 <b>Strongest execution areas</b> (e.g., <i>Training: 100%</i>)\n"
+        "  - ⚠️ <b>Focus & growth areas</b> (e.g., <i>Deep Work: 45%</i>)\n"
+        "  - 💡 <b>Actionable coaching tips</b> for your partner to support you.\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        "Run a check-in tonight to inspect your updated telemetry:\n"
-        "👉 <b>/checkin</b>"
+        "👉 <i>Ready for today? Start your check-in anytime with</i> /checkin <i>or quick mode with</i> /quickcheckin!"
     )
     
     # Send messages with rate limiting
@@ -80,7 +100,7 @@ async def send_broadcast():
     
     for user in users:
         try:
-            await bot_manager.bot.send_message(
+            await bot.send_message(
                 chat_id=user.telegram_id,
                 text=message,
                 parse_mode='HTML'
