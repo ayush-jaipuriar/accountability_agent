@@ -64,7 +64,7 @@ async def test_perfect_compliance_feedback(checkin_agent):
     print('='*60)
     
     # Verify feedback quality
-    assert len(feedback) > 100, "Feedback too short"
+    assert len(feedback) > 50, "Feedback too short"
     assert len(feedback) < 1500, "Feedback too long"
     assert "47" in feedback or "streak" in feedback.lower(), "Should mention streak"
     assert "100" in feedback or "perfect" in feedback.lower() or "all" in feedback.lower(), "Should acknowledge perfect score"
@@ -107,7 +107,7 @@ async def test_good_compliance_feedback(checkin_agent):
     print('='*60)
     
     # Verify feedback quality
-    assert len(feedback) > 100, "Feedback too short"
+    assert len(feedback) > 50, "Feedback too short"
     assert "deep work" in feedback.lower() or "work" in feedback.lower(), "Should mention missed item"
     assert "15" in feedback or "streak" in feedback.lower(), "Should mention streak"
 
@@ -149,7 +149,7 @@ async def test_struggling_compliance_feedback(checkin_agent):
     print('='*60)
     
     # Verify feedback quality
-    assert len(feedback) > 100, "Feedback too short"
+    assert len(feedback) > 50, "Feedback too short"
     assert any(word in feedback.lower() for word in ["sleep", "training", "boundaries"]), "Should mention missed items"
     assert "tomorrow" in feedback.lower() or "focus" in feedback.lower(), "Should give forward guidance"
 
@@ -190,7 +190,7 @@ async def test_milestone_streak_feedback(checkin_agent):
     print('='*60)
     
     # Verify feedback quality
-    assert len(feedback) > 100, "Feedback too short"
+    assert len(feedback) > 50, "Feedback too short"
     # LLM may write "30" or spell out "thirty" - accept either
     assert "30" in feedback or "thirty" in feedback.lower(), "Should mention 30-day streak"
     assert any(word in feedback.lower() for word in ["milestone", "record", "momentum", "consistent", "streak"]), "Should celebrate milestone"

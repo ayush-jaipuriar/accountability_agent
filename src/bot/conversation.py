@@ -1452,12 +1452,11 @@ async def handle_todo_secondary_2(
 def format_progress_summary(tier1, committed_tasks=None) -> str:
     """
     Build a visual progress summary showing actual vs target for continuous habits
-    and daily focus / to-do execution.
+    and daily focus / to-do execution in a clean tree card structure.
     
     Returns an HTML-formatted block with progress bars using block characters.
-    Only includes habits where continuous data is available.
     """
-    lines = []
+    lines = ["📊 <b>Execution Breakdown</b>"]
     
     def bar(actual, target, width=8):
         """Render a text progress bar."""
@@ -1467,40 +1466,49 @@ def format_progress_summary(tier1, committed_tasks=None) -> str:
         filled = int(ratio * width)
         empty = width - filled
         pct = int(ratio * 100)
-        return f"{'█' * filled}{'░' * empty} {pct}%"
+        return f"<code>[{'█' * filled}{'░' * empty}]</code> {pct}%"
     
     # Sleep
     if tier1.sleep_hours is not None:
         b = bar(tier1.sleep_hours, 7.0)
-        emoji = "✅" if tier1.sleep_hours >= 7.0 else ("🟡" if tier1.sleep_hours >= 6.0 else "❌")
-        lines.append(f"  {emoji} Sleep: {tier1.sleep_hours:.1f}h / 7h  {b}")
+        emoji = "😴"
+        lines.append(f"├ {emoji} Sleep: {tier1.sleep_hours:.1f}h / 7h {b}")
+    else:
+        status = "✅" if tier1.sleep else "❌"
+        lines.append(f"├ 😴 Sleep: {status}")
     
     # Training
     intensity = tier1.training_intensity or ("done" if tier1.training else "skipped")
     if tier1.is_rest_day:
-        lines.append(f"  🛌 Training: Rest Day")
+        lines.append(f"├ 🛌 Training: Rest Day ✅")
     elif intensity in ('light', 'moderate', 'intense'):
-        lines.append(f"  ✅ Training: {intensity.title()}")
+        lines.append(f"├ 🏋️ Training: {intensity.title()} ✅")
     else:
-        lines.append(f"  ❌ Training: Skipped")
+        lines.append(f"├ 🏋️ Training: Skipped ❌")
     
     # Deep Work
     if tier1.deep_work_hours is not None:
         b = bar(tier1.deep_work_hours, 2.0)
-        emoji = "✅" if tier1.deep_work_hours >= 2.0 else ("🟡" if tier1.deep_work_hours >= 0.5 else "❌")
-        lines.append(f"  {emoji} Deep Work: {tier1.deep_work_hours:.1f}h / 2h  {b}")
+        lines.append(f"├ 💻 Deep Work: {tier1.deep_work_hours:.1f}h / 2h {b}")
+    else:
+        status = "✅" if tier1.deep_work else "❌"
+        lines.append(f"├ 💻 Deep Work: {status}")
     
     # Skill Building
     if tier1.skill_building_hours is not None:
         b = bar(tier1.skill_building_hours, 2.0)
-        emoji = "✅" if tier1.skill_building_hours >= 2.0 else ("🟡" if tier1.skill_building_hours >= 0.5 else "❌")
-        lines.append(f"  {emoji} Skill Building: {tier1.skill_building_hours:.1f}h / 2h  {b}")
+        lines.append(f"├ 📚 Skill Building: {tier1.skill_building_hours:.1f}h / 2h {b}")
+    else:
+        status = "✅" if tier1.skill_building else "❌"
+        lines.append(f"├ 📚 Skill Building: {status}")
     
-    # Zero Porn
-    lines.append(f"  {'✅' if tier1.zero_porn else '❌'} Zero Porn")
-    
-    # Boundaries
-    lines.append(f"  {'✅' if tier1.boundaries else '❌'} Boundaries")
+    # Zero Porn & Boundaries
+    zero_porn_status = "✅" if tier1.zero_porn else "❌"
+    boundaries_status = "✅" if tier1.boundaries else "❌"
+    if tier1.zero_porn and tier1.boundaries:
+        lines.append(f"├ 🛡️ Zero Porn & Boundaries: Protected ✅")
+    else:
+        lines.append(f"├ 🛡️ Zero Porn: {zero_porn_status} | Boundaries: {boundaries_status}")
 
     # Daily Focus / To-Dos (Feature 1)
     if committed_tasks:
@@ -1508,12 +1516,15 @@ def format_progress_summary(tier1, committed_tasks=None) -> str:
         total_tasks = len(committed_tasks)
         pct = int((completed_tasks / total_tasks) * 100) if total_tasks > 0 else 0
         filled = int((completed_tasks / total_tasks) * 8) if total_tasks > 0 else 0
-        task_bar = f"{'█' * filled}{'░' * (8 - filled)} {pct}%" if total_tasks > 0 else ""
-        lines.append(f"\n  🎯 <b>Daily Focus:</b> {completed_tasks}/{total_tasks} completed  {task_bar}")
+        task_bar = f"<code>[{'█' * filled}{'░' * (8 - filled)}]</code> {pct}%" if total_tasks > 0 else ""
+        lines.append(f"└ 🎯 <b>Daily Focus:</b> {completed_tasks}/{total_tasks} completed {task_bar}")
         for t in committed_tasks:
             icon = "✅" if t.completed else "❌"
             tag = " (Primary)" if t.is_primary else ""
             lines.append(f"    {icon} {t.title}{tag}")
+    else:
+        if lines and lines[-1].startswith("├ "):
+            lines[-1] = "└ " + lines[-1][2:]
     
     return "\n".join(lines)
 
@@ -1686,31 +1697,29 @@ async def finish_checkin(
                 except Exception as e:
                     logger.error(f"Support guidance generation failed, skipping: {e}")
             
-            # Build final message with header and AI feedback
+            # Build clean, compact final message
             feedback_parts = []
-            feedback_parts.append("🎉 <b>Check-In Complete!</b>\n")
-            feedback_parts.append(f"📊 Compliance: {compliance_score:.1f}%")
             
-            # Progress summary — show actual effort with visual bars (1C)
+            # 1. Header Hero Card
+            streak_num = streak_updates['current_streak']
+            if is_new_record:
+                header = f"🎉 <b>Check-In Logged</b> • <b>{compliance_score:.1f}%</b> • 🔥 <b>{streak_num}d Streak</b> 🏆 <b>NEW RECORD!</b>"
+            elif streak_updates.get('is_reset') and streak_updates.get('recovery_message'):
+                header = f"🔄 <b>Check-In Logged</b> • <b>{compliance_score:.1f}%</b>\n{streak_updates['recovery_message']}"
+            else:
+                header = f"🎉 <b>Check-In Logged</b> • <b>{compliance_score:.1f}%</b> • 🔥 <b>{streak_num}d Streak</b>"
+            feedback_parts.append(header)
+            
+            # 2. Progress Breakdown (Tree format)
             progress = format_progress_summary(tier1, committed_tasks)
             if progress:
                 feedback_parts.append(f"\n{progress}")
             
-            # Phase D: Show recovery message on reset, normal streak otherwise
-            if streak_updates.get('is_reset') and streak_updates.get('recovery_message'):
-                feedback_parts.append(f"\n{streak_updates['recovery_message']}")
-            else:
-                feedback_parts.append(f"🔥 Streak: {streak_updates['current_streak']} days")
+            # 3. AI Coach's Takeaway (3 crisp bullets)
+            feedback_parts.append(f"\n💡 <b>Coach's Takeaway</b>\n{ai_feedback}")
             
-            if is_new_record:
-                feedback_parts.append("🏆 <b>NEW PERSONAL RECORD!</b>")
-            
-            feedback_parts.append(f"📈 Total check-ins: {streak_updates['total_checkins']}")
-            feedback_parts.append(f"\n---\n\n{ai_feedback}")
-            
-            # ===== PHASE 3C: Add Social Proof (Day 3) =====
+            # 4. Social Proof (if any)
             try:
-                # Get updated user for social proof calculation
                 user_profile = firestore_service.get_user(user_id)
                 if user_profile:
                     social_proof = achievement_service.get_social_proof_message(user_profile)
@@ -1720,48 +1729,36 @@ async def finish_checkin(
             except Exception as e:
                 logger.error(f"⚠️ Social proof generation failed (non-critical): {e}")
 
+            # 5. Support focus (if any triggered)
             if support_guidance:
-                feedback_parts.append(f"\n---\n\n💙 <b>Support Focus</b>\n{support_guidance}")
+                feedback_parts.append(f"\n💙 <b>Support Focus</b>\n{support_guidance}")
             
-            feedback_parts.append(f"\n---\n\n🎯 See you tomorrow at 9 PM!")
+            # 6. Streamlined Footer
+            feedback_parts.append(f"\n<i>Total Check-Ins: {streak_updates['total_checkins']} • Next check-in tomorrow at 9 PM</i>")
             
             final_message = "\n".join(feedback_parts)
             
         except Exception as e:
             logger.error(f"AI feedback generation failed, using fallback: {e}")
             
-            # Fallback to Phase 1 hardcoded feedback
+            # Fallback message
             feedback_parts = []
-            feedback_parts.append("🎉 <b>Check-In Complete!</b>\n")
-            feedback_parts.append(f"📊 Compliance: {compliance_score:.1f}%")
+            streak_num = streak_updates['current_streak']
+            if is_new_record:
+                header = f"🎉 <b>Check-In Logged</b> • <b>{compliance_score:.1f}%</b> • 🔥 <b>{streak_num}d Streak</b> 🏆 <b>NEW RECORD!</b>"
+            elif streak_updates.get('is_reset') and streak_updates.get('recovery_message'):
+                header = f"🔄 <b>Check-In Logged</b> • <b>{compliance_score:.1f}%</b>\n{streak_updates['recovery_message']}"
+            else:
+                header = f"🎉 <b>Check-In Logged</b> • <b>{compliance_score:.1f}%</b> • 🔥 <b>{streak_num}d Streak</b>"
+            feedback_parts.append(header)
             
-            # Progress summary — show actual effort with visual bars (1C)
             progress = format_progress_summary(tier1, committed_tasks)
             if progress:
                 feedback_parts.append(f"\n{progress}")
             
-            # Phase D: Show recovery message on reset, normal streak otherwise
-            if streak_updates.get('is_reset') and streak_updates.get('recovery_message'):
-                feedback_parts.append(f"\n{streak_updates['recovery_message']}")
-            else:
-                feedback_parts.append(f"🔥 Streak: {streak_updates['current_streak']} days")
+            fallback_ai = checkin_agent._fallback_feedback(int(compliance_score), streak_num)
+            feedback_parts.append(f"\n💡 <b>Coach's Takeaway</b>\n{fallback_ai}")
             
-            if compliance_score == 100:
-                feedback_parts.append(
-                    "\n💯 Perfect day! All Tier 1 non-negotiables completed."
-                )
-            elif compliance_score >= 80:
-                feedback_parts.append(
-                    "\n✅ Strong day! Keep this momentum going."
-                )
-            else:
-                feedback_parts.append(
-                    "\n⚠️ Room for improvement. Focus on Tier 1 priorities tomorrow."
-                )
-            
-            feedback_parts.append(f"\n📈 Total: {streak_updates['total_checkins']} check-ins")
-            
-            # ===== PHASE 3C: Add Social Proof to Fallback (Day 3) =====
             try:
                 user_profile = firestore_service.get_user(user_id)
                 if user_profile:
@@ -1771,7 +1768,7 @@ async def finish_checkin(
             except Exception as e:
                 logger.error(f"⚠️ Social proof failed in fallback: {e}")
             
-            feedback_parts.append(f"\n🎯 See you tomorrow!")
+            feedback_parts.append(f"\n<i>Total Check-Ins: {streak_updates['total_checkins']} • Next check-in tomorrow at 9 PM</i>")
             
             final_message = "\n".join(feedback_parts)
         

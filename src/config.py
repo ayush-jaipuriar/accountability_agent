@@ -48,17 +48,17 @@ class Settings(BaseSettings):
     
     # ===== Vertex AI Configuration =====
     vertex_ai_location: str = "asia-south1"
-    gemini_model: str = "gemini-2.5-flash"  # Use Gemini 2.5 Flash (standard reasoning, fast)
+    gemini_model: str = "gemini-2.5-flash-lite"  # Use Gemini 2.5 Flash-Lite (low latency, cost optimized)
     gemini_api_key: Optional[str] = None  # For direct Gemini API (alternative to Vertex AI)
     
     # Centralized model names — all agents should reference these.
     # Prevents hardcoded deprecated model names scattered across files.
-    model_checkin_agent: str = "gemini-2.5-flash"
-    model_emotional_agent: str = "gemini-2.5-flash"
-    model_supervisor: str = "gemini-2.5-flash"
-    model_intervention: str = "gemini-2.5-flash"
-    model_query_agent: str = "gemini-2.5-flash"
-    model_reporting_agent: str = "gemini-2.5-flash"
+    model_checkin_agent: str = "gemini-2.5-flash-lite"
+    model_emotional_agent: str = "gemini-2.5-flash-lite"
+    model_supervisor: str = "gemini-2.5-flash-lite"
+    model_intervention: str = "gemini-2.5-flash-lite"
+    model_query_agent: str = "gemini-2.5-flash-lite"
+    model_reporting_agent: str = "gemini-2.5-flash-lite"
     
     # ===== Application Settings =====
     log_level: str = "INFO"

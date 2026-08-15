@@ -68,14 +68,14 @@ class LLMService:
     - Error handling and retries
     """
     
-    def __init__(self, project_id: str, location: str = "asia-south1", model_name: str = "gemini-2.5-flash"):
+    def __init__(self, project_id: str, location: str = "asia-south1", model_name: str = "gemini-2.5-flash-lite"):
         """
         Initialize Google GenAI client for Vertex AI
         
         Args:
             project_id: GCP project ID (e.g., "accountability-agent")
             location: GCP region (e.g., "asia-south1" for Mumbai)
-            model_name: Gemini model to use (e.g., "gemini-2.5-flash")
+            model_name: Gemini model to use (e.g., "gemini-2.5-flash-lite")
             
         Theory:
         -------
@@ -108,7 +108,7 @@ class LLMService:
         top_k: int = 40
     ) -> str:
         """
-        Generate text using Gemini 2.5 Flash with thinking disabled
+        Generate text using Gemini 2.5 Flash-Lite with thinking disabled
         
         Args:
             prompt: The prompt to send to the model
@@ -136,14 +136,14 @@ class LLMService:
            - Prevents nonsense by ignoring very rare words
         
         4. <b>Thinking Budget = 0</b>: Disables internal reasoning
-           - Gemini 2.5 Flash normally uses tokens for "thinking"
+           - Gemini 2.5 models normally use tokens for "thinking"
            - These thinking tokens are invisible but cost money
            - Setting to 0 disables thinking = saves ~40% on tokens!
         
         Cost Tracking:
         --------------
-        - Input tokens: $0.25 per 1 million
-        - Output tokens: $0.50 per 1 million
+        - Input tokens: $0.10 per 1 million (Gemini 2.5 Flash-Lite)
+        - Output tokens: $0.40 per 1 million (Gemini 2.5 Flash-Lite)
         - Thinking tokens: $0 (disabled with thinking_budget=0)
         - We log every call with token counts and costs
         """
@@ -154,7 +154,7 @@ class LLMService:
             
             # Configure generation with thinking disabled
             # According to official Vertex AI docs: thinking_budget=0 disables thinking mode
-            # This saves ~40% on token costs for Gemini 2.5 Flash
+            # This saves ~40% on token costs for Gemini 2.5 models
             config = types.GenerateContentConfig(
                 temperature=temperature,
                 top_p=top_p,
@@ -198,9 +198,9 @@ class LLMService:
                 actual_input_tokens = input_tokens
                 actual_output_tokens = self._count_tokens(output_text)
             
-            # Calculate cost (Gemini 2.5 Flash pricing)
-            input_cost = (actual_input_tokens / 1_000_000) * 0.25
-            output_cost = (actual_output_tokens / 1_000_000) * 0.50
+            # Calculate cost (Gemini 2.5 Flash-Lite pricing: $0.10/M input, $0.40/M output)
+            input_cost = (actual_input_tokens / 1_000_000) * 0.10
+            output_cost = (actual_output_tokens / 1_000_000) * 0.40
             total_cost = input_cost + output_cost
             
             logger.info(
@@ -268,7 +268,7 @@ class LLMService:
 _llm_service_instance: Optional[LLMService] = None
 
 
-def get_llm_service(project_id: str, location: str = "asia-south1", model_name: str = "gemini-2.5-flash") -> LLMService:
+def get_llm_service(project_id: str, location: str = "asia-south1", model_name: str = "gemini-2.5-flash-lite") -> LLMService:
     """
     Get or create LLM service instance (singleton pattern)
     
