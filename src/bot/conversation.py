@@ -1452,79 +1452,63 @@ async def handle_todo_secondary_2(
 def format_progress_summary(tier1, committed_tasks=None) -> str:
     """
     Build a visual progress summary showing actual vs target for continuous habits
-    and daily focus / to-do execution in a clean tree card structure.
-    
-    Returns an HTML-formatted block with progress bars using block characters.
+    and daily focus / to-do execution in a clean dashboard layout.
     """
-    lines = ["📊 <b>Execution Breakdown</b>"]
-    
-    def bar(actual, target, width=8):
-        """Render a text progress bar."""
-        if target <= 0:
-            return "" 
-        ratio = min(actual / target, 1.0)
-        filled = int(ratio * width)
-        empty = width - filled
-        pct = int(ratio * 100)
-        return f"<code>[{'█' * filled}{'░' * empty}]</code> {pct}%"
+    lines = ["📊 <b>Today's Execution</b>"]
     
     # Sleep
     if tier1.sleep_hours is not None:
-        b = bar(tier1.sleep_hours, 7.0)
-        emoji = "😴"
-        lines.append(f"├ {emoji} Sleep: {tier1.sleep_hours:.1f}h / 7h {b}")
+        pct = int(min(tier1.sleep_hours / 7.0, 1.0) * 100)
+        status_icon = "✅" if tier1.sleep_hours >= 7.0 else ("🟡" if tier1.sleep_hours >= 6.0 else "❌")
+        lines.append(f"😴 <b>Sleep:</b> {tier1.sleep_hours:.1f}h / 7.0h ({pct}%) {status_icon}")
     else:
-        status = "✅" if tier1.sleep else "❌"
-        lines.append(f"├ 😴 Sleep: {status}")
+        status_icon = "✅" if tier1.sleep else "❌"
+        lines.append(f"😴 <b>Sleep:</b> {status_icon}")
     
     # Training
     intensity = tier1.training_intensity or ("done" if tier1.training else "skipped")
     if tier1.is_rest_day:
-        lines.append(f"├ 🛌 Training: Rest Day ✅")
+        lines.append("🏋️ <b>Training:</b> Rest Day ✅")
     elif intensity in ('light', 'moderate', 'intense'):
-        lines.append(f"├ 🏋️ Training: {intensity.title()} ✅")
+        lines.append(f"🏋️ <b>Training:</b> {intensity.title()} ✅")
     else:
-        lines.append(f"├ 🏋️ Training: Skipped ❌")
+        lines.append("🏋️ <b>Training:</b> Skipped ❌")
     
     # Deep Work
     if tier1.deep_work_hours is not None:
-        b = bar(tier1.deep_work_hours, 2.0)
-        lines.append(f"├ 💻 Deep Work: {tier1.deep_work_hours:.1f}h / 2h {b}")
+        pct = int(min(tier1.deep_work_hours / 2.0, 1.0) * 100)
+        status_icon = "✅" if tier1.deep_work_hours >= 2.0 else ("🟡" if tier1.deep_work_hours >= 0.5 else "❌")
+        lines.append(f"💻 <b>Deep Work:</b> {tier1.deep_work_hours:.1f}h / 2.0h ({pct}%) {status_icon}")
     else:
-        status = "✅" if tier1.deep_work else "❌"
-        lines.append(f"├ 💻 Deep Work: {status}")
+        status_icon = "✅" if tier1.deep_work else "❌"
+        lines.append(f"💻 <b>Deep Work:</b> {status_icon}")
     
     # Skill Building
     if tier1.skill_building_hours is not None:
-        b = bar(tier1.skill_building_hours, 2.0)
-        lines.append(f"├ 📚 Skill Building: {tier1.skill_building_hours:.1f}h / 2h {b}")
+        pct = int(min(tier1.skill_building_hours / 2.0, 1.0) * 100)
+        status_icon = "✅" if tier1.skill_building_hours >= 2.0 else ("🟡" if tier1.skill_building_hours >= 0.5 else "❌")
+        lines.append(f"📚 <b>Skill Building:</b> {tier1.skill_building_hours:.1f}h / 2.0h ({pct}%) {status_icon}")
     else:
-        status = "✅" if tier1.skill_building else "❌"
-        lines.append(f"├ 📚 Skill Building: {status}")
+        status_icon = "✅" if tier1.skill_building else "❌"
+        lines.append(f"📚 <b>Skill Building:</b> {status_icon}")
     
-    # Zero Porn & Boundaries
+    # Guardrails: Zero Porn & Boundaries
     zero_porn_status = "✅" if tier1.zero_porn else "❌"
     boundaries_status = "✅" if tier1.boundaries else "❌"
     if tier1.zero_porn and tier1.boundaries:
-        lines.append(f"├ 🛡️ Zero Porn & Boundaries: Protected ✅")
+        lines.append("🛡️ <b>Guardrails:</b> Zero Porn & Boundaries ✅")
     else:
-        lines.append(f"├ 🛡️ Zero Porn: {zero_porn_status} | Boundaries: {boundaries_status}")
+        lines.append(f"🛡️ <b>Guardrails:</b> Zero Porn {zero_porn_status} | Boundaries {boundaries_status}")
 
     # Daily Focus / To-Dos (Feature 1)
     if committed_tasks:
         completed_tasks = sum(1 for t in committed_tasks if t.completed)
         total_tasks = len(committed_tasks)
-        pct = int((completed_tasks / total_tasks) * 100) if total_tasks > 0 else 0
-        filled = int((completed_tasks / total_tasks) * 8) if total_tasks > 0 else 0
-        task_bar = f"<code>[{'█' * filled}{'░' * (8 - filled)}]</code> {pct}%" if total_tasks > 0 else ""
-        lines.append(f"└ 🎯 <b>Daily Focus:</b> {completed_tasks}/{total_tasks} completed {task_bar}")
+        lines.append(f"\n🎯 <b>Daily Focus ({completed_tasks}/{total_tasks} completed)</b>")
         for t in committed_tasks:
             icon = "✅" if t.completed else "❌"
             tag = " (Primary)" if t.is_primary else ""
-            lines.append(f"    {icon} {t.title}{tag}")
-    else:
-        if lines and lines[-1].startswith("├ "):
-            lines[-1] = "└ " + lines[-1][2:]
+            lines.append(f"{icon} {t.title}{tag}")
     
     return "\n".join(lines)
 
@@ -1703,14 +1687,14 @@ async def finish_checkin(
             # 1. Header Hero Card
             streak_num = streak_updates['current_streak']
             if is_new_record:
-                header = f"🎉 <b>Check-In Logged</b> • <b>{compliance_score:.1f}%</b> • 🔥 <b>{streak_num}d Streak</b> 🏆 <b>NEW RECORD!</b>"
+                header = f"🎉 <b>Check-In Logged</b> • <b>{compliance_score:.1f}%</b>\n🔥 <b>{streak_num}-Day Streak</b> 🏆 <i>NEW RECORD!</i>"
             elif streak_updates.get('is_reset') and streak_updates.get('recovery_message'):
                 header = f"🔄 <b>Check-In Logged</b> • <b>{compliance_score:.1f}%</b>\n{streak_updates['recovery_message']}"
             else:
-                header = f"🎉 <b>Check-In Logged</b> • <b>{compliance_score:.1f}%</b> • 🔥 <b>{streak_num}d Streak</b>"
+                header = f"🎉 <b>Check-In Logged</b> • <b>{compliance_score:.1f}%</b>\n🔥 <b>{streak_num}-Day Streak</b> • <i>{streak_updates['total_checkins']} Total</i>"
             feedback_parts.append(header)
             
-            # 2. Progress Breakdown (Tree format)
+            # 2. Progress Breakdown (Clean Dashboard)
             progress = format_progress_summary(tier1, committed_tasks)
             if progress:
                 feedback_parts.append(f"\n{progress}")
@@ -1734,7 +1718,7 @@ async def finish_checkin(
                 feedback_parts.append(f"\n💙 <b>Support Focus</b>\n{support_guidance}")
             
             # 6. Streamlined Footer
-            feedback_parts.append(f"\n<i>Total Check-Ins: {streak_updates['total_checkins']} • Next check-in tomorrow at 9 PM</i>")
+            feedback_parts.append("\n<i>Next check-in tomorrow at 9 PM</i>")
             
             final_message = "\n".join(feedback_parts)
             
@@ -1745,11 +1729,11 @@ async def finish_checkin(
             feedback_parts = []
             streak_num = streak_updates['current_streak']
             if is_new_record:
-                header = f"🎉 <b>Check-In Logged</b> • <b>{compliance_score:.1f}%</b> • 🔥 <b>{streak_num}d Streak</b> 🏆 <b>NEW RECORD!</b>"
+                header = f"🎉 <b>Check-In Logged</b> • <b>{compliance_score:.1f}%</b>\n🔥 <b>{streak_num}-Day Streak</b> 🏆 <i>NEW RECORD!</i>"
             elif streak_updates.get('is_reset') and streak_updates.get('recovery_message'):
                 header = f"🔄 <b>Check-In Logged</b> • <b>{compliance_score:.1f}%</b>\n{streak_updates['recovery_message']}"
             else:
-                header = f"🎉 <b>Check-In Logged</b> • <b>{compliance_score:.1f}%</b> • 🔥 <b>{streak_num}d Streak</b>"
+                header = f"🎉 <b>Check-In Logged</b> • <b>{compliance_score:.1f}%</b>\n🔥 <b>{streak_num}-Day Streak</b> • <i>{streak_updates['total_checkins']} Total</i>"
             feedback_parts.append(header)
             
             progress = format_progress_summary(tier1, committed_tasks)
@@ -1768,7 +1752,7 @@ async def finish_checkin(
             except Exception as e:
                 logger.error(f"⚠️ Social proof failed in fallback: {e}")
             
-            feedback_parts.append(f"\n<i>Total Check-Ins: {streak_updates['total_checkins']} • Next check-in tomorrow at 9 PM</i>")
+            feedback_parts.append("\n<i>Next check-in tomorrow at 9 PM</i>")
             
             final_message = "\n".join(feedback_parts)
         

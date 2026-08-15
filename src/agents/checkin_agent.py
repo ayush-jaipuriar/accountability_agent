@@ -702,21 +702,21 @@ GENERATE FEEDBACK (3 CRISP BULLETS ONLY, 50-75 WORDS TOTAL):
 Output EXACTLY 3 bullet points using HTML bold tags. No preamble, no intro paragraph, and no conclusion.
 
 Format:
-• ⚡ <b>Win:</b> [1 punchy sentence acknowledging key win/execution today vs yesterday and referencing streak/systems]
-• ⚠️ <b>Risk:</b> [1 punchy sentence calling out any missed habit, pattern, or recurring obstacle — or reinforcing relentless momentum if 100%]
-• 🎯 <b>Action:</b> [1 concrete, high-leverage micro-action for tomorrow's stated priority/obstacle]
+⚡ <b>Win:</b> [1 punchy sentence acknowledging key win/execution today vs yesterday and referencing streak/systems]
+⚠️ <b>Risk:</b> [1 punchy sentence calling out any missed habit, pattern, or recurring obstacle — or reinforcing relentless momentum if 100%]
+🎯 <b>Action:</b> [1 concrete, high-leverage micro-action for tomorrow's stated priority/obstacle]
 
 RULES & REQUIREMENTS:
-1. Exactly 3 bullets starting with:
-   - • ⚡ <b>Win:</b>
-   - • ⚠️ <b>Risk:</b>
-   - • 🎯 <b>Action:</b>
+1. Exactly 3 bullets starting directly with:
+   - ⚡ <b>Win:</b>
+   - ⚠️ <b>Risk:</b>
+   - 🎯 <b>Action:</b>
 2. Word count: 50-75 words TOTAL across all 3 bullets.
 3. Direct, razor-sharp coaching tone (like an elite athletic/executive coach).
 4. Reference actual numbers/habits (e.g., 7.5h sleep, LeetCode, Skill Building, Daily Focus tasks).
 5. **Daily Focus Tasks**: If any daily focus tasks were missed today, address it directly in Risk or Action. If all completed, celebrate the win.
 6. **Micro-Habits**: If Skill Building or Training was missed today or recently, prescribe starting with a micro-habit (e.g. 15-30 mins) in the Action bullet to maintain momentum.
-7. NO essay paragraphs, NO greetings, NO signoffs, NO generic praise ("Great job!").
+7. NO bullet dot characters (•), NO essay paragraphs, NO greetings, NO signoffs, NO generic praise ("Great job!").
 
 Feedback:"""
 
@@ -853,9 +853,9 @@ INSTRUCTIONS FOR USING YESTERDAY'S CONTEXT:
             action = "Start tomorrow with a micro-habit: 15 mins focused work and protected sleep."
 
         return (
-            f"• ⚡ <b>Win:</b> {win}\n"
-            f"• ⚠️ <b>Risk:</b> {risk}\n"
-            f"• 🎯 <b>Action:</b> {action}"
+            f"⚡ <b>Win:</b> {win}\n"
+            f"⚠️ <b>Risk:</b> {risk}\n"
+            f"🎯 <b>Action:</b> {action}"
         )
 
     async def parse_reflection_note(
