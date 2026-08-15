@@ -155,8 +155,8 @@ def validate_configuration():
     Note: In production (Cloud Run), service account key file is not needed
     as Cloud Run uses Application Default Credentials automatically.
     """
-    # Check service account key exists (only in development)
-    if settings.environment == "development":
+    # Check service account key exists (only in development if explicitly specified)
+    if settings.environment == "development" and settings.google_application_credentials:
         creds_path = Path(settings.google_application_credentials)
         if not creds_path.exists():
             raise FileNotFoundError(
@@ -165,8 +165,8 @@ def validate_configuration():
                 "Please ensure you've moved the key file to .credentials/ folder."
             )
     else:
-        # Production: Cloud Run uses Application Default Credentials
-        print(f"ℹ️  Production mode: Using Application Default Credentials")
+        # Uses Application Default Credentials
+        print(f"ℹ️  Using Application Default Credentials")
     
     # Validate timezone
     import pytz
