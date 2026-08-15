@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     environment: str = "development"  # development, staging, production
     
     # ===== Vertex AI Configuration =====
-    vertex_ai_location: str = "asia-south1"
+    vertex_ai_location: str = "us-central1"
     gemini_model: str = "gemini-2.5-flash-lite"  # Use Gemini 2.5 Flash-Lite (low latency, cost optimized)
     gemini_api_key: Optional[str] = None  # For direct Gemini API (alternative to Vertex AI)
     

@@ -68,7 +68,7 @@ class LLMService:
     - Error handling and retries
     """
     
-    def __init__(self, project_id: str, location: str = "asia-south1", model_name: str = "gemini-2.5-flash-lite"):
+    def __init__(self, project_id: str, location: str = "us-central1", model_name: str = "gemini-2.5-flash-lite"):
         """
         Initialize Google GenAI client for Vertex AI
         
@@ -268,7 +268,7 @@ class LLMService:
 _llm_service_instance: Optional[LLMService] = None
 
 
-def get_llm_service(project_id: str, location: str = "asia-south1", model_name: str = "gemini-2.5-flash-lite") -> LLMService:
+def get_llm_service(project_id: str, location: str = "us-central1", model_name: str = "gemini-2.5-flash-lite") -> LLMService:
     """
     Get or create LLM service instance (singleton pattern)
     
