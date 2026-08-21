@@ -20,6 +20,7 @@ Key Concepts:
 from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, List, Dict
+from uuid import uuid4
 
 
 # ===== User Models =====
@@ -616,7 +617,7 @@ class Goal(BaseModel):
         - "Complete LeetCode 150 by June 1"
         - "Zero porn for 90 days"
     """
-    goal_id: str = Field(default_factory=lambda: f"goal_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}")
+    goal_id: str = Field(default_factory=lambda: f"goal_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{uuid4().hex[:6]}")
     user_id: str
     title: str                        # "Sleep 7+ hours for 14 days"
     description: str                  # "Build consistent sleep habit"
@@ -661,7 +662,7 @@ class PartnerChallenge(BaseModel):
     Partners compete or collaborate on a shared goal (e.g., "7-day sleep challenge").
     Progress is tracked per participant and updated after each check-in.
     """
-    challenge_id: str = Field(default_factory=lambda: f"ch_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}")
+    challenge_id: str = Field(default_factory=lambda: f"ch_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{uuid4().hex[:6]}")
     challenger_id: str      # Who created the challenge
     partner_id: str         # Who was invited
     challenge_type: str     # sleep_7_days | training_5_days | deep_work_7_days | custom

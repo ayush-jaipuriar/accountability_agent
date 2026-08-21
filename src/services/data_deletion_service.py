@@ -42,7 +42,7 @@ class DataDeletionService:
             "errors": [],
         }
 
-        # 1. Unlink partner (if any)
+        # 1. Unlink partner (both forward and reverse links)
         try:
             user = firestore_service.get_user(user_id)
             if user and user.accountability_partner_id:
@@ -56,9 +56,29 @@ class DataDeletionService:
                 )
                 results["deleted"]["partner_link"] = True
                 logger.info(f"🔗 Unlinked partner {partner_id} from {user_id}")
+            
+            # Reverse partner unlink: any other user pointing to this user
+            reverse_partners = firestore_service.db.collection("users").where("accountability_partner_id", "==", user_id).stream()
+            for rp in reverse_partners:
+                rp.reference.update({
+                    "accountability_partner_id": None,
+                    "accountability_partner_name": None,
+                })
+                logger.info(f"🔗 Unlinked reverse partner {rp.id} pointing to {user_id}")
         except Exception as e:
             results["errors"].append(f"Partner unlink failed: {e}")
             logger.error(f"❌ Failed to unlink partner for {user_id}: {e}")
+
+        # Helper to delete a subcollection and its parent document
+        def _delete_subcollection_and_parent(collection_name: str, subcollection_name: str) -> int:
+            parent_ref = firestore_service.db.collection(collection_name).document(user_id)
+            docs = parent_ref.collection(subcollection_name).stream()
+            count = 0
+            for doc in docs:
+                doc.reference.delete()
+                count += 1
+            parent_ref.delete()
+            return count
 
         # 2. Delete user profile
         try:
@@ -71,19 +91,62 @@ class DataDeletionService:
 
         # 3. Delete all check-ins
         try:
-            checkins_ref = firestore_service.db.collection("daily_checkins").document(user_id).collection("checkins")
-            checkins = checkins_ref.stream()
-            deleted_count = 0
-            for checkin in checkins:
-                checkin.reference.delete()
-                deleted_count += 1
+            deleted_count = _delete_subcollection_and_parent("daily_checkins", "checkins")
             results["deleted"]["checkins"] = deleted_count
             logger.info(f"🗑️ Deleted {deleted_count} check-ins for {user_id}")
         except Exception as e:
             results["errors"].append(f"Check-in deletion failed: {e}")
             logger.error(f"❌ Failed to delete check-ins for {user_id}: {e}")
 
-        # 4. Delete goals
+        # 4. Delete daily tasks
+        try:
+            deleted_count = _delete_subcollection_and_parent("daily_tasks", "tasks")
+            results["deleted"]["daily_tasks"] = deleted_count
+            logger.info(f"🗑️ Deleted {deleted_count} daily tasks for {user_id}")
+        except Exception as e:
+            results["errors"].append(f"Daily tasks deletion failed: {e}")
+            logger.error(f"❌ Failed to delete daily tasks for {user_id}: {e}")
+
+        # 5. Delete emotional interactions
+        try:
+            deleted_count = _delete_subcollection_and_parent("emotional_interactions", "interactions")
+            results["deleted"]["emotional_interactions"] = deleted_count
+            logger.info(f"🗑️ Deleted {deleted_count} emotional interactions for {user_id}")
+        except Exception as e:
+            results["errors"].append(f"Emotional interactions deletion failed: {e}")
+            logger.error(f"❌ Failed to delete emotional interactions for {user_id}: {e}")
+
+        # 6. Delete interventions
+        try:
+            deleted_count = _delete_subcollection_and_parent("interventions", "interventions")
+            results["deleted"]["interventions"] = deleted_count
+            logger.info(f"🗑️ Deleted {deleted_count} interventions for {user_id}")
+        except Exception as e:
+            results["errors"].append(f"Interventions deletion failed: {e}")
+            logger.error(f"❌ Failed to delete interventions for {user_id}: {e}")
+
+        # 7. Delete reminder status
+        try:
+            deleted_count = _delete_subcollection_and_parent("reminder_status", "dates")
+            # Also check direct docs under reminder_status/{user_id}
+            firestore_service.db.collection("reminder_status").document(user_id).delete()
+            results["deleted"]["reminder_status"] = deleted_count
+            logger.info(f"🗑️ Deleted reminder status for {user_id}")
+        except Exception as e:
+            results["errors"].append(f"Reminder status deletion failed: {e}")
+            logger.error(f"❌ Failed to delete reminder status for {user_id}: {e}")
+
+        # 8. Delete partner checkin notifications
+        try:
+            deleted_count = _delete_subcollection_and_parent("partner_checkin_notifications", "dates")
+            firestore_service.db.collection("partner_checkin_notifications").document(user_id).delete()
+            results["deleted"]["partner_checkin_notifications"] = deleted_count
+            logger.info(f"🗑️ Deleted partner notifications for {user_id}")
+        except Exception as e:
+            results["errors"].append(f"Partner notifications deletion failed: {e}")
+            logger.error(f"❌ Failed to delete partner notifications for {user_id}: {e}")
+
+        # 9. Delete goals
         try:
             goals_query = firestore_service.db.collection("goals").where("user_id", "==", user_id)
             goals = goals_query.stream()
@@ -97,7 +160,7 @@ class DataDeletionService:
             results["errors"].append(f"Goal deletion failed: {e}")
             logger.error(f"❌ Failed to delete goals for {user_id}: {e}")
 
-        # 5. Delete challenges where user is participant
+        # 10. Delete challenges where user is participant
         try:
             challenges_query1 = firestore_service.db.collection("challenges").where("challenger_id", "==", user_id)
             challenges_query2 = firestore_service.db.collection("challenges").where("partner_id", "==", user_id)
@@ -116,7 +179,7 @@ class DataDeletionService:
             results["errors"].append(f"Challenge deletion failed: {e}")
             logger.error(f"❌ Failed to delete challenges for {user_id}: {e}")
 
-        # 6. Delete feedback
+        # 11. Delete feedback
         try:
             feedback_query = firestore_service.db.collection("feedback").where("user_id", "==", user_id)
             feedbacks = feedback_query.stream()

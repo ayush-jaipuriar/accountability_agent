@@ -34,6 +34,7 @@ from telegram.ext import (
 )
 from datetime import datetime
 import re
+import html
 import logging
 
 from src.services.firestore_service import firestore_service
@@ -1508,7 +1509,8 @@ def format_progress_summary(tier1, committed_tasks=None) -> str:
         for t in committed_tasks:
             icon = "✅" if t.completed else "❌"
             tag = " (Primary)" if t.is_primary else ""
-            lines.append(f"{icon} {t.title}{tag}")
+            escaped_title = html.escape(t.title)
+            lines.append(f"{icon} {escaped_title}{tag}")
     
     return "\n".join(lines)
 
@@ -1789,15 +1791,16 @@ async def finish_checkin(
             if goal_updates:
                 goal_messages = []
                 for goal, milestone in goal_updates:
+                    escaped_goal_title = html.escape(goal.title)
                     if milestone == "100%":
                         goal_messages.append(
                             f"🏆 <b>Goal Completed!</b>\n"
-                            f"'{goal.title}' — {len(goal.progress)}/{goal.target_days} days!"
+                            f"'{escaped_goal_title}' — {len(goal.progress)}/{goal.target_days} days!"
                         )
                     elif milestone in ("50%", "75%"):
                         goal_messages.append(
                             f"🎯 <b>{milestone} Milestone!</b>\n"
-                            f"'{goal.title}' — keep going!"
+                            f"'{escaped_goal_title}' — keep going!"
                         )
                 
                 if goal_messages:

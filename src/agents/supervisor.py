@@ -144,6 +144,13 @@ class SupervisorAgent:
         # Phase 3E: Fast query detection (saves API call)
         message_lower = message.lower()
         
+        # Emotional keywords that MUST go through LLM evaluation for emotional support
+        emotional_markers = [
+            "feeling", "lonely", "sad", "anxious", "stressed", "urge", "urges",
+            "struggling", "depressed", "giving up", "failed", "relapse", "help",
+            "crying", "breakdown", "overwhelmed", "scared", "frustrated"
+        ]
+        
         # Query keywords that strongly indicate a data query
         query_keywords = [
             "what's my", "what is my", "show me", "show my", 
@@ -152,11 +159,12 @@ class SupervisorAgent:
             "my streak", "my compliance", "my stats", "my training"
         ]
         
-        if any(keyword in message_lower for keyword in query_keywords):
-            logger.info(f"📊 Fast query detection: '{message[:50]}...' → query")
-            state["intent"] = "query"
-            state["intent_confidence"] = 0.95  # High confidence for keyword match
-            return state
+        if not any(marker in message_lower for marker in emotional_markers):
+            if any(keyword in message_lower for keyword in query_keywords):
+                logger.info(f"📊 Fast query detection: '{message[:50]}...' → query")
+                state["intent"] = "query"
+                state["intent_confidence"] = 0.95  # High confidence for keyword match
+                return state
         
         # Get user context to help classification
         user_context = self._get_user_context(user_id)
@@ -276,85 +284,66 @@ class SupervisorAgent:
             last_checkin_str = "Never"
         
         prompt = f"""Classify the user's intent from this message.
+Respond with ONLY ONE WORD: checkin, emotional, query, or command.
 
-MESSAGE: "{message}"
+<user_message>
+{message}
+</user_message>
 
 USER CONTEXT:
 - Current streak: {streak} days
 - Last check-in: {last_checkin_str}
 
-INTENT OPTIONS (in order of priority):
+INTENT OPTIONS:
 
 1. <b>emotional</b> - User is expressing feelings, emotions, struggles, or seeking emotional support
-   CRITICAL: If the message contains ANY emotional keywords, classify as emotional
-   Emotional keywords: feeling, lonely, sad, anxious, stressed, urge, struggling, difficult, hard, help, support, worried, scared, frustrated
    Examples:
    - "I'm feeling lonely" or "feeling lonely tonight"
    - "Having urges to watch porn" or "having urges right now"  
    - "Feeling anxious" or "I feel anxious"
    - "I'm struggling" or "struggling today"
-   - "Need help" or "need support"
-   - "Stressed about work"
-   - "Going through a breakup"
-   - "Feel like giving up"
+   - "Had a rough day" or "today was hard"
+   - "Need support" or "need some help"
+   - "I failed today" or "messed up"
 
-2. <b>checkin</b> - User wants to start/continue their daily check-in
+2. <b>checkin</b> - User wants to start or complete their daily check-in
    Examples:
-   - "I'm ready to check in"
-   - "Let's do this"
-   - "Checking in for today"
-   - "Let's go"
-   - "Ready"
+   - "Ready to check in" or "time for checkin"
+   - "Let's do this" (in response to check-in reminder)
+   - "Checkin" or "check in" or "daily checkin"
+   - "Doing my checkin now"
 
-3. <b>query</b> - User is asking factual questions about their stats, constitution, or how the bot works
+3. <b>query</b> - User is asking for data, stats, reports, or explanations
    Examples:
-   - "What's my streak?"
-   - "Show my stats"
-   - "What are the constitution rules?"
-   - "How does this work?"
+   - "What's my streak?" or "show my stats"
+   - "How's my training going?" or "training consistency"
+   - "Show me my weekly report" or "weekly stats"
+   - "What are the tier 1 rules?" or "explain mode"
+   - "When did I last miss training?"
 
-4. <b>command</b> - User is issuing a bot command (starts with /)
+4. <b>command</b> - User wants to perform a specific action or command
    Examples:
-   - "/start"
-   - "/help"
-   - "/mode"
-   - "/status"
+   - "Change my mode to maintenance"
+   - "Update my timezone"
+   - "Set a reminder"
 
-CLASSIFICATION RULES:
-1. If message contains emotional words like "feeling", "lonely", "sad", "stressed", "urge" → classify as EMOTIONAL
-2. Emotional intent takes priority over query intent
-3. "I'm feeling X" or "feeling X" is ALWAYS emotional, never query
-4. If unsure between emotional and query, choose emotional
-
-INSTRUCTIONS:
-Respond with EXACTLY ONE WORD: emotional, checkin, query, or command
-
-No explanation, no punctuation, just the intent word in lowercase.
-
+RESPONSE FORMAT:
+Respond with ONLY the intent name (checkin, emotional, query, command). Do NOT add explanation, markdown formatting, or punctuation.
 Intent:"""
 
         return prompt
     
     def _parse_intent(self, intent_response: str) -> str:
         """
-        Parse and validate intent from LLM response
-        
-        Why We Need This:
-        -----------------
-        LLMs can sometimes return:
-        - Extra whitespace: "  checkin  "
-        - Capitalization: "Checkin" or "CHECKIN"
-        - Explanation: "The intent is checkin because..."
-        - Invalid intent: "check-in" or "unknown"
-        
-        This function handles all these cases and ensures we get a valid intent.
+        Parse and validate intent response from LLM.
         
         Args:
-            intent_response: Raw LLM response
+            intent_response: Raw response from Gemini
             
         Returns:
             Validated intent (one of: checkin, emotional, query, command)
         """
+        import re
         # Clean up response
         intent = intent_response.strip().lower()
         
@@ -362,8 +351,8 @@ Intent:"""
         if " " in intent:
             intent = intent.split()[0]
         
-        # Remove punctuation
-        intent = intent.rstrip('.,!?;:')
+        # Strip markdown, asterisks, backticks, quotes, and punctuation
+        intent = re.sub(r"[^\w-]", "", intent)
         
         # Validate against allowed intents
         valid_intents = ["checkin", "emotional", "query", "command"]

@@ -236,73 +236,16 @@ def calculate_new_streak(
         # First ever check-in
         return 1
     
+    if last_checkin_date == new_checkin_date:
+        # Same day check-in / correction → maintain current streak
+        return current_streak
+    
     if should_increment_streak(last_checkin_date, new_checkin_date):
         # Consecutive check-in → increment
         return current_streak + 1
     else:
         # Gap too large → reset
         return 1
-
-
-def update_streak_data(
-    current_streak: int,
-    longest_streak: int,
-    total_checkins: int,
-    last_checkin_date: Optional[str],
-    new_checkin_date: str
-) -> dict:
-    """
-    Calculate all streak updates after a check-in.
-    
-    This is the main function used by the check-in handler.
-    
-    Returns a dictionary with updated streak data to store in Firestore.
-    
-    Args:
-        current_streak: Current streak value
-        longest_streak: All-time best streak
-        total_checkins: Lifetime total check-ins
-        last_checkin_date: Last check-in date (None if first)
-        new_checkin_date: Today's check-in date
-        
-    Returns:
-        dict: Updated streak data with keys:
-            - current_streak: New streak value
-            - longest_streak: Updated if current exceeds longest
-            - last_checkin_date: Today's date
-            - total_checkins: Incremented by 1
-            
-    Example:
-        >>> updates = update_streak_data(
-        ...     current_streak=47,
-        ...     longest_streak=47,
-        ...     total_checkins=100,
-        ...     last_checkin_date="2026-01-29",
-        ...     new_checkin_date="2026-01-30"
-        ... )
-        >>> updates['current_streak']
-        48
-        >>> updates['longest_streak']
-        48  # Updated because current exceeded longest
-        >>> updates['total_checkins']
-        101
-    """
-    # Calculate new streak
-    new_streak = calculate_new_streak(
-        current_streak,
-        last_checkin_date,
-        new_checkin_date
-    )
-    
-    # Update longest streak if current exceeds it
-    new_longest = max(new_streak, longest_streak)
-    
-    return {
-        "current_streak": new_streak,
-        "longest_streak": new_longest,
-        "last_checkin_date": new_checkin_date,
-        "total_checkins": total_checkins + 1
-    }
 
 
 def get_streak_emoji(streak: int) -> str:
@@ -672,14 +615,15 @@ def update_streak_data(
     milestone = check_milestone(new_streak)
     
     # ===== PHASE D: Detect reset and add recovery context =====
-    is_reset = (new_streak == 1 and current_streak > 0 and last_checkin_date is not None)
+    is_same_day = (last_checkin_date == new_checkin_date)
+    is_reset = (new_streak == 1 and current_streak > 0 and last_checkin_date is not None and not is_same_day)
     
     result = {
         "current_streak": new_streak,
         "longest_streak": new_longest,
         "last_checkin_date": new_checkin_date,
-        "total_checkins": total_checkins + 1,
-        "milestone_hit": milestone,         # Phase 3C (transient)
+        "total_checkins": total_checkins if is_same_day else (total_checkins + 1),
+        "milestone_hit": milestone if not is_same_day else None,         # Phase 3C (transient)
         "is_reset": False,                  # Phase D (transient)
         "recovery_message": None,           # Phase D (transient)
         "recovery_fact": None,              # Phase D (transient)

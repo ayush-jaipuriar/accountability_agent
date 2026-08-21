@@ -26,6 +26,7 @@ from telegram.ext import (
     filters
 )
 import difflib
+import html
 from datetime import datetime, timedelta
 import logging
 from typing import Optional, Tuple
@@ -3312,7 +3313,13 @@ class TelegramBotManager:
 
         goal_id = args[0]
         met = args[1].lower() in ("met", "yes", "true", "1")
-        value = float(args[2]) if len(args) > 2 else None
+        value = None
+        if len(args) > 2:
+            try:
+                value = float(args[2])
+            except (ValueError, TypeError):
+                await update.message.reply_text("❌ Value must be a valid number.", parse_mode='HTML')
+                return
 
         from src.services.goal_service import goal_service
         goal = goal_service.get_goal(goal_id)
@@ -3327,6 +3334,8 @@ class TelegramBotManager:
             "met": met,
             "value": value,
         }
+        # Deduplicate progress by date
+        goal.progress = [p for p in goal.progress if p.get("date") != progress_entry["date"]]
         goal.progress.append(progress_entry)
 
         # Check for completion
@@ -3348,7 +3357,8 @@ class TelegramBotManager:
             "completed_at": goal.completed_at,
         })
 
-        msg = f"✅ Progress updated for <b>{goal.title}</b>\n"
+        escaped_title = html.escape(goal.title)
+        msg = f"✅ Progress updated for <b>{escaped_title}</b>\n"
         msg += f"{consecutive}/{goal.target_days} days"
         if milestone:
             msg += f"\n\n{milestone}"
@@ -3481,7 +3491,7 @@ class TelegramBotManager:
         title = " ".join(args[2:])
 
         # Find partner by username
-        partner = firestore_service.get_user_by_username(partner_username)
+        partner = firestore_service.get_user_by_telegram_username(partner_username)
         if not partner:
             await update.message.reply_text(
                 f"❌ User @{partner_username} not found.\n"
@@ -4325,7 +4335,8 @@ class TelegramBotManager:
                 state = await emotional_agent.process(state)
                 
                 response = state.get("response", "I'm here to help. Could you tell me more?")
-                await update.message.reply_text(response)
+                from src.utils.telegram_utils import safe_reply_html
+                await safe_reply_html(update.message, response)
                 
                 logger.info(f"✅ Emotional support provided to {user_id}")
                 
@@ -4350,7 +4361,8 @@ class TelegramBotManager:
                     "❓ /help - See all available commands"
                 )
                 
-                await update.message.reply_text(response, parse_mode='HTML')
+                from src.utils.telegram_utils import safe_reply_html
+                await safe_reply_html(update.message, response)
                 
                 logger.info(f"✅ Query answered for {user_id}")
                 

@@ -42,14 +42,21 @@ class ConstitutionService:
         rules = constitution_service.get_tier1_rules()
     """
     
-    def __init__(self, constitution_path: str = "constitution.md"):
+    def __init__(self, constitution_path: Optional[str] = None):
         """
         Initialize constitution service.
         
         Args:
-            constitution_path: Path to constitution.md file
+            constitution_path: Optional path to constitution.md file
         """
-        self.constitution_path = Path(constitution_path)
+        if constitution_path:
+            self.constitution_path = Path(constitution_path)
+        else:
+            repo_root_path = Path(__file__).resolve().parents[2] / "constitution.md"
+            if repo_root_path.exists():
+                self.constitution_path = repo_root_path
+            else:
+                self.constitution_path = Path("constitution.md")
         self._constitution_text: Optional[str] = None
         self._load_constitution()
     

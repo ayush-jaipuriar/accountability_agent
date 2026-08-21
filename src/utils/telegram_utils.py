@@ -21,41 +21,50 @@ ALLOWED_HTML_TAGS = {"b", "i", "u", "s", "code", "pre", "a", "tg-spoiler", "bloc
 
 def _escape_unsafe_html(text: str) -> str:
     """
-    Escape any '<' and '>' that are NOT part of an allowed Telegram HTML tag.
+    Escape any '<', '>', '&' that are NOT part of an allowed Telegram HTML tag.
 
-    This prevents "unsupported start tag" errors when user data contains
-    characters like '<6' which Telegram interprets as an HTML tag.
+    This prevents "unsupported start tag" and parse errors when user data contains
+    characters like '<6' or '&' which Telegram interprets as HTML entities/tags.
 
     Strategy:
-        1. Escape ALL < and > to &lt; and &gt;
-        2. Restore allowed tags by un-escaping them
-
-    Examples:
-        "Sleep <6 hours" → "Sleep &lt;6 hours"
-        "<b>Bold</b>"   → "<b>Bold</b>" (allowed tag, restored)
-        "<blockquote expandable>quote</blockquote>" → "<blockquote expandable>quote</blockquote>"
+        1. Escape ALL <, >, & to &lt;, &gt;, &amp;
+        2. Restore strictly valid Telegram tags and allowed attributes
     """
     if not text:
         return text
 
     # Step 1: Escape everything
-    text = html.escape(text)
+    escaped = html.escape(text)
 
-    # Step 2: Restore allowed tags, including attributes
-    # Pattern matches opening tags (with optional attributes) and closing tags
-    # e.g., &lt;blockquote expandable&gt;, &lt;a href=&quot;...&quot;&gt;, &lt;/a&gt;
-    allowed_tags_joined = "|".join(re.escape(tag) for tag in ALLOWED_HTML_TAGS)
-    pattern = rf"&lt;(/?)(?:{allowed_tags_joined})(?:\s+(?:[^&]|&(?!gt;))*)?&gt;"
+    # Step 2: Restore valid simple tags without attributes
+    # <b>, <i>, <u>, <s>, <pre>, <tg-spoiler>, <blockquote>, <code>, <a> closing tags
+    simple_tags = r"(/?(?:b|i|u|s|pre|tg-spoiler|blockquote|code|a))"
+    escaped = re.sub(rf"&lt;{simple_tags}&gt;", r"<\1>", escaped, flags=re.IGNORECASE)
 
-    def restore_tag(match: re.Match) -> str:
-        tag_str = match.group(0)
-        # Convert &lt; to < and &gt; to >
-        tag_str = tag_str.replace("&lt;", "<").replace("&gt;", ">")
-        # Restore quotes and ampersands in attributes
-        tag_str = tag_str.replace("&quot;", '"').replace("&#x27;", "'").replace("&#39;", "'").replace("&amp;", "&")
-        return tag_str
+    # Restore allowed attribute variants:
+    # <a href="...">
+    escaped = re.sub(
+        r"&lt;a\s+href=(&quot;|&#x27;|&#39;)(.*?)\1&gt;",
+        lambda m: f'<a href="{m.group(2)}">' if m.group(1) == '&quot;' else f"<a href='{m.group(2)}'>",
+        escaped,
+        flags=re.IGNORECASE
+    )
+    # <blockquote expandable>
+    escaped = re.sub(
+        r"&lt;blockquote\s+expandable&gt;",
+        r"<blockquote expandable>",
+        escaped,
+        flags=re.IGNORECASE
+    )
+    # <code class="language-...">
+    escaped = re.sub(
+        r"&lt;code\s+class=(&quot;|&#x27;|&#39;)(language-[a-zA-Z0-9_-]+)\1&gt;",
+        r'<code class="\2">',
+        escaped,
+        flags=re.IGNORECASE
+    )
 
-    return re.sub(pattern, restore_tag, text, flags=re.IGNORECASE)
+    return escaped
 
 
 def safe_reply_html(message, text: str, **kwargs) -> None:

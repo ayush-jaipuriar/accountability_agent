@@ -187,6 +187,9 @@ class PatternDetectionAgent:
             logger.info("No check-ins provided, skipping pattern detection")
             return []
 
+        # Sort chronologically ascending to ensure slice consistency (newest is checkins[-1])
+        checkins = sorted(checkins, key=lambda c: c.date)
+
         newest = checkins[-1]
         try:
             newest_date = datetime.strptime(newest.date, "%Y-%m-%d")
@@ -324,10 +327,10 @@ class PatternDetectionAgent:
             
             # v2.0: Use training_intensity if available
             if hasattr(tier1, 'training_intensity') and tier1.training_intensity:
-                is_missed = tier1.training_intensity == 'rest'
+                is_missed = (tier1.training_intensity == 'none') or (not tier1.training and tier1.training_intensity != 'rest')
             else:
                 # Fallback for old check-ins
-                is_missed = not tier1.training
+                is_missed = not tier1.training and not getattr(tier1, 'is_rest_day', False)
             
             if is_missed:
                 missed_training.append(c)
@@ -697,6 +700,11 @@ class PatternDetectionAgent:
             if consumption_hours is None:
                 continue
             
+            try:
+                consumption_hours = float(consumption_hours)
+            except (ValueError, TypeError):
+                continue
+            
             # Count days with >3 hours consumption
             if consumption_hours > 3:
                 high_consumption_days.append({
@@ -806,7 +814,8 @@ class PatternDetectionAgent:
                     # If only boolean available, sleep=False means failed
                     sleep_failed = not tier1.sleep
                 
-                training_failed = not tier1.training
+                is_rest = getattr(tier1, 'is_rest_day', False) or getattr(tier1, 'training_intensity', None) == 'rest'
+                training_failed = not tier1.training and not is_rest
                 
                 # Interference = boundaries violated AND (sleep OR training failed)
                 if sleep_failed or training_failed:

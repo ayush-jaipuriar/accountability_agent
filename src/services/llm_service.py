@@ -165,10 +165,10 @@ class LLMService:
                 )
             )
             
-            # Generate response
-            # Note: This is synchronous but we're in async function
-            # The google-genai SDK doesn't have async methods yet
-            response = self.client.models.generate_content(
+            # Generate response via thread worker to avoid blocking the event loop
+            import asyncio
+            response = await asyncio.to_thread(
+                self.client.models.generate_content,
                 model=self.model_name,
                 contents=prompt,
                 config=config

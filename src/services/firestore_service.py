@@ -1361,15 +1361,16 @@ class FirestoreService:
             # Calculate cutoff date
             cutoff_date = datetime.utcnow() - timedelta(days=days)
             
-            # Query patterns collection
-            patterns_ref = self.db.collection('patterns')
-            query = patterns_ref.where('user_id', '==', user_id) \
-                               .where('detected_at', '>=', cutoff_date) \
-                               .order_by('detected_at', direction=firestore.Query.DESCENDING)
+            # Query interventions subcollection
+            interventions_ref = self.db.collection('interventions').document(user_id).collection('interventions')
+            query = interventions_ref.where('sent_at', '>=', cutoff_date) \
+                                     .order_by('sent_at', direction=firestore.Query.DESCENDING)
             
             patterns = []
             for doc in query.stream():
-                patterns.append(doc.to_dict())
+                data = doc.to_dict()
+                data["id"] = doc.id
+                patterns.append(data)
             
             logger.info(f"📊 Retrieved {len(patterns)} patterns for user {user_id} (last {days} days)")
             return patterns

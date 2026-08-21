@@ -282,7 +282,8 @@ class RateLimiter:
         cleaned = 0
 
         stale_users = []
-        for user_id, tiers in self._requests.items():
+        for user_id in list(self._requests.keys()):
+            tiers = self._requests.get(user_id, {})
             all_empty = True
             for tier, entries in tiers.items():
                 entries[:] = [t for t in entries if t > cutoff]

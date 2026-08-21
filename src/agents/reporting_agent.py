@@ -210,13 +210,18 @@ def _build_report_message(
             "Start building your data with /checkin!"
         )
     
-    avg_compliance = mean([c.compliance_score for c in checkins])
-    best_day = max(checkins, key=lambda c: c.compliance_score)
+    # Sort chronologically ascending
+    sorted_checkins = sorted(checkins, key=lambda c: c.date)
+    week_start = sorted_checkins[0].date
+    week_end = sorted_checkins[-1].date
     
-    # Determine trend
+    avg_compliance = mean([c.compliance_score for c in sorted_checkins])
+    best_day = max(sorted_checkins, key=lambda c: c.compliance_score)
+    
+    # Determine trend (chronological: second_half is newest, first_half is oldest)
     if total >= 4:
-        first_half = [c.compliance_score for c in checkins[:total // 2]]
-        second_half = [c.compliance_score for c in checkins[total // 2:]]
+        first_half = [c.compliance_score for c in sorted_checkins[:total // 2]]
+        second_half = [c.compliance_score for c in sorted_checkins[total // 2:]]
         diff = mean(second_half) - mean(first_half)
         if diff > 5:
             trend = "📈 Trending Up"
@@ -227,16 +232,12 @@ def _build_report_message(
     else:
         trend = "➡️ Stable"
     
-    # Week date range
-    sorted_checkins = sorted(checkins, key=lambda c: c.date)
-    week_start = sorted_checkins[0].date
-    week_end = sorted_checkins[-1].date
-    
     # Phase 4: Per-metric breakdown for report
     from src.services.analytics_service import (
         _calculate_tier1_stats, TIER1_METRICS, METRIC_LABELS, METRIC_EMOJIS
     )
-    tier1 = _calculate_tier1_stats(checkins)
+    from src.utils.telegram_utils import _escape_unsafe_html
+    tier1 = _calculate_tier1_stats(sorted_checkins)
     tier1_lines = []
     for metric in TIER1_METRICS:
         emoji = METRIC_EMOJIS[metric]
@@ -247,6 +248,8 @@ def _build_report_message(
         total_d = stats.get("total", 0)
         tier1_lines.append(f"  {emoji} {label}: {days_done}/{total_d} ({pct:.0f}%)")
     tier1_block = "\n".join(tier1_lines)
+
+    escaped_insights = _escape_unsafe_html(ai_insights)
 
     message = (
         f"<b>📊 {period_label} Report</b>\n"
@@ -263,7 +266,7 @@ def _build_report_message(
         f"{tier1_block}\n\n"
         
         f"<b>💡 AI Insights:</b>\n"
-        f"<i>{ai_insights}</i>\n\n"
+        f"<i>{escaped_insights}</i>\n\n"
         
         f"<i>Graphs attached below ⬇️</i>"
     )

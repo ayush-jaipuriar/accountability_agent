@@ -93,13 +93,20 @@ class PredictiveInterventionEngine:
         if len(target_checkins) < 3:
             return []
 
+        from src.config import settings
         metrics = ["sleep", "training", "deep_work", "skill_building"]
         for metric in metrics:
+            eligible_checkins = [
+                c for c in target_checkins
+                if metric != "skill_building" or c.date >= settings.phase_3d_deployment_date
+            ]
+            if len(eligible_checkins) < 3:
+                continue
             missed = sum(
-                1 for c in target_checkins
+                1 for c in eligible_checkins
                 if not getattr(c.tier1_non_negotiables, metric, False)
             )
-            rate = missed / len(target_checkins)
+            rate = missed / len(eligible_checkins)
             if rate >= 0.5:
                 risks.append({
                     "metric": metric,

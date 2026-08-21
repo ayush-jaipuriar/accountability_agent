@@ -777,9 +777,12 @@ INSTRUCTIONS FOR USING YESTERDAY'S CONTEXT:
             "----------------------------------------------------------------------",
         ]
 
+        # Sort chronologically ascending so that the newest check-in is at the end (Day N = TODAY)
+        sorted_checkins = sorted(recent_checkins, key=lambda c: c.get('date', ''))
+
         # Format each day's entry
-        for i, checkin in enumerate(recent_checkins, 1):
-            day_label = "TODAY - MOST IMPORTANT" if i == len(recent_checkins) else f"Day {i}"
+        for i, checkin in enumerate(sorted_checkins, 1):
+            day_label = "TODAY - MOST IMPORTANT" if i == len(sorted_checkins) else f"Day {i}"
             date_str = checkin.get('date', 'unknown')
             score = checkin.get('compliance_score', 'N/A')
             rating = checkin.get('rating', 'N/A')
@@ -918,15 +921,33 @@ Return ONLY a valid JSON object matching this schema, with no markdown formattin
 """
         try:
             response = await self.llm.generate_text(prompt, max_output_tokens=500, temperature=0.1)
-            cleaned_response = response.strip()
-            if cleaned_response.startswith("```"):
-                cleaned_response = re.sub(r"^```(?:json)?\n", "", cleaned_response)
-                cleaned_response = re.sub(r"\n```$", "", cleaned_response)
-                cleaned_response = cleaned_response.strip()
-            
             import json
+            import re
+            
+            # Robust JSON extraction
+            json_match = re.search(r"\{.*\}", response, re.DOTALL)
+            if json_match:
+                cleaned_response = json_match.group(0)
+            else:
+                cleaned_response = response.strip()
+                if cleaned_response.startswith("```"):
+                    cleaned_response = re.sub(r"^```(?:json)?\n", "", cleaned_response)
+                    cleaned_response = re.sub(r"\n```$", "", cleaned_response)
+                    cleaned_response = cleaned_response.strip()
+            
             parsed = json.loads(cleaned_response)
-            rating = int(parsed.get("alignment_rating", 8))
+            
+            # Safe int parsing
+            raw_rating = parsed.get("alignment_rating", 8)
+            try:
+                if isinstance(raw_rating, str):
+                    rating_digits = re.search(r"\d+", raw_rating)
+                    rating = int(rating_digits.group(0)) if rating_digits else 8
+                else:
+                    rating = int(float(raw_rating))
+            except (ValueError, TypeError):
+                rating = 8
+
             return {
                 "alignment_rating": max(1, min(10, rating)),
                 "challenges": parsed.get("challenges", "None reported."),

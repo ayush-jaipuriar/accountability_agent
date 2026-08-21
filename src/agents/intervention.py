@@ -98,7 +98,13 @@ logger = logging.getLogger(__name__)
 # likely in a vulnerable state and needs to feel safe asking for help.
 SUPPORT_BRIDGES = {
     "low": "\n\n💬 Want to talk about what got in the way? /support",
+    "nudge": "\n\n💬 Want to talk about what got in the way? /support",
     "medium": (
+        "\n\n━━━━━━━━━━━━━━━━━━\n"
+        "💬 Struggling with this? Type /support to talk it through.\n"
+        "   I can help you identify what's driving this pattern."
+    ),
+    "warning": (
         "\n\n━━━━━━━━━━━━━━━━━━\n"
         "💬 Struggling with this? Type /support to talk it through.\n"
         "   I can help you identify what's driving this pattern."
@@ -108,6 +114,10 @@ SUPPORT_BRIDGES = {
         "💙 This is hard. Type /support — no judgment, just support."
     ),
     "critical": (
+        "\n\n━━━━━━━━━━━━━━━━━━\n"
+        "🆘 I'm here for you. Type /support or just tell me how you're feeling."
+    ),
+    "emergency": (
         "\n\n━━━━━━━━━━━━━━━━━━\n"
         "🆘 I'm here for you. Type /support or just tell me how you're feeling."
     ),
@@ -511,11 +521,11 @@ Reply with your plan to break this pattern.
             
             Quick check-in: /checkin"
         """
-        days = pattern.data["days_missing"]
+        days = pattern.data.get("days_missing", 2)
         streak = pattern.data.get("previous_streak", 0)
         
         # Day 2: Gentle Nudge
-        if days == 2:
+        if days <= 2:
             return (
                 "👋 <b>Hey — missed you yesterday.</b>\n\n"
                 f"You had a {streak}-day streak going. How's it going?\n\n"

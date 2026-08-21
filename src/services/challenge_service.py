@@ -139,6 +139,10 @@ class ChallengeService:
                 if user_id not in challenge.progress:
                     challenge.progress[user_id] = []
 
+                # Deduplicate by date to avoid multiple entries on re-checkin
+                challenge.progress[user_id] = [
+                    p for p in challenge.progress[user_id] if p.get("date") != date
+                ]
                 challenge.progress[user_id].append({
                     "date": date,
                     "met": met,

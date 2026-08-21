@@ -131,11 +131,16 @@ Output ONLY a valid JSON object matching the following schema. Do NOT include an
             logger.info(f"Invoking Gemini to synthesize long-term profile memory for user {user_id}")
             response = await self.llm.generate_text(prompt, max_output_tokens=1500, temperature=0.2)
             
-            cleaned_response = response.strip()
-            if cleaned_response.startswith("```"):
-                cleaned_response = re.sub(r"^```(?:json)?\n", "", cleaned_response)
-                cleaned_response = re.sub(r"\n```$", "", cleaned_response)
-                cleaned_response = cleaned_response.strip()
+            # Robust JSON extraction
+            json_match = re.search(r"\{.*\}", response, re.DOTALL)
+            if json_match:
+                cleaned_response = json_match.group(0)
+            else:
+                cleaned_response = response.strip()
+                if cleaned_response.startswith("```"):
+                    cleaned_response = re.sub(r"^```(?:json)?\n", "", cleaned_response)
+                    cleaned_response = re.sub(r"\n```$", "", cleaned_response)
+                    cleaned_response = cleaned_response.strip()
 
             parsed = json.loads(cleaned_response)
             

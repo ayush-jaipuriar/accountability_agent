@@ -109,7 +109,7 @@ class FeatureDiscoveryService:
             return None
 
         # Get already-sent hints
-        hints_sent = list(user.hints_sent) if hasattr(user, 'hints_sent') else []
+        hints_sent = list(user.hints_sent) if getattr(user, 'hints_sent', None) is not None else []
 
         for feature_id, hint in FEATURE_HINTS.items():
             if hint["trigger"] == event and feature_id not in hints_sent:

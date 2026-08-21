@@ -478,9 +478,10 @@ async def pattern_scan_trigger(request: Request):
                     for pattern in patterns:
                         try:
                             # Cooldown gate: skip if same pattern was sent recently.
-                            # Lookup the cooldown for this severity (default 48h).
+                            # Exception: Day 5+ emergency ghosting must always escalate.
+                            is_emergency_ghosting = (pattern.type == "ghosting" and (pattern.severity == "emergency" or getattr(pattern, 'data', {}).get("days_missing", 0) >= 5))
                             cooldown = COOLDOWN_HOURS.get(pattern.severity, 48)
-                            if firestore_service.has_recent_intervention(
+                            if not is_emergency_ghosting and firestore_service.has_recent_intervention(
                                 user.user_id, pattern.type, cooldown
                             ):
                                 logger.info(

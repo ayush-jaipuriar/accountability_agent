@@ -62,9 +62,17 @@ Example State Flow:
    }
 """
 
+import copy
 from typing import TypedDict, Annotated, Optional, List, Dict, Any
 from operator import add
 from datetime import datetime
+
+
+def merge_dicts(a: Optional[Dict[str, Any]], b: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Reducer for merging dictionaries in state schemas without raising TypeError."""
+    res = dict(a or {})
+    res.update(dict(b or {}))
+    return res
 
 
 class ConstitutionState(TypedDict):
@@ -134,7 +142,7 @@ class ConstitutionState(TypedDict):
     4. Deep work hours (number)
     """
     
-    checkin_answers: Annotated[Dict[str, Any], add]
+    checkin_answers: Annotated[Dict[str, Any], merge_dicts]
     """
     Answers collected so far in check-in
     
@@ -146,7 +154,7 @@ class ConstitutionState(TypedDict):
         "deep_work": 3
     }
     
-    Note: Annotated[dict, add] means new answers are MERGED (not replaced)
+    Note: Annotated[dict, merge_dicts] means new answers are MERGED (not replaced)
     """
     
     compliance_score: Optional[int]
@@ -273,18 +281,18 @@ def is_state_valid(state: ConstitutionState) -> bool:
     return True
 
 
-def merge_state(base: ConstitutionState, updates: dict) -> ConstitutionState:
+def merge_state(
+    base: ConstitutionState,
+    updates: Dict[str, Any]
+) -> ConstitutionState:
     """
-    Merge updates into base state
+    Merge state updates into existing state.
     
-    Theory - State Updates in LangGraph:
-    ------------------------------------
-    When an agent updates the state, LangGraph needs to know HOW to merge
-    the new values with the existing state.
+    Helper function for nodes that need to update state without LangGraph.
     
-    For fields with `Annotated[T, add]`:
+    For fields with reducers:
     - Lists: Append new items (old + new)
-    - Dicts: Merge keys (old.update(new))
+    - Dicts: Merge keys (merge_dicts)
     
     For regular fields:
     - Replace old value with new value
@@ -296,21 +304,17 @@ def merge_state(base: ConstitutionState, updates: dict) -> ConstitutionState:
     Returns:
         Merged state
     """
-    merged = base.copy()
+    merged = copy.deepcopy(base)
     
     for key, value in updates.items():
         if key in merged:
-            # Check if field uses `add` reducer
-            if key in ["checkin_answers", "detected_patterns"]:
-                # Merge for dicts and lists
-                if isinstance(merged[key], dict) and isinstance(value, dict):
-                    merged[key].update(value)
-                elif isinstance(merged[key], list) and isinstance(value, list):
-                    merged[key].extend(value)
+            if key == "checkin_answers" and isinstance(merged[key], dict) and isinstance(value, dict):
+                merged[key] = merge_dicts(merged[key], value)
+            elif key == "detected_patterns" and isinstance(merged[key], list) and isinstance(value, list):
+                merged[key] = merged[key] + list(copy.deepcopy(value))
             else:
-                # Replace for regular fields
-                merged[key] = value
+                merged[key] = copy.deepcopy(value)
         else:
-            merged[key] = value
+            merged[key] = copy.deepcopy(value)
     
     return merged

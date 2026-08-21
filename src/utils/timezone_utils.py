@@ -429,7 +429,7 @@ def get_next_monday(timezone: str = "Asia/Kolkata", format_string: str = "%B %d,
 
 
 def get_timezones_at_local_time(utc_now: datetime, target_hour: int, target_minute: int = 0,
-                                 tolerance_minutes: int = 15) -> list[str]:
+                                 tolerance_minutes: int = 7) -> list[str]:
     """
     Find all timezone IDs from our catalog where current local time matches target.
 
@@ -440,14 +440,17 @@ def get_timezones_at_local_time(utc_now: datetime, target_hour: int, target_minu
     of the target hour:minute, we include it.
 
     Args:
-        utc_now: Current UTC datetime
+        utc_now: Current UTC datetime (if naive, localized to UTC)
         target_hour: Target local hour (0-23)
         target_minute: Target local minute (0-59)
-        tolerance_minutes: How many minutes of slack to allow (default: 15)
+        tolerance_minutes: How many minutes of slack to allow (default: 7)
 
     Returns:
         list[str]: IANA timezone IDs that match (e.g., ["Asia/Kolkata", "Asia/Dubai"])
     """
+    if utc_now.tzinfo is None:
+        utc_now = pytz.UTC.localize(utc_now)
+
     matching = []
 
     # Collect all timezone IDs from our catalog

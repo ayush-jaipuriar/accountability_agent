@@ -107,10 +107,12 @@ def _figure_to_bytes(fig: plt.Figure) -> io.BytesIO:
         BytesIO buffer containing PNG image data
     """
     buf = io.BytesIO()
-    fig.savefig(buf, format='png', bbox_inches='tight', facecolor=fig.get_facecolor())
-    plt.close(fig)  # Free memory immediately
-    buf.seek(0)
-    return buf
+    try:
+        fig.savefig(buf, format='png', bbox_inches='tight', facecolor=fig.get_facecolor())
+        buf.seek(0)
+        return buf
+    finally:
+        plt.close(fig)  # Free memory immediately
 
 
 # ===== Graph 1: Tier 1 Consistency =====

@@ -217,12 +217,14 @@ class GoalService:
             # Custom goals require manual progress updates
             return None
 
-        # Record progress
+        # Record progress (deduplicate by date)
         progress_entry = {
             "date": date,
             "met": met,
             "value": value,
         }
+        prev_consecutive = self._count_consecutive_met(goal.progress)
+        goal.progress = [p for p in goal.progress if p.get("date") != date]
         goal.progress.append(progress_entry)
 
         # Check for streak completion

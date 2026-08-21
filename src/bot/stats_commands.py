@@ -465,7 +465,7 @@ def format_yearly_summary(stats: dict) -> str:
     parts.append(f"\nOn track for {career['target_date']} goals! ({career['target_salary']}) 🎯\n")
     
     # Action item
-    parts.append("View detailed breakdown: /dashboard")
+    parts.append("View detailed breakdown: /metrics")
     
     return "\n".join(parts)
 

@@ -45,7 +45,8 @@ class FeedbackService:
         Returns:
             feedback_id
         """
-        feedback_id = f"fb_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+        from uuid import uuid4
+        feedback_id = f"fb_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{uuid4().hex[:6]}"
 
         entry = {
             "feedback_id": feedback_id,
@@ -112,11 +113,12 @@ class FeedbackService:
             {"nps": float, "promoters": int, "passives": int, "detractors": int, "total": int}
         """
         feedbacks = self.get_recent_feedback(days=days, feedback_type="nps")
+        rated_feedbacks = [f for f in feedbacks if f.get("rating") is not None]
 
-        promoters = sum(1 for f in feedbacks if f.get("rating", 0) >= 9)
-        passives = sum(1 for f in feedbacks if 7 <= f.get("rating", 0) <= 8)
-        detractors = sum(1 for f in feedbacks if f.get("rating", 0) <= 6)
-        total = len(feedbacks)
+        promoters = sum(1 for f in rated_feedbacks if f["rating"] >= 9)
+        passives = sum(1 for f in rated_feedbacks if 7 <= f["rating"] <= 8)
+        detractors = sum(1 for f in rated_feedbacks if f["rating"] <= 6)
+        total = len(rated_feedbacks)
 
         if total == 0:
             return {"nps": None, "promoters": 0, "passives": 0, "detractors": 0, "total": 0}

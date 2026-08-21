@@ -816,11 +816,12 @@ class AchievementService:
         percentage = (total_unlocked / total_available * 100) if total_available > 0 else 0
         
         # Count by rarity
-        rarity_breakdown = {"common": 0, "rare": 0, "epic": 0, "legendary": 0}
+        rarity_breakdown = {"common": 0, "uncommon": 0, "rare": 0, "epic": 0, "legendary": 0}
         for achievement_id in user.achievements:
             achievement = ACHIEVEMENTS.get(achievement_id)
             if achievement:
-                rarity_breakdown[achievement.rarity] += 1
+                rarity = achievement.rarity
+                rarity_breakdown[rarity] = rarity_breakdown.get(rarity, 0) + 1
         
         # Find next streak milestone
         current_streak = user.streaks.current_streak

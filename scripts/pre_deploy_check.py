@@ -259,7 +259,7 @@ def check_static_analysis() -> bool:
     try:
         # Run pyflakes on the src directory
         result = subprocess.run(
-            ["./venv/bin/pyflakes", "src/"],
+            [sys.executable, "-m", "pyflakes", "src/"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -309,7 +309,7 @@ def main() -> int:
 
     # 1. Source compilation
     checks.append(run_command(
-        ["python3", "-m", "compileall", "src/"],
+        [sys.executable, "-m", "compileall", "src/"],
         "Source compilation check",
     ))
 
@@ -318,7 +318,7 @@ def main() -> int:
 
     # 2. Test suite
     checks.append(run_command(
-        ["pytest", "tests/", "-q", "--tb=short"],
+        [sys.executable, "-m", "pytest", "tests/", "-q", "--tb=short"],
         "Test suite (pytest)",
     ))
 
@@ -336,19 +336,19 @@ def main() -> int:
     for svc in new_services:
         if Path(svc).exists():
             checks.append(run_command(
-                ["python3", "-m", "py_compile", svc],
+                [sys.executable, "-m", "py_compile", svc],
                 f"Compile check: {svc}",
             ))
 
     # 4. Schema validation
     checks.append(run_command(
-        ["python3", "-c", "try:\n    from src.models.schemas import User, DailyCheckIn, Goal, PartnerChallenge\n    print('OK')\nexcept ImportError as e:\n    print(f'SKIP (deps): {e}')"],
+        [sys.executable, "-c", "try:\n    from src.models.schemas import User, DailyCheckIn, Goal, PartnerChallenge\n    print('OK')\nexcept ImportError as e:\n    print(f'SKIP (deps): {e}')"],
         "Schema model imports",
     ))
 
     # 5. Config validation
     checks.append(run_command(
-        ["python3", "-c", "try:\n    from src.config import settings\n    print(f'OK: {settings.environment}')\nexcept ImportError as e:\n    print(f'SKIP (deps): {e}')"],
+        [sys.executable, "-c", "try:\n    from src.config import settings\n    print(f'OK: {settings.environment}')\nexcept ImportError as e:\n    print(f'SKIP (deps): {e}')"],
         "Config loading",
     ))
 

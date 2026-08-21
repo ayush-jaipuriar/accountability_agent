@@ -23,6 +23,7 @@ to the bot. We parse the referral code and attribute the new user.
 """
 
 import io
+import html
 import logging
 from typing import List, Dict, Any
 from statistics import mean
@@ -150,9 +151,10 @@ def format_leaderboard_message(
         if entry["user_id"] == requesting_user_id:
             user_found = True
             user_rank = rank
-            name = f"<b>{entry['name']} (You)</b>"
+            escaped_name = html.escape(entry['name'])
+            name = f"<b>{escaped_name} (You)</b>"
         else:
-            name = entry["name"]
+            name = html.escape(entry["name"])
         
         lines.append(
             f"{icon} {name} - {entry['compliance']:.0f}% compliance, "

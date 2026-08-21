@@ -206,7 +206,7 @@ async def handle_break_reason_callback(
     )
 
 
-def analyze_break_patterns(break_reasons: List[Dict]) -> Dict[str, Any]:
+def analyze_break_patterns(break_reasons: Optional[List[Dict]]) -> Dict[str, Any]:
     """
     Analyze historical break reasons to identify patterns.
 
@@ -217,8 +217,14 @@ def analyze_break_patterns(break_reasons: List[Dict]) -> Dict[str, Any]:
             "reason_distribution": {"sleep": 3, "work": 2},
         }
     """
-    if not break_reasons:
-        return {"has_data": False}
+    if not break_reasons or not isinstance(break_reasons, list):
+        return {
+            "has_data": False,
+            "break_count": 0,
+            "most_common_reason": None,
+            "most_common_count": 0,
+            "reason_distribution": {},
+        }
 
     from collections import Counter
 

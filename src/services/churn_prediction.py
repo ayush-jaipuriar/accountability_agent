@@ -201,7 +201,12 @@ class ChurnRiskPredictor:
         if user.last_churn_intervention is None:
             return True
         
-        days_since = (datetime.utcnow() - user.last_churn_intervention).days
+        last_int = user.last_churn_intervention
+        if getattr(last_int, 'tzinfo', None) is not None:
+            now = datetime.now(last_int.tzinfo)
+        else:
+            now = datetime.utcnow()
+        days_since = (now - last_int).days
         return days_since >= cooldown_days
 
 

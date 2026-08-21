@@ -76,15 +76,18 @@ class GeminiLLMService:
             input_tokens = self._count_tokens(prompt)
             logger.info(f"Gemini API request - Input tokens: {input_tokens}")
             
-            # Generate response (this is synchronous in the google.generativeai SDK)
-            response = self.model.generate_content(
+            # Generate response via thread worker to avoid blocking the event loop
+            import asyncio
+            gen_config = genai.GenerationConfig(
+                max_output_tokens=max_output_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k
+            )
+            response = await asyncio.to_thread(
+                self.model.generate_content,
                 prompt,
-                generation_config=genai.GenerationConfig(
-                    max_output_tokens=max_output_tokens,
-                    temperature=temperature,
-                    top_p=top_p,
-                    top_k=top_k
-                )
+                generation_config=gen_config
             )
             
             # Extract text

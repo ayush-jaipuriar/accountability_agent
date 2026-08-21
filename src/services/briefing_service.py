@@ -20,6 +20,7 @@ between check-ins and increasing engagement.
 """
 
 import logging
+import html
 from datetime import datetime, timedelta
 from statistics import mean
 from typing import Optional, List, Any
@@ -94,7 +95,8 @@ class BriefingService:
         sections = []
 
         # Header
-        sections.append(f"🌅 <b>Good morning, {user.name}!</b>")
+        escaped_name = html.escape(user.name)
+        sections.append(f"🌅 <b>Good morning, {escaped_name}!</b>")
         sections.append(f"<i>{today_str}</i>\n")
 
         # Yesterday's performance
@@ -109,7 +111,8 @@ class BriefingService:
             if obstacle:
                 if len(obstacle) > 120:
                     obstacle = obstacle[:117] + "..."
-                sections.append(f"⚠️ <b>Anticipated obstacle for today:</b> \"{obstacle}\"\n")
+                escaped_obstacle = html.escape(obstacle)
+                sections.append(f"⚠️ <b>Anticipated obstacle for today:</b> \"{escaped_obstacle}\"\n")
 
         # Daily Focus List rendering
         if task_list:
@@ -117,14 +120,16 @@ class BriefingService:
                 sections.append("🎯 <b>Today's Focus List (Uncommitted):</b>")
                 for t in task_list.tasks:
                     prefix = "🎯 [Primary]" if t.is_primary else "• [Secondary]"
-                    sections.append(f"   {prefix} {t.title}")
+                    escaped_title = html.escape(t.title)
+                    sections.append(f"   {prefix} {escaped_title}")
                 sections.append("<i>Use the buttons below to add secondary tasks or commit to your list.</i>\n")
             else:
                 sections.append("🎯 <b>Today's Active Focus:</b>")
                 for t in task_list.tasks:
                     status_icon = "✅" if t.completed else "⬜️"
                     prefix = "[Primary]" if t.is_primary else "[Secondary]"
-                    sections.append(f"   {status_icon} {prefix} {t.title}")
+                    escaped_title = html.escape(t.title)
+                    sections.append(f"   {status_icon} {prefix} {escaped_title}")
                 sections.append("")
 
         # Day-of-week insight

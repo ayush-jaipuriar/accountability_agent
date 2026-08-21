@@ -163,8 +163,8 @@ def generate_json_export(checkins: List[DailyCheckIn], user: User) -> io.BytesIO
             "user_name": user.name,
             "total_checkins": len(checkins),
             "date_range": {
-                "start": checkins[-1].date if checkins else None,
-                "end": checkins[0].date if checkins else None,
+                "start": min(c.date for c in checkins) if checkins else None,
+                "end": max(c.date for c in checkins) if checkins else None,
             },
             "format_version": "1.0",
         },
@@ -324,7 +324,9 @@ def generate_pdf_export(checkins: List[DailyCheckIn], user: User) -> io.BytesIO:
         from statistics import mean
         compliance_scores = [c.compliance_score for c in checkins]
         avg_compliance = mean(compliance_scores)
-        date_range = f"{checkins[-1].date} to {checkins[0].date}"
+        oldest_date = min(c.date for c in checkins)
+        newest_date = max(c.date for c in checkins)
+        date_range = f"{oldest_date} to {newest_date}"
     else:
         avg_compliance = 0
         date_range = "No data"
@@ -440,7 +442,7 @@ def generate_pdf_export(checkins: List[DailyCheckIn], user: User) -> io.BytesIO:
     
     # --- Recent Check-Ins (last 14) ---
     if checkins:
-        recent = checkins[:14]  # Already sorted newest first
+        recent = sorted(checkins, key=lambda c: c.date, reverse=True)[:14]  # Sort newest first
         elements.append(Paragraph(f"Recent Check-Ins (Last {len(recent)} Days)", heading_style))
         
         recent_data = [["Date", "Compliance", "Sleep", "Train", "Deep Work", "Porn-Free", "Rating"]]

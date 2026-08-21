@@ -163,22 +163,24 @@ class AppMetrics:
         """
         entries = self.latencies.get(metric, [])
         if not entries:
-            return {"avg_ms": 0, "p50_ms": 0, "p95_ms": 0, "count": 0}
+            return {"avg_ms": 0.0, "p50_ms": 0.0, "p95_ms": 0.0, "p99_ms": 0.0, "min_ms": 0.0, "max_ms": 0.0, "count": 0}
 
         # Filter to time window
         cutoff = datetime.utcnow() - timedelta(minutes=window_minutes)
         values = [ms for ts, ms in entries if ts > cutoff]
 
         if not values:
-            return {"avg_ms": 0, "p50_ms": 0, "p95_ms": 0, "count": 0}
+            return {"avg_ms": 0.0, "p50_ms": 0.0, "p95_ms": 0.0, "p99_ms": 0.0, "min_ms": 0.0, "max_ms": 0.0, "count": 0}
 
         values.sort()
         count = len(values)
+        p99_idx = min(int(count * 0.99), count - 1)
 
         return {
             "avg_ms": round(sum(values) / count, 1),
             "p50_ms": round(values[count // 2], 1),
             "p95_ms": round(values[int(count * 0.95)], 1) if count >= 2 else round(values[-1], 1),
+            "p99_ms": round(values[p99_idx], 1),
             "min_ms": round(values[0], 1),
             "max_ms": round(values[-1], 1),
             "count": count,

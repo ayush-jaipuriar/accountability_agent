@@ -67,6 +67,8 @@ def habit_credit(
     """
     if actual is None or actual <= 0:
         return 0.0
+    if target is None or target <= 0:
+        return 1.0 if actual > 0 else 0.0
     ratio = min(actual / target, 1.0)
     return ratio if ratio >= floor else 0.0
 
@@ -456,7 +458,7 @@ def get_tier1_breakdown(tier1: Tier1NonNegotiables) -> dict:
     }
 
 
-def get_missed_items(tier1: Tier1NonNegotiables) -> list[str]:
+def get_missed_items(tier1: Tier1NonNegotiables, checkin_date: Optional[str] = None) -> list:
     """
     Get list of Tier 1 items that were NOT completed.
     
@@ -464,6 +466,7 @@ def get_missed_items(tier1: Tier1NonNegotiables) -> list[str]:
     
     Args:
         tier1: Tier 1 non-negotiables
+        checkin_date: Optional date of check-in (YYYY-MM-DD) for Phase 3D compat
         
     Returns:
         list: Names of missed items
@@ -473,6 +476,11 @@ def get_missed_items(tier1: Tier1NonNegotiables) -> list[str]:
         >>> missed
         ['deep_work']
     """
+    from src.config import settings
+    is_pre_phase3d = False
+    if checkin_date:
+        is_pre_phase3d = checkin_date < settings.phase_3d_deployment_date
+    
     missed = []
     
     if not tier1.sleep:
@@ -481,7 +489,7 @@ def get_missed_items(tier1: Tier1NonNegotiables) -> list[str]:
         missed.append("training")
     if not tier1.deep_work:
         missed.append("deep_work")
-    if not tier1.skill_building:  # Phase 3D: New item
+    if not is_pre_phase3d and not tier1.skill_building:  # Phase 3D: New item
         missed.append("skill_building")
     if not tier1.zero_porn:
         missed.append("zero_porn")

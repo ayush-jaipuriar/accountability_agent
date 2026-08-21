@@ -285,13 +285,14 @@ Category:"""
                 }
             
             elif query_type == "streak_info":
+                is_record = user.streaks.current_streak >= user.streaks.longest_streak
                 return {
                     "current_streak": user.streaks.current_streak,
                     "longest_streak": user.streaks.longest_streak,
                     "total_checkins": user.streaks.total_checkins,
                     "last_checkin_date": user.streaks.last_checkin_date,
-                    "is_record": user.streaks.current_streak >= user.streaks.longest_streak,
-                    "days_to_record": max(0, user.streaks.longest_streak - user.streaks.current_streak + 1)
+                    "is_record": is_record,
+                    "days_to_record": 0 if is_record else max(0, user.streaks.longest_streak - user.streaks.current_streak + 1)
                 }
             
             elif query_type == "training_history":
@@ -301,18 +302,20 @@ Category:"""
                 if not checkins:
                     return {"error": "No training data found"}
                 
-                # Find last missed training day
+                sorted_checkins = sorted(checkins, key=lambda c: c.date)
+                
+                # Find last missed training day (search backwards from newest)
                 last_missed = None
-                for c in reversed(checkins):
+                for c in reversed(sorted_checkins):
                     if not c.tier1_non_negotiables.training:
                         last_missed = c.date
                         break
                 
                 # Calculate training frequency
-                training_days = sum(1 for c in checkins if c.tier1_non_negotiables.training)
+                training_days = sum(1 for c in sorted_checkins if c.tier1_non_negotiables.training)
                 
-                # Recent 7 days for detail
-                recent_7 = checkins[-7:] if len(checkins) >= 7 else checkins
+                # Recent 7 days for detail (7 most recent days)
+                recent_7 = sorted_checkins[-7:] if len(sorted_checkins) >= 7 else sorted_checkins
                 recent_detail = [
                     {
                         "date": c.date,
@@ -324,11 +327,11 @@ Category:"""
                 
                 return {
                     "training_days": training_days,
-                    "total_days": len(checkins),
-                    "consistency_pct": (training_days / len(checkins)) * 100,
+                    "total_days": len(sorted_checkins),
+                    "consistency_pct": (training_days / len(sorted_checkins)) * 100,
                     "last_missed": last_missed,
                     "recent_7_days": recent_detail,
-                    "current_week_count": sum(1 for d in recent_detail[-7:] if d["trained"])
+                    "current_week_count": sum(1 for d in recent_detail if d["trained"])
                 }
             
             elif query_type == "sleep_trends":
@@ -338,8 +341,9 @@ Category:"""
                 if not checkins:
                     return {"error": "No sleep data found"}
                 
+                sorted_checkins = sorted(checkins, key=lambda c: c.date)
                 sleep_hours = [c.tier1_non_negotiables.sleep_hours 
-                              for c in checkins 
+                              for c in sorted_checkins 
                               if c.tier1_non_negotiables.sleep_hours is not None]
                 
                 if not sleep_hours:
@@ -535,9 +539,10 @@ Consistency: 80% this week (4/5 workout days)"
         if len(checkins) < 6:
             return "stable"  # Need at least 6 days to detect trend
         
-        midpoint = len(checkins) // 2
-        first_half = checkins[:midpoint]
-        second_half = checkins[midpoint:]
+        sorted_checkins = sorted(checkins, key=lambda c: c.date)
+        midpoint = len(sorted_checkins) // 2
+        first_half = sorted_checkins[:midpoint]
+        second_half = sorted_checkins[midpoint:]
         
         first_avg = mean([c.compliance_score for c in first_half])
         second_avg = mean([c.compliance_score for c in second_half])
