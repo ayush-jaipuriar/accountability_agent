@@ -77,15 +77,16 @@ class TelegramBotManager:
     
     # All registered slash-command names (used for fuzzy matching)
     REGISTERED_COMMANDS = [
-        "start", "help", "status", "metrics", "mode",
+        "start", "help", "today", "progress", "partner", "goals", "settings",
+        "status", "metrics", "mode",
         "checkin", "quickcheckin",  # Handled by ConversationHandler, not CommandHandler
         "use_shield", "set_partner", "partner_status", "unlink_partner",
         "partner_notifications",
         "achievements", "career", "weekly", "monthly", "yearly",
         "export", "report", "leaderboard", "rank", "invite", "refer",
         "brag", "share", "resume", "correct", "timezone", "support",
-        "briefing", "settings", "constitution",
-        "goals", "goal_new", "goal_progress", "goal_complete",
+        "briefing", "constitution",
+        "goal_new", "goal_progress", "goal_complete",
         "challenges", "challenge_new", "challenge_accept", "challenge_decline",
         "insights", "feedback", "delete_my_data",
         "profile", "memory",
@@ -96,6 +97,16 @@ class TelegramBotManager:
     # Checked BEFORE the LLM supervisor to save API costs.
     # Longest-match wins (more specific phrases take priority).
     COMMAND_KEYWORDS = {
+        "progress": [
+            "my progress", "show progress", "performance hub", "my dashboard",
+        ],
+        "today": [
+            "today's focus", "today focus", "daily focus", "my tasks today",
+            "what's on today", "show today",
+        ],
+        "partner": [
+            "partner hub", "partner arena", "open partner",
+        ],
         "partner_status": [
             "partner status", "how is my partner", "partner update",
             "accountability partner", "partner doing", "my partner",
@@ -106,7 +117,6 @@ class TelegramBotManager:
         ],
         "status": [
             "my status", "how am i doing", "show status",
-            "my dashboard",
         ],
         "checkin": [
             "check in", "let me check in", "ready to check in",
@@ -183,6 +193,9 @@ class TelegramBotManager:
         return {
             "start": self.start_command,
             "help": self.help_command,
+            "today": self.today_command,
+            "progress": self.progress_command,
+            "partner": self.partner_command,
             "status": self.status_command,
             "metrics": self.metrics_command,
             "mode": self.mode_command,
@@ -260,6 +273,9 @@ class TelegramBotManager:
         """
         self.application.add_handler(CommandHandler("start", self.start_command))
         self.application.add_handler(CommandHandler("help", self.help_command))
+        self.application.add_handler(CommandHandler("today", self.today_command))
+        self.application.add_handler(CommandHandler("progress", self.progress_command))
+        self.application.add_handler(CommandHandler("partner", self.partner_command))
         self.application.add_handler(CommandHandler("status", self.status_command))
         self.application.add_handler(CommandHandler("metrics", self.metrics_command))
         self.application.add_handler(CommandHandler("mode", self.mode_command))
@@ -381,6 +397,16 @@ class TelegramBotManager:
         
         # P5.2: Data deletion confirmation callback (always enabled — compliance)
         self.application.add_handler(CallbackQueryHandler(self.delete_data_callback, pattern="^delete_"))
+        
+        # 5 Unified Hubs: Callback query handlers (Phase 3.1)
+        self.application.add_handler(CallbackQueryHandler(self.progress_callback, pattern="^progress_"))
+        self.application.add_handler(CallbackQueryHandler(self.progress_callback, pattern="^export_action_"))
+        self.application.add_handler(CallbackQueryHandler(self.settings_callback, pattern="^settings_"))
+        self.application.add_handler(CallbackQueryHandler(self.goals_callback, pattern="^goals_"))
+        self.application.add_handler(CallbackQueryHandler(self.goals_callback, pattern="^goal_tpl_"))
+        self.application.add_handler(CallbackQueryHandler(self.partner_hub_callback, pattern="^partner_"))
+        self.application.add_handler(CallbackQueryHandler(self.partner_hub_callback, pattern="^duel_start_"))
+        self.application.add_handler(CallbackQueryHandler(self.today_callback, pattern="^today_"))
         
         # Phase 3B: General message handler for emotional support and queries
         # This catches all non-command text messages
@@ -1073,12 +1099,12 @@ class TelegramBotManager:
         """
         Handle /help command.
         
-        Shows available commands organized by category using Phase 3F
-        UX utilities for consistent formatting.
+        Shows available commands organized into 5 executive hubs using Phase 3.1
+        UX utilities for streamlined navigation.
         """
-        from src.utils.ux import generate_help_text
+        from src.utils.ux import generate_executive_help_text
         
-        help_text = generate_help_text()
+        help_text = generate_executive_help_text()
         
         await update.message.reply_text(help_text, parse_mode='HTML')
         logger.info(f"✅ /help command from {update.effective_user.id}")
@@ -3182,43 +3208,85 @@ class TelegramBotManager:
                 parse_mode='HTML'
             )
 
-    # ===== P2.2: /goals Command — List Active Goals =====
+    # ===== P2.2: /goals Command — Interactive SMART Goals Studio =====
 
     async def goals_command(
         self,
         update: Update,
         context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Handle /goals command — list active goals with progress."""
+        """Handle /goals command — interactive SMART goals studio."""
         user_id = str(update.effective_user.id)
         user = firestore_service.get_user(user_id)
 
         if not user:
-            await update.message.reply_text("Please run /start first.", parse_mode='HTML')
+            msg = update.message or (update.callback_query.message if update.callback_query else None)
+            if msg:
+                await msg.reply_text("Please run /start first.", parse_mode='HTML')
             return
 
         from src.services.goal_service import goal_service
-        goals = goal_service.get_user_goals(user_id)
+        from src.utils.ux import format_goals_studio, get_goals_keyboard
 
-        if not goals:
-            await update.message.reply_text(
-                "🎯 <b>No active goals</b>\n\n"
-                "Create one with /goal_new\n"
-                "Examples:\n"
-                "• Sleep 7+ hours for 14 days\n"
-                "• Zero porn for 30 days\n"
-                "• Deep work 3h/day for 7 days",
+        goals = goal_service.get_user_goals(user_id, status="active")
+        text = format_goals_studio(goals)
+        keyboard = get_goals_keyboard()
+
+        if update.message:
+            await update.message.reply_text(text, reply_markup=keyboard, parse_mode='HTML')
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(text, reply_markup=keyboard, parse_mode='HTML')
+        logger.info(f"🎯 Goals studio rendered for {user_id}")
+
+    async def goals_callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle interactive goals studio button callbacks."""
+        query = update.callback_query
+        await query.answer()
+        data = query.data
+        user_id = str(query.from_user.id)
+
+        from src.services.goal_service import goal_service
+        from src.utils.ux import format_goals_studio, get_goals_keyboard
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+        if data == "goals_wizard_start":
+            templates_kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("💤 14-Day Sleep Master (7h+)", callback_data="goal_tpl_sleep_14")],
+                [InlineKeyboardButton("🧠 7-Day Deep Work Sprint (2h+)", callback_data="goal_tpl_dw_7")],
+                [InlineKeyboardButton("🚫 30-Day Clean Guardrails", callback_data="goal_tpl_clean_30")],
+                [InlineKeyboardButton("🏋️ 5-Day Workout Streak", callback_data="goal_tpl_workout_5")],
+                [InlineKeyboardButton("⬅️ Back to Goals Studio", callback_data="goals_back_main")]
+            ])
+            await query.edit_message_text(
+                "<b>🎯 Create a SMART Goal (1-Tap Presets)</b>\n\n"
+                "Select a preset below to auto-track progress from your daily check-ins:",
+                reply_markup=templates_kb,
                 parse_mode='HTML'
             )
-            return
+        elif data.startswith("goal_tpl_"):
+            tpl_key = data.replace("goal_tpl_", "")
+            if tpl_key == "sleep_14":
+                goal_service.create_goal(user_id=user_id, category="sleep", target_days=14, title="14-Day Sleep Master (7h+)")
+            elif tpl_key == "dw_7":
+                goal_service.create_goal(user_id=user_id, category="deep_work", target_days=7, title="7-Day Deep Work Sprint (2h+)")
+            elif tpl_key == "clean_30":
+                goal_service.create_goal(user_id=user_id, category="zero_porn", target_days=30, title="30-Day Clean Guardrails")
+            elif tpl_key == "workout_5":
+                goal_service.create_goal(user_id=user_id, category="training", target_days=5, title="5-Day Workout Streak")
 
-        lines = ["🎯 <b>Your Goals</b>\n"]
-        for goal in goals:
-            lines.append(goal_service.format_goal_progress(goal))
-            lines.append("")
-
-        await update.message.reply_text("\n".join(lines), parse_mode='HTML')
-        logger.info(f"🎯 Goals listed for {user_id}")
+            goals = goal_service.get_user_goals(user_id, status="active")
+            text = "✅ <b>Goal Created!</b> Auto-tracking enabled from check-ins.\n\n" + format_goals_studio(goals)
+            keyboard = get_goals_keyboard()
+            await query.edit_message_text(text, reply_markup=keyboard, parse_mode='HTML')
+        elif data in ("goals_manage_list", "goals_back_main"):
+            goals = goal_service.get_user_goals(user_id, status="active")
+            text = format_goals_studio(goals)
+            keyboard = get_goals_keyboard()
+            await query.edit_message_text(text, reply_markup=keyboard, parse_mode='HTML')
 
     # ===== P2.2: /goal_new Command — Create New Goal =====
 
@@ -4005,19 +4073,59 @@ class TelegramBotManager:
             logger.info(f"⚙️ User {user_id} set morning_briefing={enabled}")
             return
 
-        # Show current settings
-        briefing_status = "✅ On" if settings_dict.get("morning_briefing_enabled", True) else "❌ Off"
-        tz_display = user.timezone
+        # Render interactive settings control panel
+        from src.utils.ux import format_settings_panel, get_settings_keyboard
 
-        await update.message.reply_text(
-            f"⚙️ <b>Settings</b>\n\n"
-            f"Morning Briefing: {briefing_status}\n"
-            f"   Toggle: /settings morning_briefing off\n\n"
-            f"Timezone: {tz_display}\n"
-            f"Constitution Mode: {user.constitution_mode}\n"
-            f"Career Mode: {user.career_mode}\n",
-            parse_mode='HTML'
-        )
+        text = format_settings_panel(user)
+        keyboard = get_settings_keyboard(user)
+
+        if update.message:
+            await update.message.reply_text(text, reply_markup=keyboard, parse_mode='HTML')
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(text, reply_markup=keyboard, parse_mode='HTML')
+
+    async def settings_callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle interactive settings panel button callbacks."""
+        query = update.callback_query
+        await query.answer()
+        data = query.data
+        user_id = str(query.from_user.id)
+        user = firestore_service.get_user(user_id)
+        if not user:
+            return
+
+        from src.utils.ux import format_settings_panel, get_settings_keyboard
+
+        if data == "settings_action_mode":
+            await self.mode_command(update, context)
+        elif data == "settings_action_career":
+            await self.career_command(update, context)
+        elif data == "settings_action_timezone":
+            await self.timezone_command(update, context)
+        elif data == "settings_action_briefing_toggle":
+            settings_dict = getattr(user, 'settings', {}) or {}
+            current = settings_dict.get("morning_briefing_enabled", True)
+            settings_dict["morning_briefing_enabled"] = not current
+            firestore_service.update_user(user_id=user_id, updates={"settings": settings_dict})
+            user = firestore_service.get_user(user_id)
+            text = format_settings_panel(user)
+            keyboard = get_settings_keyboard(user)
+            await query.edit_message_text(text, reply_markup=keyboard, parse_mode='HTML')
+        elif data == "settings_action_shield":
+            await self.use_shield_command(update, context)
+        elif data == "settings_action_feedback":
+            if hasattr(self, 'feedback_command'):
+                await self.feedback_command(update, context)
+        elif data == "settings_action_delete_data":
+            await self.delete_my_data_command(update, context)
+        elif data == "settings_back_main":
+            text = format_settings_panel(user)
+            keyboard = get_settings_keyboard(user)
+            await query.edit_message_text(text, reply_markup=keyboard, parse_mode='HTML')
 
     async def profile_command(
         self,
@@ -4095,6 +4203,367 @@ class TelegramBotManager:
         )
 
         await update.message.reply_text(response_text, parse_mode='HTML')
+
+    # ===== 5 Unified Hubs: Today, Progress, Partner (Phase 3.1) =====
+
+    async def today_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle /today command — Master Daily Driver.
+        Combines morning focus tasks, live task toggles, and daily check-in launcher.
+        """
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+        if not user:
+            from src.utils.ux import ErrorMessages
+            msg = update.message or (update.callback_query.message if update.callback_query else None)
+            if msg:
+                await msg.reply_text(ErrorMessages.user_not_found(), parse_mode='HTML')
+            return
+
+        from src.utils.timezone_utils import get_current_date
+        from src.services.task_service import task_service
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+        user_tz = getattr(user, 'timezone', 'Asia/Kolkata') or 'Asia/Kolkata'
+        today_date = get_current_date(user_tz)
+        checked_in_today = firestore_service.checkin_exists(user_id, today_date)
+
+        task_list = task_service.get_daily_tasks(user_id, today_date)
+        has_tasks = task_list and task_list.committed and task_list.tasks
+
+        lines = [
+            "<b>🎯 TODAY'S FOCUS & DAILY DRIVER</b>",
+            f"<i>Date: {today_date} • {user.constitution_mode.title()} Mode</i>",
+            "━━━━━━━━━━━━━━━━━━━━",
+            ""
+        ]
+
+        keyboard = []
+
+        if checked_in_today:
+            checkin_doc = firestore_service.get_checkin(user_id, today_date)
+            score = checkin_doc.compliance_score if checkin_doc else 100.0
+            lines.append(f"✅ <b>Daily Check-In Completed!</b> (Score: {score:.0f}%)")
+            lines.append("Your habits and tasks for today are locked in.")
+            lines.append("\nNeed to adjust something? Tap below:")
+            keyboard.append([
+                InlineKeyboardButton("✏️ Correct Today's Entry", callback_data="correct_start"),
+                InlineKeyboardButton("📊 Performance Hub", callback_data="progress_win_30d")
+            ])
+        else:
+            lines.append("⏳ <b>Daily Check-In Pending</b>")
+            if has_tasks:
+                completed_c = sum(1 for t in task_list.tasks if t.completed)
+                lines.append(f"\n<b>📋 Today's Focus List ({completed_c}/{len(task_list.tasks)} Done):</b>")
+                for t in task_list.tasks:
+                    icon = "✅" if t.completed else "⬜"
+                    tag = " <i>(Primary)</i>" if t.is_primary else ""
+                    lines.append(f"{icon} {html.escape(t.title)}{tag}")
+                
+                # Task toggle buttons
+                for t in task_list.tasks:
+                    t_icon = "✅ Done" if t.completed else "⬜ Mark Done"
+                    keyboard.append([InlineKeyboardButton(f"{t_icon}: {t.title[:25]}", callback_data=f"task_toggle_{t.id}")])
+
+            lines.append("\nReady for today's review? Tap below to start your check-in:")
+            keyboard.append([InlineKeyboardButton("📋 Start Daily Check-In", callback_data="today_start_checkin")])
+            keyboard.append([InlineKeyboardButton("🌅 Morning Briefing", callback_data="today_view_briefing")])
+
+        reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+        if update.message:
+            await update.message.reply_text("\n".join(lines), reply_markup=reply_markup, parse_mode='HTML')
+        elif update.callback_query:
+            await update.callback_query.edit_message_text("\n".join(lines), reply_markup=reply_markup, parse_mode='HTML')
+        logger.info(f"🎯 /today rendered for user {user_id}")
+
+    async def today_callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle /today hub callbacks."""
+        query = update.callback_query
+        await query.answer()
+        data = query.data
+        if data == "today_start_checkin":
+            from src.bot.conversation import start_checkin
+            await start_checkin(update, context)
+        elif data == "today_view_briefing":
+            await self.briefing_command(update, context)
+
+    async def progress_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle /progress command — Executive Performance Hub.
+        """
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+        if not user:
+            from src.utils.ux import ErrorMessages
+            msg = update.message or (update.callback_query.message if update.callback_query else None)
+            if msg:
+                await msg.reply_text(ErrorMessages.user_not_found(), parse_mode='HTML')
+            return
+
+        from src.services.analytics_service import calculate_progress_hub_stats
+        from src.utils.ux import format_progress_hub, get_progress_keyboard
+
+        args = context.args or []
+        window_key = args[0].lower() if args and args[0].lower() in ("7d", "30d", "ytd", "all") else "30d"
+
+        stats = calculate_progress_hub_stats(user_id, window_key=window_key)
+        text = format_progress_hub(stats)
+        keyboard = get_progress_keyboard(current_window=window_key)
+
+        if update.message:
+            await update.message.reply_text(text, reply_markup=keyboard, parse_mode='HTML')
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(text, reply_markup=keyboard, parse_mode='HTML')
+        logger.info(f"📊 /progress opened for user {user_id} (window: {window_key})")
+
+    async def progress_callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle interactive progress hub callbacks (time filters, views)."""
+        query = update.callback_query
+        await query.answer()
+        data = query.data
+        user_id = str(query.from_user.id)
+
+        from src.services.analytics_service import calculate_progress_hub_stats
+        from src.utils.ux import format_progress_hub, get_progress_keyboard
+
+        if data.startswith("progress_win_"):
+            window_key = data.replace("progress_win_", "")
+            stats = calculate_progress_hub_stats(user_id, window_key=window_key)
+            text = format_progress_hub(stats)
+            keyboard = get_progress_keyboard(current_window=window_key)
+            await query.edit_message_text(text, reply_markup=keyboard, parse_mode='HTML')
+        elif data == "progress_view_charts":
+            await self.report_command(update, context)
+        elif data == "progress_view_memory":
+            await self.profile_command(update, context)
+        elif data == "progress_view_achievements":
+            await self.achievements_command(update, context)
+        elif data == "progress_view_export":
+            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+            export_kb = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("📄 PDF Report", callback_data="export_action_pdf"),
+                    InlineKeyboardButton("📊 CSV Data", callback_data="export_action_csv"),
+                    InlineKeyboardButton("💾 JSON Data", callback_data="export_action_json"),
+                ],
+                [InlineKeyboardButton("⬅️ Back to Progress Hub", callback_data="progress_win_30d")]
+            ])
+            await query.edit_message_text(
+                "<b>📥 Export Your Data</b>\n\nSelect your desired export format below:",
+                reply_markup=export_kb,
+                parse_mode='HTML'
+            )
+        elif data.startswith("export_action_"):
+            fmt = data.replace("export_action_", "")
+            context.args = [fmt]
+            await self.export_command(update, context)
+
+    async def partner_command(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle /partner command — Accountability Partner Arena.
+        """
+        user_id = str(update.effective_user.id)
+        user = firestore_service.get_user(user_id)
+        if not user:
+            from src.utils.ux import ErrorMessages
+            msg = update.message or (update.callback_query.message if update.callback_query else None)
+            if msg:
+                await msg.reply_text(ErrorMessages.user_not_found(), parse_mode='HTML')
+            return
+
+        from src.utils.ux import format_partner_arena, get_partner_keyboard
+        from src.services.challenge_service import challenge_service
+        from src.utils.timezone_utils import get_current_date
+
+        partner_id = user.accountability_partner_id
+        if not partner_id:
+            text = (
+                "<b>👥 ACCOUNTABILITY PARTNER ARENA</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━\n\n"
+                "You don't have a linked partner yet.\n\n"
+                "Linking an accountability partner gives you:\n"
+                "• ⚔️ 7-Day Shared Duels & Challenges\n"
+                "• 🔔 Mutual Streak Ghosting Alerts\n"
+                "• 📊 Privacy-preserving progress comparison\n\n"
+                "To link a partner, send: <code>/set_partner @username</code>"
+            )
+            keyboard = get_partner_keyboard(has_partner=False)
+            if update.message:
+                await update.message.reply_text(text, reply_markup=keyboard, parse_mode='HTML')
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(text, reply_markup=keyboard, parse_mode='HTML')
+            return
+
+        partner = firestore_service.get_user(partner_id)
+        partner_name = partner.name or partner.telegram_username or "Partner" if partner else "Partner"
+
+        user_streak = user.streaks.current_streak if user.streaks else 0
+        partner_streak = partner.streaks.current_streak if partner and partner.streaks else 0
+
+        user_checkins = firestore_service.get_recent_checkins(user_id, days=7)
+        user_compliance = (sum(c.compliance_score for c in user_checkins) / len(user_checkins)) if user_checkins else 0.0
+
+        partner_checkins = firestore_service.get_recent_checkins(partner_id, days=7) if partner else []
+        partner_compliance = (sum(c.compliance_score for c in partner_checkins) / len(partner_checkins)) if partner_checkins else 0.0
+
+        partner_tz = getattr(partner, 'timezone', 'Asia/Kolkata') or 'Asia/Kolkata'
+        partner_today = get_current_date(partner_tz)
+        partner_checked_in = firestore_service.checkin_exists(partner_id, partner_today) if partner else False
+
+        challenges = challenge_service.get_user_challenges(user_id, status="active") if hasattr(challenge_service, 'get_user_challenges') else []
+
+        text = format_partner_arena(
+            user_name=user.name,
+            partner_name=partner_name,
+            user_streak=user_streak,
+            partner_streak=partner_streak,
+            user_compliance=user_compliance,
+            partner_compliance=partner_compliance,
+            partner_checked_in_today=partner_checked_in,
+            challenges=challenges
+        )
+        keyboard = get_partner_keyboard(has_partner=True)
+
+        if update.message:
+            await update.message.reply_text(text, reply_markup=keyboard, parse_mode='HTML')
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(text, reply_markup=keyboard, parse_mode='HTML')
+
+    async def partner_hub_callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle partner arena button callbacks."""
+        query = update.callback_query
+        await query.answer()
+        data = query.data
+        user_id = str(query.from_user.id)
+        user = firestore_service.get_user(user_id)
+        if not user:
+            return
+
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+        if data == "partner_launch_duel":
+            partner_id = user.accountability_partner_id
+            if not partner_id:
+                await query.edit_message_text("❌ Please link a partner first with <code>/set_partner @username</code>", parse_mode='HTML')
+                return
+            duel_kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("💤 7-Day Sleep Duel", callback_data="duel_start_sleep")],
+                [InlineKeyboardButton("🧠 7-Day Deep Work Duel", callback_data="duel_start_dw")],
+                [InlineKeyboardButton("🏋️ 5-Day Workout Duel", callback_data="duel_start_workout")],
+                [InlineKeyboardButton("🎯 7-Day 100% Compliance Duel", callback_data="duel_start_comp")],
+                [InlineKeyboardButton("⬅️ Back to Partner Arena", callback_data="partner_back_main")]
+            ])
+            await query.edit_message_text(
+                "<b>⚔️ Launch a 7-Day Partner Duel</b>\n\n"
+                "Pick a duel template below to challenge your partner:",
+                reply_markup=duel_kb,
+                parse_mode='HTML'
+            )
+        elif data.startswith("duel_start_"):
+            duel_type = data.replace("duel_start_", "")
+            from src.services.challenge_service import challenge_service
+            partner_id = user.accountability_partner_id
+            partner = firestore_service.get_user(partner_id) if partner_id else None
+            if not partner:
+                await query.edit_message_text("❌ Partner not found.")
+                return
+
+            type_map = {
+                "sleep": ("sleep_7_days", "7-Day Sleep Duel"),
+                "dw": ("deep_work_7_days", "7-Day Deep Work Duel"),
+                "workout": ("workout_5_days", "5-Day Workout Duel"),
+                "comp": ("perfect_week", "7-Day 100% Compliance Duel"),
+            }
+            tpl_key, tpl_title = type_map.get(duel_type, ("sleep_7_days", "7-Day Duel"))
+            challenge = challenge_service.create_challenge(
+                creator_id=user_id,
+                partner_id=partner_id,
+                challenge_type=tpl_key,
+                title=tpl_title,
+                duration_days=7
+            )
+            invite_kb = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("⚔️ Accept Duel", callback_data=f"accept_challenge_{challenge.challenge_id}"),
+                    InlineKeyboardButton("❌ Decline", callback_data=f"decline_challenge_{challenge.challenge_id}")
+                ]
+            ])
+            try:
+                await context.bot.send_message(
+                    chat_id=partner.telegram_id,
+                    text=f"⚔️ <b>Duel Challenge from {user.name}!</b>\n\n<b>{tpl_title}</b> (7 Days)\n\nDo you accept the challenge?",
+                    reply_markup=invite_kb,
+                    parse_mode='HTML'
+                )
+            except Exception as e:
+                logger.warning(f"Could not send challenge to partner telegram: {e}")
+
+            await query.edit_message_text(
+                f"⚔️ <b>Duel Invite Sent!</b>\n\n"
+                f"Challenge: <b>{tpl_title}</b> sent to {partner.name}.\n"
+                f"Duel begins as soon as they accept!",
+                parse_mode='HTML'
+            )
+        elif data == "partner_view_leaderboard":
+            await self.leaderboard_command(update, context)
+        elif data == "partner_share_card":
+            await self.share_command(update, context)
+        elif data == "partner_settings_menu":
+            notif_status = "Enabled 🔔" if getattr(user, 'partner_checkin_notifications_enabled', True) else "Disabled 🔕"
+            settings_kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton(f"Notifications: {notif_status}", callback_data="partner_toggle_notif")],
+                [InlineKeyboardButton("❌ Unlink Partner", callback_data="partner_unlink_confirm")],
+                [InlineKeyboardButton("⬅️ Back to Partner Arena", callback_data="partner_back_main")]
+            ])
+            await query.edit_message_text(
+                "<b>⚙️ Partner Settings</b>\n\nConfigure your mutual notifications and link status:",
+                reply_markup=settings_kb,
+                parse_mode='HTML'
+            )
+        elif data == "partner_toggle_notif":
+            current = getattr(user, 'partner_checkin_notifications_enabled', True)
+            firestore_service.update_user(user_id, {"partner_checkin_notifications_enabled": not current})
+            user = firestore_service.get_user(user_id)
+            notif_status = "Enabled 🔔" if user.partner_checkin_notifications_enabled else "Disabled 🔕"
+            settings_kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton(f"Notifications: {notif_status}", callback_data="partner_toggle_notif")],
+                [InlineKeyboardButton("❌ Unlink Partner", callback_data="partner_unlink_confirm")],
+                [InlineKeyboardButton("⬅️ Back to Partner Arena", callback_data="partner_back_main")]
+            ])
+            await query.edit_message_text(
+                "<b>⚙️ Partner Settings</b>\n\nNotifications updated!",
+                reply_markup=settings_kb,
+                parse_mode='HTML'
+            )
+        elif data == "partner_unlink_confirm":
+            await self.unlink_partner_command(update, context)
+        elif data in ("partner_back_main", "partner_link_prompt"):
+            await self.partner_command(update, context)
+
 
     # ===== Fuzzy Command Matching Handler =====
     

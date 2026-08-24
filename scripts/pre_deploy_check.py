@@ -15,6 +15,7 @@ Exit codes:
 
 import subprocess
 import sys
+import shutil
 import ast
 from pathlib import Path
 
@@ -317,8 +318,10 @@ def main() -> int:
     checks.append(check_static_analysis())
 
     # 2. Test suite
+    pytest_bin = shutil.which("pytest") or sys.executable
+    pytest_cmd = [pytest_bin, "tests/", "-q", "--tb=short"] if shutil.which("pytest") else [sys.executable, "-m", "pytest", "tests/", "-q", "--tb=short"]
     checks.append(run_command(
-        [sys.executable, "-m", "pytest", "tests/", "-q", "--tb=short"],
+        pytest_cmd,
         "Test suite (pytest)",
     ))
 

@@ -23,8 +23,10 @@ These functions are used by every command handler. Centralizing them:
 """
 
 import logging
+import html
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 logger = logging.getLogger(__name__)
 
@@ -657,3 +659,281 @@ def get_partner_comparison_footer(
         return f"{EMOJI['encourage']} {partner_name}'s compliance is strong. Match their energy!"
     else:
         return f"{EMOJI['encourage']} You're both showing up. Keep it going!"
+
+
+# ===== 5 Unified Hubs: Formatting & Keyboards (Phase 3.1) =====
+
+def format_progress_hub(stats: Dict[str, Any]) -> str:
+    """
+    Format executive performance hub for /progress command.
+    """
+    if not stats.get("has_data") and "user" not in stats:
+        return (
+            "<b>📊 Performance Hub</b>\n\n"
+            "No check-in history found yet.\n"
+            "Complete your first check-in with /today or /checkin to unlock your dashboard!"
+        )
+
+    user = stats.get("user")
+    name = html.escape(user.name) if user and user.name else "User"
+    mode = (user.constitution_mode.title() if user and user.constitution_mode else "Optimization")
+    tz = user.timezone if user and user.timezone else "Asia/Kolkata"
+
+    period_label = stats.get("period_label", "Last 30 Days")
+    streaks = stats.get("streaks", {})
+    shields = stats.get("shields", {})
+    compliance = stats.get("compliance", {})
+    tier1 = stats.get("tier1", {})
+    say_do = stats.get("say_do_ratio", 0.0)
+    achievements_count = stats.get("achievements_count", 0)
+
+    shield_str = "🛡️" * shields.get("available", 0) + "⚪" * max(0, shields.get("total", 3) - shields.get("available", 0))
+
+    lines = [
+        f"<b>📊 EXECUTIVE PERFORMANCE HUB</b>",
+        f"<i>{name} • {mode} Mode • {tz}</i>",
+        "━━━━━━━━━━━━━━━━━━━━",
+        "",
+        f"🔥 <b>Current Streak:</b> {streaks.get('current', 0)} Days <i>(Best: {streaks.get('longest', 0)} Days)</i>",
+        f"🛡️ <b>Streak Shields:</b> {shield_str} ({shields.get('available', 0)}/{shields.get('total', 3)} available)",
+        f"📈 <b>Compliance Avg ({period_label}):</b> {compliance.get('average', 0.0):.1f}% <i>({compliance.get('trend', '→ Stable')})</i>",
+        f"🎯 <b>Say-Do Priority Integrity:</b> {say_do:.1f}%",
+        f"🏆 <b>Achievements Unlocked:</b> {achievements_count}/15",
+        "",
+    ]
+
+    if stats.get("has_data") and tier1:
+        lines.append("<b>📋 Habit Consistency Breakdown:</b>")
+        habit_labels = [
+            ("sleep", "😴 Sleep", "7h+"),
+            ("deep_work", "🧠 Deep Work", "2h+"),
+            ("skill_building", "📚 Skill Building", "2h+"),
+            ("training", "🏋️ Training", "Workouts/Rests"),
+            ("zero_porn", "🚫 Zero Porn", "Clean Days"),
+            ("boundaries", "🛡️ Boundaries", "Held"),
+        ]
+        for key, display, target_info in habit_labels:
+            h_stat = tier1.get(key, {})
+            pct = h_stat.get("pct", 0)
+            status_emoji = "✅" if pct >= 80 else ("🟡" if pct >= 50 else "❌")
+            lines.append(f"• {display}: <b>{pct:.0f}%</b> {status_emoji} <i>({target_info})</i>")
+        lines.append("")
+
+    lines.append(f"<i>Showing metrics for: <b>{period_label}</b></i>")
+    return "\n".join(lines)
+
+
+def get_progress_keyboard(current_window: str = "30d") -> InlineKeyboardMarkup:
+    """
+    Generate inline keyboard with time-filter toggles and deep-dive views.
+    """
+    def label(key, text):
+        return f"• {text} •" if key == current_window else text
+
+    row1 = [
+        InlineKeyboardButton(label("7d", "7 Days"), callback_data="progress_win_7d"),
+        InlineKeyboardButton(label("30d", "30 Days"), callback_data="progress_win_30d"),
+        InlineKeyboardButton(label("ytd", "YTD"), callback_data="progress_win_ytd"),
+        InlineKeyboardButton(label("all", "All-Time"), callback_data="progress_win_all"),
+    ]
+    row2 = [
+        InlineKeyboardButton("📈 Visual Chart Pack", callback_data="progress_view_charts"),
+        InlineKeyboardButton("🧠 AI Behavior Profile", callback_data="progress_view_memory"),
+    ]
+    row3 = [
+        InlineKeyboardButton("🏆 Badges (15)", callback_data="progress_view_achievements"),
+        InlineKeyboardButton("📥 Export Data", callback_data="progress_view_export"),
+    ]
+    return InlineKeyboardMarkup([row1, row2, row3])
+
+
+def format_settings_panel(user) -> str:
+    """
+    Format unified settings control panel.
+    """
+    name = html.escape(user.name) if user and user.name else "User"
+    mode = user.constitution_mode.title() if user and user.constitution_mode else "Optimization"
+    career = user.career_mode.replace("_", " ").title() if user and user.career_mode else "Skill Building"
+    tz = user.timezone if user and user.timezone else "Asia/Kolkata"
+    
+    settings_dict = getattr(user, 'settings', {}) or {}
+    briefing_status = "Enabled (8:00 AM) 🌅" if settings_dict.get("morning_briefing_enabled", True) else "Disabled ❌"
+    
+    shields_avail = user.streak_shields.available if hasattr(user, 'streak_shields') and user.streak_shields else 3
+    shields_total = user.streak_shields.total if hasattr(user, 'streak_shields') and user.streak_shields else 3
+    shield_str = "🛡️" * shields_avail + "⚪" * max(0, shields_total - shields_avail)
+    
+    leaderboard_status = "Public (Ranked) 🏅" if getattr(user, 'leaderboard_opt_in', True) else "Private 🔒"
+
+    return (
+        f"<b>⚙️ ACCOUNT & PREFERENCES</b>\n"
+        f"<i>{name} • Control Center</i>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"• <b>Constitution Mode:</b> {mode} 🚀\n"
+        f"• <b>Career Stage:</b> {career} 📚\n"
+        f"• <b>Timezone:</b> {tz} ⏰ <i>(Reminders at 9 PM local)</i>\n"
+        f"• <b>Morning Briefing:</b> {briefing_status}\n"
+        f"• <b>Streak Shields:</b> {shield_str} ({shields_avail}/{shields_total} available)\n"
+        f"• <b>Leaderboard:</b> {leaderboard_status}\n\n"
+        f"<i>Tap below to customize any setting instantly:</i>"
+    )
+
+
+def get_settings_keyboard(user) -> InlineKeyboardMarkup:
+    """
+    Generate inline keyboard for /settings control center.
+    """
+    settings_dict = getattr(user, 'settings', {}) or {}
+    briefing_on = settings_dict.get("morning_briefing_enabled", True)
+    briefing_btn_text = "🌅 Disable Briefing" if briefing_on else "🌅 Enable Briefing"
+    
+    keyboard = [
+        [
+            InlineKeyboardButton("🚀 Change Mode", callback_data="settings_action_mode"),
+            InlineKeyboardButton("📚 Change Career", callback_data="settings_action_career"),
+        ],
+        [
+            InlineKeyboardButton("⏰ Change Timezone", callback_data="settings_action_timezone"),
+            InlineKeyboardButton(briefing_btn_text, callback_data="settings_action_briefing_toggle"),
+        ],
+        [
+            InlineKeyboardButton("🛡️ Use Streak Shield", callback_data="settings_action_shield"),
+            InlineKeyboardButton("💬 Send Feedback", callback_data="settings_action_feedback"),
+        ],
+        [
+            InlineKeyboardButton("🗑️ Delete My Data (GDPR)", callback_data="settings_action_delete_data"),
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def format_goals_studio(goals: List[Any]) -> str:
+    """
+    Format interactive SMART goals studio for /goals command.
+    """
+    lines = [
+        "<b>🎯 ACTIVE GOALS STUDIO</b>",
+        "━━━━━━━━━━━━━━━━━━━━",
+        ""
+    ]
+    if not goals:
+        lines.append("<i>No active goals right now.</i>\n")
+        lines.append("Set a goal (e.g. 'Sleep 7+ hours for 14 days') to auto-track progress from your check-ins!")
+    else:
+        for idx, g in enumerate(goals, 1):
+            title = html.escape(g.title)
+            cat = g.category.replace("_", " ").title()
+            target_days = g.target_days or 14
+            
+            # Count met days
+            progress = g.progress or []
+            met_days = sum(1 for p in progress if p.get("met"))
+            pct = min(100, int((met_days / target_days) * 100))
+            
+            # 10-block progress bar
+            blocks_filled = int(round((pct / 100) * 10))
+            bar = "🟩" * blocks_filled + "⬜" * (10 - blocks_filled)
+            
+            lines.append(f"<b>{idx}️⃣ {title}</b>")
+            lines.append(f"{bar} <b>{met_days}/{target_days} days</b> ({pct}%)")
+            lines.append(f"<i>Category: {cat} • Status: {g.status.title()} 🔥</i>\n")
+
+    return "\n".join(lines)
+
+
+def get_goals_keyboard() -> InlineKeyboardMarkup:
+    """
+    Generate inline keyboard for /goals studio.
+    """
+    keyboard = [
+        [
+            InlineKeyboardButton("➕ Create New Goal", callback_data="goals_wizard_start"),
+            InlineKeyboardButton("🏁 Manage / Archive", callback_data="goals_manage_list"),
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def format_partner_arena(
+    user_name: str,
+    partner_name: str,
+    user_streak: int,
+    partner_streak: int,
+    user_compliance: float,
+    partner_compliance: float,
+    partner_checked_in_today: bool,
+    challenges: List[Any]
+) -> str:
+    """
+    Format unified partner arena.
+    """
+    lines = [
+        "<b>👥 ACCOUNTABILITY PARTNER ARENA</b>",
+        "━━━━━━━━━━━━━━━━━━━━",
+        "",
+        f"🤝 <b>Linked Partner:</b> {html.escape(partner_name)}",
+    ]
+    if partner_checked_in_today:
+        lines.append(f"📊 <b>{html.escape(partner_name)}'s Status Today:</b> Checked in ✅")
+    else:
+        lines.append(f"📊 <b>{html.escape(partner_name)}'s Status Today:</b> Not yet checked in ⏳")
+
+    lines.append(f"🔥 <b>Current Streaks:</b> You: {user_streak}d ┃ {html.escape(partner_name)}: {partner_streak}d")
+    lines.append(f"📈 <b>Weekly Compliance:</b> You: {user_compliance:.0f}% ┃ {html.escape(partner_name)}: {partner_compliance:.0f}%")
+    lines.append("")
+
+    if challenges:
+        lines.append("━━━━━━━━━━━━━━━━━━━━")
+        lines.append("<b>⚔️ Active Duels:</b>")
+        for ch in challenges:
+            ch_title = html.escape(ch.title)
+            lines.append(f"• <b>{ch_title}</b>: In Progress 🔥")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def get_partner_keyboard(has_partner: bool = True) -> InlineKeyboardMarkup:
+    """
+    Generate keyboard for /partner arena.
+    """
+    if not has_partner:
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("🤝 Link Partner (@username)", callback_data="partner_link_prompt")],
+            [InlineKeyboardButton("🏆 Global Leaderboard", callback_data="partner_view_leaderboard")],
+        ])
+
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("⚔️ Launch 7-Day Duel", callback_data="partner_launch_duel"),
+            InlineKeyboardButton("🏆 Leaderboard", callback_data="partner_view_leaderboard"),
+        ],
+        [
+            InlineKeyboardButton("📸 Share Brag Card", callback_data="partner_share_card"),
+            InlineKeyboardButton("⚙️ Partner Settings", callback_data="partner_settings_menu"),
+        ]
+    ])
+
+
+def generate_executive_help_text() -> str:
+    """
+    Generate streamlined executive quick-card directory for /help.
+    """
+    return (
+        f"<b>🎯 CONSTITUTION AGENT — COMMAND DIRECTORY</b>\n"
+        f"<i>Your AI-powered executive accountability partner.</i>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"<b>Core Interactive Hubs:</b>\n"
+        f"• <b>/today</b> — Morning focus, live task toggles & daily check-in\n"
+        f"• <b>/progress</b> — Performance dashboard, charts & AI memory\n"
+        f"• <b>/partner</b> — Partner stats, live duels & leaderboards\n"
+        f"• <b>/goals</b> — SMART goal tracking & 1-tap template studio\n"
+        f"• <b>/settings</b> — Modes, career stage, timezone & streak shields\n"
+        f"• <b>/support</b> — Private CBT emotional coaching\n\n"
+        f"<b>💡 Natural Conversation:</b>\n"
+        f"You can also just type naturally anytime!\n"
+        f"• <i>'How was my deep work this week?'</i>\n"
+        f"• <i>'I am feeling stressed about deadlines.'</i>\n"
+        f"• <i>'What is my biggest recurring obstacle?'</i>\n\n"
+        f"<i>⏰ Daily check-in reminders arrive at 9 PM in your local timezone.</i>"
+    )

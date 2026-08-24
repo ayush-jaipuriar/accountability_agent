@@ -1683,7 +1683,74 @@ async def finish_checkin(
                 except Exception as e:
                     logger.error(f"Support guidance generation failed, skipping: {e}")
             
-            # Build clean, compact final message
+            # ===== Check Sub-Events (Goals, Challenges, Achievements, Milestones) =====
+            milestone_blocks = []
+
+            # 1. Goal Progress Integration
+            try:
+                from src.services.goal_service import goal_service
+                checkin_for_goals = DailyCheckIn(
+                    date=date,
+                    user_id=user_id,
+                    mode=context.user_data['mode'],
+                    tier1_non_negotiables=tier1,
+                    responses=responses,
+                    compliance_score=compliance_score,
+                )
+                goal_updates = goal_service.update_progress_from_checkin(checkin_for_goals)
+                if goal_updates:
+                    for goal, milestone in goal_updates:
+                        escaped_goal_title = html.escape(goal.title)
+                        if milestone == "100%":
+                            milestone_blocks.append(f"• 🏆 <b>Goal Completed!</b> <i>'{escaped_goal_title}'</i> ({len(goal.progress)}/{goal.target_days}d)")
+                        else:
+                            milestone_blocks.append(f"• 🎯 <b>Goal {milestone} Milestone:</b> <i>'{escaped_goal_title}'</i>")
+                    logger.info(f"🎯 Goal milestones reached for {user_id}: {len(goal_updates)}")
+            except Exception as e:
+                logger.error(f"⚠️ Goal progress update failed (non-critical): {e}")
+
+            # 2. Challenge Progress Update
+            try:
+                from src.services.challenge_service import challenge_service
+                updated_challenges = challenge_service.update_progress_from_checkin(checkin_for_goals)
+                if updated_challenges:
+                    for ch in updated_challenges:
+                        winner = challenge_service.check_completion(ch)
+                        if winner == user_id:
+                            milestone_blocks.append(f"• 🏆 <b>Duel Won!</b> <i>'{ch.title}'</i> — Victory! 🔥")
+                        elif winner:
+                            milestone_blocks.append(f"• ⚔️ <b>Duel Finished:</b> <i>'{ch.title}'</i>")
+                        else:
+                            progress = ch.progress.get(user_id, [])
+                            met_days = sum(1 for p in progress if p.get("met"))
+                            milestone_blocks.append(f"• ⚔️ <b>Partner Duel:</b> <i>'{ch.title}'</i> ({met_days}d logged)")
+            except Exception as e:
+                logger.error(f"⚠️ Challenge progress update failed (non-critical): {e}")
+
+            # 3. Achievement System Integration
+            newly_unlocked = []
+            try:
+                user_updated = firestore_service.get_user(user_id)
+                if user_updated:
+                    recent_checkins = firestore_service.get_recent_checkins(user_id, days=30)
+                    newly_unlocked = achievement_service.check_achievements(user_updated, recent_checkins)
+                    if newly_unlocked:
+                        for achievement_id in newly_unlocked:
+                            achievement_service.unlock_achievement(user_id, achievement_id)
+                            ach_title = achievement_service.ACHIEVEMENTS.get(achievement_id, {}).get("title", achievement_id.replace("_", " ").title())
+                            milestone_blocks.append(f"• 🎖️ <b>Badge Unlocked:</b> <i>{ach_title}</i>")
+                        logger.info(f"🎉 User {user_id} unlocked achievements: {', '.join(newly_unlocked)}")
+            except Exception as e:
+                logger.error(f"⚠️ Achievement checking failed (non-critical): {e}", exc_info=True)
+
+            # 4. Streak Milestones & Recovery
+            if milestone_hit:
+                milestone_blocks.append(f"• 🔥 <b>Milestone:</b> {milestone_hit.get('title', '')}")
+            recovery_msg = streak_updates.get('recovery_message')
+            if recovery_msg and not streak_updates.get('is_reset'):
+                milestone_blocks.append(f"• 🦁 <b>Comeback:</b> {recovery_msg}")
+
+            # Build clean, consolidated Single Hero Completion Card
             feedback_parts = []
             
             # 1. Header Hero Card
@@ -1711,15 +1778,18 @@ async def finish_checkin(
                     social_proof = achievement_service.get_social_proof_message(user_profile)
                     if social_proof:
                         feedback_parts.append(f"\n{social_proof}")
-                        logger.info(f"📊 Added social proof for user {user_id}")
             except Exception as e:
-                logger.error(f"⚠️ Social proof generation failed (non-critical): {e}")
+                logger.error(f"⚠️ Social proof generation failed: {e}")
 
             # 5. Support focus (if any triggered)
             if support_guidance:
                 feedback_parts.append(f"\n💙 <b>Support Focus</b>\n{support_guidance}")
             
-            # 6. Streamlined Footer
+            # 6. Consolidated Milestones & Live Action block
+            if milestone_blocks:
+                feedback_parts.append("\n━━━━━━━━━━━━━━━━━━━━\n🏆 <b>Milestones & Live Action:</b>\n" + "\n".join(milestone_blocks))
+
+            # 7. Streamlined Footer
             feedback_parts.append("\n<i>Next check-in tomorrow at 9 PM</i>")
             
             final_message = "\n".join(feedback_parts)
@@ -1745,23 +1815,14 @@ async def finish_checkin(
             fallback_ai = checkin_agent._fallback_feedback(int(compliance_score), streak_num)
             feedback_parts.append(f"\n💡 <b>Coach's Takeaway</b>\n{fallback_ai}")
             
-            try:
-                user_profile = firestore_service.get_user(user_id)
-                if user_profile:
-                    social_proof = achievement_service.get_social_proof_message(user_profile)
-                    if social_proof:
-                        feedback_parts.append(f"\n{social_proof}")
-            except Exception as e:
-                logger.error(f"⚠️ Social proof failed in fallback: {e}")
-            
             feedback_parts.append("\n<i>Next check-in tomorrow at 9 PM</i>")
-            
             final_message = "\n".join(feedback_parts)
         
         msg = _get_message_from_update(update)
         if msg:
             await msg.reply_text(final_message, parse_mode='HTML')
 
+        # Send partner check-in notification (quiet background delivery)
         partner_notification = await send_partner_checkin_notification(
             bot=context.bot,
             sender=user,
@@ -1771,221 +1832,6 @@ async def finish_checkin(
         )
         if msg:
             await _notify_sender_if_partner_delivery_failed(msg, partner_notification)
-        
-        # ===== P2.2: Goal Progress Integration =====
-        try:
-            from src.services.goal_service import goal_service
-            
-            # Rebuild a proper DailyCheckIn object for goal evaluation
-            checkin_for_goals = DailyCheckIn(
-                date=date,
-                user_id=user_id,
-                mode=context.user_data['mode'],
-                tier1_non_negotiables=tier1,
-                responses=responses,
-                compliance_score=compliance_score,
-            )
-            
-            goal_updates = goal_service.update_progress_from_checkin(checkin_for_goals)
-            
-            if goal_updates:
-                goal_messages = []
-                for goal, milestone in goal_updates:
-                    escaped_goal_title = html.escape(goal.title)
-                    if milestone == "100%":
-                        goal_messages.append(
-                            f"🏆 <b>Goal Completed!</b>\n"
-                            f"'{escaped_goal_title}' — {len(goal.progress)}/{goal.target_days} days!"
-                        )
-                    elif milestone in ("50%", "75%"):
-                        goal_messages.append(
-                            f"🎯 <b>{milestone} Milestone!</b>\n"
-                            f"'{escaped_goal_title}' — keep going!"
-                        )
-                
-                if goal_messages:
-                    if msg:
-                        await msg.reply_text(
-                            "\n\n".join(goal_messages),
-                            parse_mode='HTML'
-                        )
-                    logger.info(f"🎯 Goal milestones reached for {user_id}: {len(goal_updates)}")
-        except Exception as e:
-            logger.error(f"⚠️ Goal progress update failed (non-critical): {e}")
-        
-        # ===== P2.3: Challenge Progress Update =====
-        try:
-            from src.services.challenge_service import challenge_service
-            updated_challenges = challenge_service.update_progress_from_checkin(checkin_for_goals)
-            if updated_challenges:
-                for ch in updated_challenges:
-                    # Check if challenge completed
-                    winner = challenge_service.check_completion(ch)
-                    if winner:
-                        if winner == user_id:
-                            if msg:
-                                await msg.reply_text(
-                                    f"🏆 <b>You Won the Challenge!</b>\n\n"
-                                    f"'{ch.title}' — victory is yours! 🔥",
-                                    parse_mode='HTML'
-                                )
-                        elif winner == ch.partner_id:
-                            if msg:
-                                await msg.reply_text(
-                                    f"😤 <b>Challenge Lost</b>\n\n"
-                                    f"'{ch.title}' — your partner edged you out. Rematch?",
-                                    parse_mode='HTML'
-                                )
-                        else:
-                            if msg:
-                                await msg.reply_text(
-                                    f"🤝 <b>Challenge Tie!</b>\n\n"
-                                    f"'{ch.title}' — dead even. Rematch?",
-                                    parse_mode='HTML'
-                                )
-                    else:
-                        # Daily progress update
-                        progress = ch.progress.get(user_id, [])
-                        met_days = sum(1 for p in progress if p.get("met"))
-                        total = (datetime.strptime(ch.end_date, "%Y-%m-%d") -
-                                datetime.strptime(ch.start_date, "%Y-%m-%d")).days + 1
-                        if msg:
-                            await msg.reply_text(
-                                f"🏆 <b>Challenge Update</b>\n\n"
-                                f"'{ch.title}': {met_days}/{total} days",
-                                parse_mode='HTML'
-                            )
-        except Exception as e:
-            logger.error(f"⚠️ Challenge progress update failed (non-critical): {e}")
-        
-        # ===== PHASE 3C: Achievement System Integration =====
-        # Check for newly unlocked achievements after streak update
-        newly_unlocked = []  # Initialize for feature discovery hints below
-        try:
-            # Get updated user profile with current streak
-            user = firestore_service.get_user(user_id)
-            
-            if user:
-                # Get recent check-ins for performance achievement checks (30 days)
-                recent_checkins = firestore_service.get_recent_checkins(user_id, days=30)
-                
-                # Check for newly unlocked achievements
-                newly_unlocked = achievement_service.check_achievements(user, recent_checkins)
-                
-                if newly_unlocked:
-                    logger.info(
-                        f"🎉 User {user_id} unlocked {len(newly_unlocked)} achievement(s): "
-                        f"{', '.join(newly_unlocked)}"
-                    )
-                    
-                    # Process each newly unlocked achievement
-                    for achievement_id in newly_unlocked:
-                        # Unlock achievement in Firestore (with duplicate prevention)
-                        achievement_service.unlock_achievement(user_id, achievement_id)
-                        
-                        # Generate celebration message
-                        celebration_message = achievement_service.get_celebration_message(
-                            achievement_id,
-                            user
-                        )
-                        
-                        # Send celebration as separate message (after check-in feedback)
-                        if msg:
-                            await msg.reply_text(
-                                celebration_message,
-                                parse_mode='HTML'
-                            )
-                        
-                        logger.info(f"✅ Sent celebration for {achievement_id} to user {user_id}")
-                else:
-                    logger.debug(f"No new achievements for user {user_id}")
-            
-        except Exception as e:
-            # Don't fail check-in if achievement system has issues
-            logger.error(f"⚠️ Achievement checking failed (non-critical): {e}", exc_info=True)
-        
-        # ===== P4.3: Feature Discovery Hints =====
-        try:
-            from src.services.feature_discovery_service import feature_discovery_service
-            
-            # Determine which event to check based on user state
-            event = None
-            if user.streaks.current_streak == 7:
-                event = "streak_7_days"
-            elif user.streaks.current_streak == 14:
-                event = "streak_14_days"
-            elif user.streaks.current_streak == 21:
-                event = "streak_21_days"
-            elif user.streaks.current_streak == 30:
-                event = "streak_30_days"
-            elif user.streaks.total_checkins == 3:
-                event = "after_3_checkins"
-            elif newly_unlocked:
-                event = "first_pattern_detected"
-            
-            if event:
-                hint = feature_discovery_service.check_and_send_hint(
-                    user=user,
-                    event=event,
-                    checkins=recent_checkins,
-                )
-                if hint:
-                    if msg:
-                        await msg.reply_text(hint, parse_mode='HTML')
-                    # Mark as sent
-                    feature_discovery_service.mark_hint_sent(user_id, event)
-                    logger.info(f"💡 Hint sent to {user_id}: {event}")
-        except Exception as e:
-            logger.error(f"⚠️ Feature discovery hint failed (non-critical): {e}")
-        
-        # ===== End Achievement System Integration =====
-        
-        # ===== PHASE 3C DAY 4: Milestone Celebrations =====
-        # Send milestone celebration if milestone was hit
-        if milestone_hit:
-            try:
-                milestone_message = (
-                    f"<b>{milestone_hit['title']}</b>\n\n"
-                    f"{milestone_hit['message']}"
-                )
-                
-                if msg:
-                    await msg.reply_text(
-                        milestone_message,
-                        parse_mode='HTML'
-                    )
-                
-                logger.info(
-                    f"🎉 Sent milestone celebration ({streak_updates['current_streak']} days) "
-                    f"to user {user_id}"
-                )
-                
-            except Exception as e:
-                # Don't fail check-in if milestone message fails
-                logger.error(f"⚠️ Milestone celebration failed (non-critical): {e}", exc_info=True)
-        
-        # ===== End Milestone Celebrations =====
-        
-        # ===== PHASE D: Recovery Milestone Celebrations =====
-        # If the user is in a post-reset recovery period, show recovery milestones
-        # (Day 3, 7, 14, or exceeding old streak). These are SEPARATE from the
-        # reset message (which shows on Day 1) and the normal milestones.
-        recovery_msg = streak_updates.get('recovery_message')
-        if recovery_msg and not streak_updates.get('is_reset'):
-            # Recovery milestone (not the initial reset — that's shown inline above)
-            try:
-                if msg:
-                    await msg.reply_text(
-                        recovery_msg,
-                        parse_mode="HTML"
-                    )
-                logger.info(
-                    f"🔄 Sent recovery milestone for {user_id} "
-                    f"(streak: {streak_updates['current_streak']})"
-                )
-            except Exception as e:
-                logger.error(f"⚠️ Recovery milestone message failed (non-critical): {e}")
-        # ===== End Recovery Milestones =====
         
         logger.info(
             f"✅ Check-in completed for {user_id}: {compliance_score}% compliance, "

@@ -1021,3 +1021,120 @@ def calculate_partner_weekly_performance(checkins: List[DailyCheckIn]) -> Dict[s
         "tasks_stat": tasks_stat
     }
 
+
+def calculate_progress_hub_stats(user_id: str, window_key: str = "30d") -> Dict[str, Any]:
+    """
+    Calculate unified executive dashboard metrics for /progress hub.
+    Supports windows: '7d', '30d', 'ytd', 'all'.
+    """
+    try:
+        user = firestore_service.get_user(user_id)
+        if not user:
+            return {"has_data": False, "error": "User not found"}
+
+        now = datetime.utcnow()
+        if window_key == "7d":
+            days = 7
+            period_label = "Last 7 Days"
+        elif window_key == "30d":
+            days = 30
+            period_label = "Last 30 Days"
+        elif window_key == "ytd":
+            jan1 = datetime(now.year, 1, 1)
+            days = max(1, (now - jan1).days + 1)
+            period_label = f"Year-To-Date ({now.year})"
+        elif window_key == "all":
+            days = 3650
+            period_label = "All-Time"
+        else:
+            days = 30
+            period_label = "Last 30 Days"
+
+        checkins = firestore_service.get_recent_checkins(user_id, days=days)
+        if not checkins:
+            return {
+                "has_data": False,
+                "period_label": period_label,
+                "window_key": window_key,
+                "user": user,
+                "streaks": {
+                    "current": user.streaks.current_streak if user.streaks else 0,
+                    "longest": user.streaks.longest_streak if user.streaks else 0,
+                    "total": user.streaks.total_checkins if user.streaks else 0,
+                },
+                "shields": {
+                    "available": user.streak_shields.available if user.streak_shields else 0,
+                    "total": user.streak_shields.total if user.streak_shields else 3,
+                },
+                "achievements_count": len(user.achievements or []),
+                "say_do_ratio": getattr(user.ai_profile_memory, 'say_do_ratio', 0.0) if hasattr(user, 'ai_profile_memory') and user.ai_profile_memory else 0.0,
+            }
+
+        # Checkin scores
+        scores = [c.compliance_score for c in checkins if c.compliance_score is not None]
+        avg_compliance = mean(scores) if scores else 0.0
+
+        # Trend (compare first half vs second half)
+        if len(scores) >= 6:
+            mid = len(scores) // 2
+            first_half = mean(scores[:mid])
+            second_half = mean(scores[mid:])
+            diff = second_half - first_half
+            if diff >= 5:
+                trend = f"↗️ +{diff:.0f}%"
+            elif diff <= -5:
+                trend = f"↘️ {diff:.0f}%"
+            else:
+                trend = "→ Stable"
+        else:
+            trend = "→ Stable"
+
+        tier1_stats = _calculate_tier1_stats(checkins)
+
+        # Say-Do ratio
+        say_do = 0.0
+        if hasattr(user, 'ai_profile_memory') and user.ai_profile_memory and user.ai_profile_memory.say_do_ratio:
+            say_do = user.ai_profile_memory.say_do_ratio
+        else:
+            # Calculate from committed tasks if available
+            all_tasks = [t for c in checkins if c.committed_tasks for t in c.committed_tasks]
+            if all_tasks:
+                completed = sum(1 for t in all_tasks if t.completed)
+                say_do = (completed / len(all_tasks)) * 100
+
+        # Date range string
+        sorted_checkins = sorted(checkins, key=lambda c: c.date)
+        date_range_str = f"{sorted_checkins[0].date} to {sorted_checkins[-1].date}"
+
+        return {
+            "has_data": True,
+            "period_label": period_label,
+            "window_key": window_key,
+            "date_range": date_range_str,
+            "checkin_count": len(checkins),
+            "days_in_window": days if days <= 365 else len(checkins),
+            "user": user,
+            "compliance": {
+                "average": avg_compliance,
+                "trend": trend,
+                "max": max(scores) if scores else 0,
+                "min": min(scores) if scores else 0,
+            },
+            "streaks": {
+                "current": user.streaks.current_streak if user.streaks else 0,
+                "longest": user.streaks.longest_streak if user.streaks else 0,
+                "total": user.streaks.total_checkins if user.streaks else 0,
+            },
+            "shields": {
+                "available": user.streak_shields.available if user.streak_shields else 0,
+                "total": user.streak_shields.total if user.streak_shields else 3,
+            },
+            "tier1": tier1_stats,
+            "achievements_count": len(user.achievements or []),
+            "say_do_ratio": say_do,
+        }
+    except Exception as e:
+        logger.error(f"❌ Error calculating progress hub stats: {e}", exc_info=True)
+        return {"has_data": False, "error": str(e)}
+
+
