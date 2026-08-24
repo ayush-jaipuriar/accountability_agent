@@ -49,6 +49,15 @@ from src.utils.compliance import calculate_compliance_score, format_compliance_m
 from src.utils.streak import update_streak_data, format_streak_message
 from src.agents.checkin_agent import get_checkin_agent
 from src.services.partner_notification_service import send_partner_checkin_notification
+from src.services.checkin_baseline import compute_predictive_baseline
+from src.utils.ux import (
+    format_habit_matrix_card,
+    get_habit_matrix_keyboard,
+    format_energy_reflection_card,
+    get_energy_reflection_keyboard,
+    format_focus_lock_card,
+    get_focus_lock_keyboard,
+)
 from src.config import settings
 
 logger = logging.getLogger(__name__)
@@ -171,29 +180,20 @@ async def start_checkin(
     context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     """
-    Entry point for /checkin and /quickcheckin commands (Phase 3E: Added quick check-in).
-    
-    <b>Process:</b>
-    1. Check if user exists
-    2. Check if already checked in today
-    3. If /quickcheckin: Check weekly limit (2/week)
-    4. Initialize conversation data
-    5. Start Question 1 (Tier 1)
-    
-    <b>Phase 3E Quick Check-In:</b>
-    - /quickcheckin triggers Tier 1-only flow (skip Q2-Q5)
-    - Limited to 2 per week (enforced here)
-    - Resets every Monday 12:00 AM IST
-    
-    Returns:
-        int: Next state (Q1_TIER1) or ConversationHandler.END
+    Entry point for /checkin and /quickcheckin commands.
+    Renders Card 1: Interactive Habit Matrix with honest predictive baselines.
     """
+    msg = _get_message_from_update(update)
+    if not msg:
+        logger.error("No message found in update for check-in")
+        return ConversationHandler.END
+
     user_id = str(update.effective_user.id)
     
     # Check if user exists
     user = firestore_service.get_user(user_id)
     if not user:
-        await update.message.reply_text(
+        await msg.reply_text(
             "❌ Please use /start first to create your profile."
         )
         return ConversationHandler.END
@@ -202,48 +202,24 @@ async def start_checkin(
     command = update.message.text.split()[0] if update.message and update.message.text else ""
     is_quick_checkin = command == "/quickcheckin"
     
-    # Phase 3E: Check quick check-in weekly limit
+    # Check quick check-in weekly limit
     if is_quick_checkin and user.quick_checkin_count >= 2:
         from src.utils.timezone_utils import get_next_monday
-        
-        # Build list of dates when quick check-ins were used
-        history_lines = []
-        for date_str in user.quick_checkin_used_dates[-2:]:  # Last 2 dates
-            # Try to get compliance from that check-in
-            try:
-                checkin = firestore_service.get_checkin(user_id, date_str)
-                compliance = f"{checkin.compliance_score:.0f}% compliance" if checkin else ""
-                history_lines.append(f"• {date_str} - {compliance}")
-            except:
-                history_lines.append(f"• {date_str}")
-        
-        history_text = "\n".join(history_lines) if history_lines else "• Not tracked"
-        
-        # Get next Monday for reset date
-        reset_date = get_next_monday(format_string="%A, %B %d")  # "Monday, February 10"
-        
-        await update.message.reply_text(
+        reset_date = get_next_monday(format_string="%A, %B %d")
+        await msg.reply_text(
             f"❌ <b>Quick Check-In Limit Reached</b>\n\n"
-            f"You've used both quick check-ins this week (max 2/week):\n\n"
-            f"{history_text}\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"You've used both quick check-ins this week (max 2/week).\n\n"
             f"<b>Use /checkin for full check-in.</b>\n\n"
-            f"🔄 Limit resets: {reset_date} at 12:00 AM IST\n\n"
-            f"💡 <b>Why the limit?</b>\n"
-            f"Full check-ins provide better insights and accountability.\n"
-            f"Quick check-ins are for genuinely busy days only.",
+            f"🔄 Limit resets: {reset_date} at 12:00 AM IST",
             parse_mode='HTML'
         )
         logger.info(f"❌ User {user_id} hit quick check-in limit (2/week)")
         return ConversationHandler.END
     
-    # Phase B: Read user's timezone (defaults to IST for backward compat)
     user_tz = getattr(user, 'timezone', 'Asia/Kolkata') or 'Asia/Kolkata'
-    
-    # Check if already checked in today (Phase 3A: Use 3 AM cutoff logic, now timezone-aware)
-    checkin_date = get_checkin_date(tz=user_tz)  # Before 3 AM local = previous day, after = current day
+    checkin_date = get_checkin_date(tz=user_tz)
     if firestore_service.checkin_exists(user_id, checkin_date):
-        await update.message.reply_text(
+        await msg.reply_text(
             f"✅ You've already completed your check-in for {checkin_date}!\n\n"
             f"🔥 Current streak: {user.streaks.current_streak} days\n"
             f"🏆 Personal best: {user.streaks.longest_streak} days\n\n"
@@ -252,106 +228,21 @@ async def start_checkin(
         return ConversationHandler.END
     
     # Initialize conversation data
-    context.user_data.clear()  # Clear any previous data
+    context.user_data.clear()
     context.user_data['user_id'] = user_id
     context.user_data['checkin_start_time'] = datetime.utcnow()
-    context.user_data['date'] = checkin_date  # Phase 3A: Use 3 AM cutoff
+    context.user_data['date'] = checkin_date
     context.user_data['mode'] = user.constitution_mode
-    context.user_data['timezone'] = user_tz  # Phase B: Store for rest of conversation
+    context.user_data['timezone'] = user_tz
+    context.user_data['checkin_type'] = 'quick' if is_quick_checkin else 'full'
     
-    # Fetch yesterday's check-in for contextual memory.
-    # This powers three things downstream:
-    #   1. A recall intro message ("Yesterday you planned to...")
-    #   2. An adapted Q2 question referencing yesterday's priority
-    #   3. AI feedback that compares today vs yesterday's commitments
-    from datetime import timedelta as td
-    yesterday_date_str = (
-        datetime.strptime(checkin_date, "%Y-%m-%d") - td(days=1)
-    ).strftime("%Y-%m-%d")
-    yesterday_checkin = firestore_service.get_checkin(user_id, yesterday_date_str)
-    
-    if yesterday_checkin and yesterday_checkin.responses:
-        yesterday_data = {
-            'date': yesterday_checkin.date,
-            'compliance_score': yesterday_checkin.compliance_score,
-            'rating': yesterday_checkin.responses.rating,
-            'rating_reason': yesterday_checkin.responses.rating_reason,
-            'tomorrow_priority': yesterday_checkin.responses.tomorrow_priority,
-            'tomorrow_obstacle': yesterday_checkin.responses.tomorrow_obstacle,
-            'challenges': yesterday_checkin.responses.challenges,
-            'tier1': {
-                'sleep': yesterday_checkin.tier1_non_negotiables.sleep,
-                'training': yesterday_checkin.tier1_non_negotiables.training,
-                'deep_work': yesterday_checkin.tier1_non_negotiables.deep_work,
-                'skill_building': yesterday_checkin.tier1_non_negotiables.skill_building,
-                'zero_porn': yesterday_checkin.tier1_non_negotiables.zero_porn,
-                'boundaries': yesterday_checkin.tier1_non_negotiables.boundaries,
-            }
-        }
-        context.user_data['yesterday_checkin'] = yesterday_data
-        
-        # Build recall intro message
-        intro_parts = []
-        if yesterday_data.get('tomorrow_priority'):
-            intro_parts.append(
-                f"You planned to focus on: <b>{yesterday_data['tomorrow_priority']}</b>"
-            )
-        if yesterday_data.get('tomorrow_obstacle'):
-            intro_parts.append(
-                f"Anticipated obstacle: <i>{yesterday_data['tomorrow_obstacle']}</i>"
-            )
-        tier1_results = yesterday_data.get('tier1', {})
-        failures = [
-            k.replace('_', ' ') for k, v in tier1_results.items() if not v
-        ]
-        if failures:
-            intro_parts.append(f"Missed yesterday: {', '.join(failures)}")
-        if yesterday_data.get('rating'):
-            intro_parts.append(f"Self-rating: {yesterday_data['rating']}/10")
-        
-        if intro_parts:
-            recall_msg = (
-                "📋 <b>Yesterday's Recap:</b>\n"
-                + "\n".join(f"• {p}" for p in intro_parts)
-                + "\n\nLet's see how today went..."
-            )
-            await update.message.reply_text(recall_msg, parse_mode='HTML')
-    else:
-        context.user_data['yesterday_checkin'] = None
-    
-    # Phase 3E: Set quick check-in flag if /quickcheckin was used
-    if is_quick_checkin:
-        context.user_data['checkin_type'] = 'quick'
-        
-        # Show quick check-in intro
-        from src.utils.timezone_utils import get_next_monday
-        remaining = 2 - user.quick_checkin_count
-        reset_date = get_next_monday(format_string="%A, %B %d")
-        
-        await update.message.reply_text(
-            f"⚡ <b>Quick Check-In Mode</b>\n\n"
-            f"Complete Tier 1 in ~2 minutes (6 questions only)\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"<b>Available This Week:</b> {remaining}/2 quick check-ins\n"
-            f"<b>Resets:</b> {reset_date} at 12:00 AM IST\n\n"
-            f"💡 Quick check-ins count toward your streak but provide\n"
-            f"abbreviated feedback. Use /checkin for full insights.\n\n"
-            f"Let's go! Starting Tier 1 questions...",
-            parse_mode='HTML'
-        )
-    else:
-        context.user_data['checkin_type'] = 'full'
-    
-    # P1.3: Calculate adaptive context
+    # Calculate adaptive context
     recent_checkins = firestore_service.get_recent_checkins(user_id, days=7)
     recent_scores = [c.compliance_score for c in recent_checkins if c.compliance_score is not None]
     avg_compliance = sum(recent_scores) / len(recent_scores) if recent_scores else 0.0
-    
-    is_power_user = (
-        user.streaks.current_streak >= 30 and avg_compliance >= 85.0
-    ) if user.streaks else False
+    is_power_user = (user.streaks.current_streak >= 30 and avg_compliance >= 85.0) if user.streaks else False
     is_struggling = avg_compliance < 60.0 if recent_scores else False
-    
+
     context.user_data['adaptive_context'] = {
         'power_user': is_power_user,
         'struggling': is_struggling,
@@ -359,71 +250,33 @@ async def start_checkin(
         'recent_count': len(recent_scores),
     }
     
-    # ===== 2A: Post-Ghosting "Why Did You Miss?" =====
-    # If user has been away 2+ days, ask a quick return-reason question
-    # before starting the check-in. This gathers data on WHY users ghost
-    # so the app can adapt interventions.
-    days_away = 0
-    if user.streaks and user.streaks.last_checkin_date:
-        try:
-            from datetime import datetime as dt
-            last_date = dt.strptime(user.streaks.last_checkin_date, "%Y-%m-%d").date()
-            today_date = dt.strptime(checkin_date, "%Y-%m-%d").date()
-            days_away = (today_date - last_date).days
-        except (ValueError, TypeError):
-            days_away = 0
-    
-    if days_away >= 2 and not is_quick_checkin:
-        context.user_data['days_away'] = days_away
-        keyboard = [
-            [InlineKeyboardButton("🔵 Life got busy / forgot", callback_data="return_busy")],
-            [InlineKeyboardButton("🟡 Felt overwhelmed by habits", callback_data="return_overwhelmed")],
-            [InlineKeyboardButton("🔴 Didn't want to report failure", callback_data="return_avoidance")],
-            [InlineKeyboardButton("⚪ Check-in felt pointless", callback_data="return_pointless")],
-            [InlineKeyboardButton("💬 Something else", callback_data="return_other")],
-            [InlineKeyboardButton("⏭️ Skip — just check in", callback_data="return_skip")],
-        ]
-        await update.message.reply_text(
-            f"👋 <b>Welcome back!</b> You've been away {days_away} days.\n\n"
-            "No judgment — just want to understand what happened.\n"
-            "This helps me support you better:",
-            parse_mode='HTML',
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        context.user_data['return_reason'] = None
-        logger.info(f"✅ Full check-in started for {user_id} (days_away={days_away}, awaiting return reason)")
-        return Q1_TIER1
-    
     # P1.3: Struggling user — empathetic framing
     if is_struggling and not is_quick_checkin:
-        await update.message.reply_text(
+        await msg.reply_text(
             f"💪 Hey {user.name}, I know it's been tough lately. "
             f"Let's take this one step at a time. Ready?"
         )
     
     # P1.3: Power user — mention quick mode availability
     if is_power_user and not is_quick_checkin:
-        await update.message.reply_text(
+        await msg.reply_text(
             f"🔥 Day {user.streaks.current_streak} — you're on fire! "
             f"Quick mode available anytime with /quickcheckin."
         )
     
-    # Check for committed to-dos for today (Feature 1: Next-Day Verification)
-    if not is_quick_checkin:
-        from src.services.task_service import task_service
-        task_list = task_service.get_daily_tasks(user_id, checkin_date)
-        if task_list and task_list.committed and task_list.tasks:
-            context.user_data['tasks_for_today'] = task_list.tasks
-            context.user_data['committed_tasks'] = task_list.tasks
-            await ask_task_verification(update.message, context)
-            logger.info(f"📋 To-do verification started for {user_id} ({len(task_list.tasks)} tasks)")
-            return Q0_TASK_VERIFICATION
-
-    # Start Question 1: Tier 1 non-negotiables
-    await ask_tier1_question(update.message, context)
+    # Compute intelligent predictive baseline defaults
+    baseline = compute_predictive_baseline(user_id, checkin_date)
+    context.user_data['tier1_data'] = baseline
+    context.user_data['tier1_step'] = 0
+    context.user_data['tier1_answer_order'] = []
     
-    logger_msg = "⚡ Quick check-in" if is_quick_checkin else "✅ Full check-in"
-    logger.info(f"{logger_msg} started for {user_id} (days_away={days_away})")
+    # Render Card 1: Interactive Habit Matrix
+    card_text = format_habit_matrix_card(baseline, checkin_date)
+    card_kb = get_habit_matrix_keyboard(baseline)
+    await msg.reply_text(card_text, reply_markup=card_kb, parse_mode='HTML')
+    
+    logger_msg = "⚡ Quick check-in" if is_quick_checkin else "✅ 3-Card Check-in"
+    logger.info(f"{logger_msg} started for {user_id} with predictive baseline")
     return Q1_TIER1
 
 
@@ -661,32 +514,101 @@ async def handle_tier1_response(
     context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     """
-    Handle button presses for Tier 1 continuous data capture.
-    
-    Uses a step-by-step flow where each question is answered sequentially.
-    When all 6 steps are complete, moves to Q2.
-    
-    Steps:
-    0: Sleep hours
-    1: Deep work hours
-    2: Skill building hours
-    3: Training intensity
-    4: Zero Porn
-    5: Boundaries
-    
-    Returns:
-        int: Q1_TIER1 (still answering) or Q2_CHALLENGES (all answered)
+    Handle button presses for Tier 1 continuous data capture and Habit Matrix.
     """
     query = update.callback_query
-    await query.answer()  # Acknowledge button press
+    await query.answer()
     
     # Initialize data structures if needed
     if 'tier1_step' not in context.user_data:
         context.user_data['tier1_step'] = 0
     if 'tier1_data' not in context.user_data:
-        context.user_data['tier1_data'] = {}
+        user_id = context.user_data.get('user_id', str(update.effective_user.id))
+        checkin_date = context.user_data.get('date') or get_checkin_date(tz="UTC")
+        context.user_data['tier1_data'] = compute_predictive_baseline(user_id, checkin_date)
     if 'tier1_answer_order' not in context.user_data:
         context.user_data['tier1_answer_order'] = []
+        
+    data = query.data
+    checkin_date = context.user_data.get('date') or get_checkin_date(tz="UTC")
+    
+    # ===== Habit Matrix 3-Card Streamlined Flow =====
+    if data.startswith("hmatrix_"):
+        t1 = context.user_data['tier1_data']
+        if data == "hmatrix_inc_sleep":
+            t1['sleep_hours'] = min(12.0, round(float(t1.get('sleep_hours', 7.0)) + 0.5, 1))
+        elif data == "hmatrix_dec_sleep":
+            t1['sleep_hours'] = max(0.0, round(float(t1.get('sleep_hours', 7.0)) - 0.5, 1))
+        elif data == "hmatrix_inc_deepwork":
+            t1['deep_work_hours'] = min(12.0, round(float(t1.get('deep_work_hours', 2.0)) + 0.5, 1))
+        elif data == "hmatrix_dec_deepwork":
+            t1['deep_work_hours'] = max(0.0, round(float(t1.get('deep_work_hours', 2.0)) - 0.5, 1))
+        elif data == "hmatrix_inc_skill":
+            t1['skill_building_hours'] = min(12.0, round(float(t1.get('skill_building_hours', 1.0)) + 0.5, 1))
+        elif data == "hmatrix_dec_skill":
+            t1['skill_building_hours'] = max(0.0, round(float(t1.get('skill_building_hours', 1.0)) - 0.5, 1))
+        elif data == "hmatrix_cycle_training":
+            cycle = {"rest": "light", "light": "moderate", "moderate": "intense", "intense": "rest"}
+            curr = str(t1.get('training_intensity', 'rest')).lower()
+            t1['training_intensity'] = cycle.get(curr, "rest")
+        elif data == "hmatrix_toggle_porn":
+            t1['zero_porn'] = not t1.get('zero_porn', True)
+        elif data == "hmatrix_toggle_boundaries":
+            t1['boundaries'] = not t1.get('boundaries', True)
+        elif data == "hmatrix_confirm":
+            sleep_hours = float(t1.get('sleep_hours', 7.0))
+            dw_hours = float(t1.get('deep_work_hours', 2.0))
+            sb_hours = float(t1.get('skill_building_hours', 1.0))
+            training_intensity = str(t1.get('training_intensity', 'rest')).lower()
+            zero_porn = bool(t1.get('zero_porn', True))
+            boundaries = bool(t1.get('boundaries', True))
+
+            tier1 = Tier1NonNegotiables(
+                sleep_hours=sleep_hours,
+                deep_work_hours=dw_hours,
+                skill_building_hours=sb_hours,
+                training_intensity=training_intensity,
+                sleep=sleep_hours >= 6.0,
+                training=training_intensity in ('light', 'moderate', 'intense'),
+                deep_work=dw_hours >= 0.5,
+                skill_building=sb_hours >= 0.5,
+                is_rest_day=training_intensity == 'rest',
+                zero_porn=zero_porn,
+                boundaries=boundaries,
+                data_quality='actual',
+            )
+            context.user_data['tier1'] = tier1
+            
+            user_id = context.user_data.get('user_id', str(update.effective_user.id))
+            from src.services.task_service import task_service
+            task_list = task_service.get_daily_tasks(user_id, checkin_date)
+            committed_tasks = task_list.tasks if (task_list and task_list.committed) else None
+            context.user_data['compliance_score'] = calculate_compliance_score(tier1, committed_tasks)
+
+            if context.user_data.get('checkin_type') == 'quick':
+                context.user_data['challenges'] = "Quick check-in completed."
+                context.user_data['rating'] = 8
+                context.user_data['rating_reason'] = "Quick check-in mode"
+                context.user_data['tomorrow_priority'] = "Maintain consistency"
+                context.user_data['tomorrow_obstacle'] = "None reported."
+                await finish_checkin_quick(update, context)
+                return ConversationHandler.END
+
+            # Render Card 2: Energy & Reflection
+            await query.edit_message_text(
+                format_energy_reflection_card(),
+                reply_markup=get_energy_reflection_keyboard(),
+                parse_mode='HTML'
+            )
+            return Q3_ENERGY_MOOD
+
+        # Render updated Card 1 for any toggle/inc/dec
+        await query.edit_message_text(
+            format_habit_matrix_card(t1, checkin_date),
+            reply_markup=get_habit_matrix_keyboard(t1),
+            parse_mode='HTML'
+        )
+        return Q1_TIER1
     
     # P1.3: Handle perfect-day Q2 skip decision
     if context.user_data.get('awaiting_q2_skip'):
@@ -1173,8 +1095,8 @@ async def handle_energy_callback(
     context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     """
-    Handle energy rating selection via inline button.
-    Stores energy and prompts for mood rating.
+    Handle energy rating selection via inline button (1-10).
+    Renders Card 3: Tomorrow Focus Lock.
     """
     query = update.callback_query
     await query.answer()
@@ -1182,20 +1104,24 @@ async def handle_energy_callback(
     # Extract energy rating from callback_data
     energy_rating = int(query.data.split("_")[1])
     context.user_data['energy_rating'] = energy_rating
+    context.user_data['mood_rating'] = energy_rating
+    context.user_data['rating'] = energy_rating
+    context.user_data['rating_reason'] = f"Overall performance & energy rated {energy_rating}/10."
+    context.user_data['challenges'] = context.user_data.get('challenges', "None reported.")
+    context.user_data['tomorrow_priority'] = context.user_data.get('tomorrow_priority', "Maintain daily consistency.")
+    context.user_data['tomorrow_obstacle'] = context.user_data.get('tomorrow_obstacle', "None reported.")
 
-    # Send mood quick-reply buttons
-    mood_keyboard = [
-        [InlineKeyboardButton(str(i), callback_data=f"mood_{i}") for i in range(1, 6)],
-        [InlineKeyboardButton(str(i), callback_data=f"mood_{i}") for i in range(6, 11)],
-    ]
+    # Render Card 3: Focus Lock
+    primary = context.user_data.get('tomorrow_priority', 'Maintain daily consistency.')
+    sec1 = context.user_data.get('todo_sec1')
+    sec2 = context.user_data.get('todo_sec2')
+    
     await query.edit_message_text(
-        f"⚡ Energy: <b>{energy_rating}/10</b>\n\n"
-        f"😊 <b>Mood today?</b> (1 = terrible, 10 = amazing)",
-        reply_markup=InlineKeyboardMarkup(mood_keyboard),
+        format_focus_lock_card(primary, sec1, sec2),
+        reply_markup=get_focus_lock_keyboard(),
         parse_mode='HTML'
     )
-
-    return Q3_ENERGY_MOOD
+    return Q5_TODO_PRIMARY
 
 
 async def handle_mood_callback(
@@ -1204,26 +1130,23 @@ async def handle_mood_callback(
 ) -> int:
     """
     Handle mood rating selection via inline button.
-    Stores mood and prompts for mandatory reflection note (Q3).
+    Stores mood and prompts for reflection note.
     """
     query = update.callback_query
     await query.answer()
 
-    # Extract mood rating from callback_data
     mood_rating = int(query.data.split("_")[1])
     context.user_data['mood_rating'] = mood_rating
 
-    # Update the message to show ratings
     energy = context.user_data.get('energy_rating', '?')
 
     await query.edit_message_text(
         f"⚡ Energy: <b>{energy}/10</b>\n"
         f"😊 Mood: <b>{mood_rating}/10</b>\n\n"
-        f"📝 <b>Question 3/3: Daily Reflection (Mandatory)</b>\n\n"
-        f"To maintain true accountability, please type a short reflection (minimum 20 characters) describing:\n"
-        f"1. How today went and any challenges or mistakes you encountered.\n"
-        f"2. Your #1 focus and expected obstacle for tomorrow.\n\n"
-        f"<i>(You can also record and send a voice note reflecting on your day)</i>",
+        f"📝 <b>Daily Reflection Note (Optional)</b>\n\n"
+        f"Type a short reflection describing wins, challenges, and tomorrow's focus:\n\n"
+        f"<i>(Or send a voice note, or tap below to skip)</i>",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⏭️ Skip Reflection Note", callback_data="ref_skip")]]),
         parse_mode='HTML'
     )
 
@@ -1236,36 +1159,72 @@ async def handle_reflection_skip_callback(
 ) -> int:
     """
     Handle skip button press for reflection note.
-    Fills in neutral defaults and completes check-in.
+    Transitions to Card 3: Tomorrow Focus Lock.
     """
     query = update.callback_query
     await query.answer()
     
-    await query.edit_message_text(
-        "🏁 Check-in reflection skipped.\n"
-        "💾 Saving check-in and generating feedback...",
-        parse_mode='HTML'
-    )
-    
-    # Populate neutral values
     rating = context.user_data.get('rating', 8)
-    context.user_data['challenges'] = "None reported."
+    context.user_data['energy_rating'] = context.user_data.get('energy_rating', rating)
+    context.user_data['rating'] = rating
     context.user_data['rating_reason'] = f"Cohesive alignment with targets (Rated {rating}/10)."
+    context.user_data['challenges'] = "None reported."
     context.user_data['tomorrow_priority'] = "Maintain consistency."
     context.user_data['tomorrow_obstacle'] = "None reported."
     
-    # Move to To-Do commitment for tomorrow (or finish quick check-in)
-    if context.user_data.get('checkin_type') == 'quick':
-        await finish_checkin_quick(update, context)
-        return ConversationHandler.END
-
-    await query.message.reply_text(
-        "🎯 <b>Top 3 To-Dos for Tomorrow (1/3)</b>\n\n"
-        "What is your <b>#1 Primary Focus (Must-Do)</b> for tomorrow?\n\n"
-        "<i>(Type your primary task below)</i>",
+    primary = context.user_data.get('tomorrow_priority', 'Maintain daily consistency.')
+    sec1 = context.user_data.get('todo_sec1')
+    sec2 = context.user_data.get('todo_sec2')
+    
+    await query.edit_message_text(
+        format_focus_lock_card(primary, sec1, sec2),
+        reply_markup=get_focus_lock_keyboard(),
         parse_mode='HTML'
     )
     return Q5_TODO_PRIMARY
+
+
+async def handle_focus_lock_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """
+    Handle Card 3 Focus Lock button interactions.
+    Locks tomorrow's tasks and finalizes check-in.
+    """
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+    if data == "focus_custom_prompt":
+        await query.message.reply_text(
+            "✏️ <b>Custom Focus Task:</b>\n\n"
+            "Type your #1 Primary Must-Do task for tomorrow below:",
+            parse_mode='HTML'
+        )
+        return Q5_TODO_PRIMARY
+
+    user_id = context.user_data.get('user_id', str(update.effective_user.id))
+    user_tz = context.user_data.get('timezone', 'Asia/Kolkata')
+    today_str = context.user_data.get('date') or get_checkin_date(tz=user_tz)
+    from datetime import timedelta as td
+    tomorrow_str = (datetime.strptime(today_str, "%Y-%m-%d") + td(days=1)).strftime("%Y-%m-%d")
+
+    primary = context.user_data.get('todo_primary') or context.user_data.get('tomorrow_priority', 'Maintain consistency.')
+    sec1 = context.user_data.get('todo_sec1')
+    sec2 = context.user_data.get('todo_sec2')
+
+    from src.services.task_service import task_service
+    task_service.save_committed_task_list(
+        user_id=user_id,
+        date=tomorrow_str,
+        primary_title=primary,
+        sec1_title=sec1,
+        sec2_title=sec2
+    )
+
+    await finish_checkin(update, context)
+    return ConversationHandler.END
 
 
 async def handle_reflection_response(
@@ -2214,16 +2173,13 @@ async def checkin_timeout(
 def create_checkin_conversation_handler() -> ConversationHandler:
     """
     Create and configure the check-in conversation handler.
-    
-    Phase 3E: Added /quickcheckin as entry point
-    
-    Returns:
-        ConversationHandler: Configured conversation handler
     """
     return ConversationHandler(
         entry_points=[
             CommandHandler("checkin", start_checkin),
-            CommandHandler("quickcheckin", start_checkin)  # Phase 3E: Quick check-in entry
+            CommandHandler("quickcheckin", start_checkin),
+            CallbackQueryHandler(start_checkin, pattern="^today_start_checkin$"),
+            CallbackQueryHandler(start_checkin, pattern="^today_action_checkin$"),
         ],
         states={
             Q0_TASK_VERIFICATION: [
@@ -2239,6 +2195,7 @@ def create_checkin_conversation_handler() -> ConversationHandler:
             Q3_ENERGY_MOOD: [
                 CallbackQueryHandler(handle_energy_callback, pattern="^energy_"),
                 CallbackQueryHandler(handle_mood_callback, pattern="^mood_"),
+                CallbackQueryHandler(handle_reflection_skip_callback, pattern="^ref_"),
             ],
             Q4_REFLECTION_NOTE: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reflection_response),
@@ -2246,6 +2203,7 @@ def create_checkin_conversation_handler() -> ConversationHandler:
                 CallbackQueryHandler(handle_reflection_skip_callback, pattern="^ref_")
             ],
             Q5_TODO_PRIMARY: [
+                CallbackQueryHandler(handle_focus_lock_callback, pattern="^focus_"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_todo_primary),
             ],
             Q6_TODO_SECONDARY_1: [

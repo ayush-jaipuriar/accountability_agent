@@ -937,3 +937,112 @@ def generate_executive_help_text() -> str:
         f"• <i>'What is my biggest recurring obstacle?'</i>\n\n"
         f"<i>⏰ Daily check-in reminders arrive at 9 PM in your local timezone.</i>"
     )
+
+
+# ===== 3-Card Streamlined Check-In UX =====
+
+def format_habit_matrix_card(tier1_data: dict, date_str: str) -> str:
+    """Format Card 1: Interactive Habit Matrix with predictive baseline values."""
+    sleep_h = tier1_data.get("sleep_hours", 7.0)
+    dw_h = tier1_data.get("deep_work_hours", 2.0)
+    sb_h = tier1_data.get("skill_building_hours", 1.0)
+    train = str(tier1_data.get("training_intensity", "rest")).title()
+    porn = "Maintained ✅" if tier1_data.get("zero_porn", True) else "Violated ❌"
+    bound = "Maintained ✅" if tier1_data.get("boundaries", True) else "Violated ❌"
+    
+    return (
+        f"<b>🎯 DAILY CHECK-IN — HABIT MATRIX (1/3)</b>\n"
+        f"<i>Date: {date_str} • Honest Baseline Loaded</i>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"• 💤 <b>Sleep:</b> {sleep_h:.1f} hrs <i>(Target: 7.0h+)</i>\n"
+        f"• 🧠 <b>Deep Work:</b> {dw_h:.1f} hrs <i>(Target: 2.0h+)</i>\n"
+        f"• 📚 <b>Skill Building:</b> {sb_h:.1f} hrs <i>(Target: 2.0h+)</i>\n"
+        f"• 💪 <b>Training:</b> {train}\n"
+        f"• 🚫 <b>Zero Porn:</b> {porn}\n"
+        f"• 🛡️ <b>Boundaries:</b> {bound}\n\n"
+        f"<i>Tap below to adjust any habits if today differed, then confirm:</i>"
+    )
+
+
+def get_habit_matrix_keyboard(tier1_data: dict) -> InlineKeyboardMarkup:
+    """Build interactive inline keyboard for Card 1 Habit Matrix."""
+    train_val = str(tier1_data.get("training_intensity", "rest")).title()
+    porn_icon = "✅" if tier1_data.get("zero_porn", True) else "❌"
+    bound_icon = "✅" if tier1_data.get("boundaries", True) else "❌"
+    
+    sleep_h = tier1_data.get('sleep_hours', 7.0)
+    dw_h = tier1_data.get('deep_work_hours', 2.0)
+    sb_h = tier1_data.get('skill_building_hours', 1.0)
+    
+    keyboard = [
+        [
+            InlineKeyboardButton("➖", callback_data="hmatrix_dec_sleep"),
+            InlineKeyboardButton(f"💤 Sleep: {sleep_h:.1f}h", callback_data="hmatrix_noop"),
+            InlineKeyboardButton("➕", callback_data="hmatrix_inc_sleep"),
+        ],
+        [
+            InlineKeyboardButton("➖", callback_data="hmatrix_dec_deepwork"),
+            InlineKeyboardButton(f"🧠 Deep Work: {dw_h:.1f}h", callback_data="hmatrix_noop"),
+            InlineKeyboardButton("➕", callback_data="hmatrix_inc_deepwork"),
+        ],
+        [
+            InlineKeyboardButton("➖", callback_data="hmatrix_dec_skill"),
+            InlineKeyboardButton(f"📚 Skill: {sb_h:.1f}h", callback_data="hmatrix_noop"),
+            InlineKeyboardButton("➕", callback_data="hmatrix_inc_skill"),
+        ],
+        [
+            InlineKeyboardButton(f"💪 Training: {train_val} (Tap to Cycle)", callback_data="hmatrix_cycle_training"),
+        ],
+        [
+            InlineKeyboardButton(f"🚫 Zero Porn: {porn_icon}", callback_data="hmatrix_toggle_porn"),
+            InlineKeyboardButton(f"🛡️ Boundaries: {bound_icon}", callback_data="hmatrix_toggle_boundaries"),
+        ],
+        [
+            InlineKeyboardButton("➡️ Confirm Habits & Next (2/3)", callback_data="hmatrix_confirm"),
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def format_energy_reflection_card() -> str:
+    """Format Card 2: Energy & Reflection prompt."""
+    return (
+        f"<b>⚡ ENERGY & REFLECTION (2/3)</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"<b>1. Rate your overall execution & energy today:</b>\n"
+        f"<i>(1 = Exhausted/Off-track, 10 = Unstoppable)</i>\n\n"
+        f"<b>2. (Optional) Quick reflection note:</b>\n"
+        f"<i>Type a quick sentence or voice note about wins/challenges, or skip to finish:</i>"
+    )
+
+
+def get_energy_reflection_keyboard() -> InlineKeyboardMarkup:
+    """Build keyboard for Card 2 Energy & Reflection."""
+    row1 = [InlineKeyboardButton(str(i), callback_data=f"energy_{i}") for i in range(1, 6)]
+    row2 = [InlineKeyboardButton(str(i), callback_data=f"energy_{i}") for i in range(6, 11)]
+    row3 = [InlineKeyboardButton("⏭️ Skip Reflection & Next (3/3)", callback_data="ref_skip")]
+    return InlineKeyboardMarkup([row1, row2, row3])
+
+
+def format_focus_lock_card(primary: str, sec1: Optional[str] = None, sec2: Optional[str] = None) -> str:
+    """Format Card 3: Tomorrow Focus Lock."""
+    sec1_str = sec1 if sec1 else "<i>(Optional — tap to add)</i>"
+    sec2_str = sec2 if sec2 else "<i>(Optional — tap to add)</i>"
+    
+    return (
+        f"<b>🎯 TOMORROW'S FOCUS LOCK (3/3)</b>\n"
+        f"<i>Lock in your commitments before finishing check-in:</i>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"• 🎯 <b>Primary Focus (#1):</b> {html.escape(primary)}\n"
+        f"• 🥈 <b>Secondary Task #2:</b> {sec1_str}\n"
+        f"• 🥉 <b>Secondary Task #3:</b> {sec2_str}\n\n"
+        f"<i>Tap below to lock focus and finalize, or type custom tasks:</i>"
+    )
+
+
+def get_focus_lock_keyboard() -> InlineKeyboardMarkup:
+    """Build keyboard for Card 3 Focus Lock."""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎯 Lock Focus & Submit Check-In", callback_data="focus_lock_submit")],
+        [InlineKeyboardButton("✏️ Custom Tasks (Type below)", callback_data="focus_custom_prompt")],
+    ])

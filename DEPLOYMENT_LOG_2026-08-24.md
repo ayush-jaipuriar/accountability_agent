@@ -48,3 +48,27 @@
    - Memory: 512Mi
    - Timeout: 300s
    - Service Account: `450357249483-compute@developer.gserviceaccount.com`
+
+---
+
+## Release Revision: `accountability-agent-00029-8k7` (3-Card Check-In Flow Fix)
+
+### Issue Addressed
+- Fixed `AttributeError: 'NoneType' object has no attribute 'reply_text'` on callback queries entering check-in.
+- Upgraded check-in state machine to the modern **3-Card Flow with Predictive Baselines**:
+  - **Card 1: Habit Matrix** — Interactive card pre-populated with honest predictive baselines with instant in-place increment/decrement/training toggles (`[ ➖ / ➕ ]`).
+  - **Card 2: Energy & Reflection** — 1-10 rating buttons + optional reflection note/voice note.
+  - **Card 3: Tomorrow's Focus Lock** — 1-tap `[ 🎯 Lock Focus & Submit Check-In ]`.
+  - **Single Hero Card** — Output with all habit progress, coach takeaways, duel updates, and earned badges.
+
+### Pre-Deploy Verification
+- Automated tests: 1119 passed (`pytest tests`)
+- Pre-deploy check: 17/17 passed (`python3 scripts/pre_deploy_check.py`)
+- Python compile sanity check: PASSED (`python3 -m compileall src`)
+
+### Deployment Details
+- Image: `us-central1-docker.pkg.dev/accountability-agent/cloud-run-source-deploy/accountability-agent:manual-20260824-194907`
+- Revision: `accountability-agent-00029-8k7`
+- Health check: `https://accountability-agent-450357249483.us-central1.run.app/health` returned `200 OK`
+- Live smoke tests: PASSED (`python3 scripts/test_live_smoke.py`)
+
