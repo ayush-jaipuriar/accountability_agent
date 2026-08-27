@@ -571,6 +571,15 @@ class TestAdminStatusCommand:
 
 class TestGeneralMessageHandler:
     @pytest.mark.asyncio
+    async def test_in_checkin_message_is_suppressed(self, bot_manager):
+        update = _make_update(text="Fix and clean room")
+        context = _make_context(user_data={"in_checkin": True})
+
+        await bot_manager.handle_general_message(update, context)
+
+        update.message.reply_text.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_post_checkin_message_is_suppressed_once(self, bot_manager):
         update = _make_update(text="Tomorrow I need to regain momentum")
         context = _make_context(user_data={"suppress_general_message_once": True})

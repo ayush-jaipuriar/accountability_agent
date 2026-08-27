@@ -229,6 +229,7 @@ async def start_checkin(
     
     # Initialize conversation data
     context.user_data.clear()
+    context.user_data['in_checkin'] = True
     context.user_data['user_id'] = user_id
     context.user_data['checkin_start_time'] = datetime.utcnow()
     context.user_data['date'] = checkin_date
@@ -1805,6 +1806,8 @@ async def finish_checkin(
                 "❌ Sorry, there was an error saving your check-in. "
                 "Please try again or contact support."
             )
+    finally:
+        context.user_data.pop('in_checkin', None)
 
 
 # ===== Phase 3E: Quick Check-In Completion =====
@@ -2129,6 +2132,8 @@ async def finish_checkin_quick(
                 "❌ Sorry, there was an error saving your quick check-in. "
                 "Please try /quickcheckin again or use /checkin for full check-in."
             )
+    finally:
+        context.user_data.pop('in_checkin', None)
 
 
 # ===== Cancel/Timeout Handlers =====
@@ -2142,6 +2147,7 @@ async def cancel_checkin(
     
     Allows user to abort check-in.
     """
+    context.user_data.pop('in_checkin', None)
     await update.message.reply_text(
         "Check-in cancelled. You can start again with /checkin whenever you're ready."
     )
@@ -2159,6 +2165,7 @@ async def checkin_timeout(
     
     Automatically cancels check-in.
     """
+    context.user_data.pop('in_checkin', None)
     await update.message.reply_text(
         "⏰ Check-in timed out due to inactivity.\n\n"
         "You can start a new check-in anytime with /checkin."

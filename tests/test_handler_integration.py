@@ -169,6 +169,58 @@ class TestHandlerRegistrationConsistency:
             assert callable(handler), f"Handler for /{cmd} is not callable: {handler}"
 
 
+class TestHandlerGroupOrdering:
+    """Verify handlers are registered in a single unified group (group 0) in strict precedence order."""
+
+    def test_all_handlers_in_group_zero(self):
+        """No handlers should be in group 1 or 2 to avoid parallel execution bugs."""
+        from src.bot.telegram_bot import TelegramBotManager
+        from telegram.ext import ConversationHandler, MessageHandler
+        
+        bot = TelegramBotManager("dummy_token:123456789")
+        handlers = bot.application.handlers
+        
+        assert 1 not in handlers or len(handlers[1]) == 0, "Group 1 must be empty"
+        assert 2 not in handlers or len(handlers[2]) == 0, "Group 2 must be empty"
+        assert 0 in handlers, "Group 0 must contain all handlers"
+
+    def test_conversation_handler_precedes_catchall_message_handlers(self):
+        """ConversationHandler must precede general message and unknown command handlers in group 0."""
+        from src.bot.telegram_bot import TelegramBotManager
+        from telegram.ext import ConversationHandler, MessageHandler
+        
+        bot = TelegramBotManager("dummy_token:123456789")
+        handlers_0 = bot.application.handlers[0]
+        
+        conv_indices = [i for i, h in enumerate(handlers_0) if isinstance(h, ConversationHandler)]
+        msg_indices = [i for i, h in enumerate(handlers_0) if isinstance(h, MessageHandler)]
+        
+        assert len(conv_indices) >= 1, "Must have at least one ConversationHandler in group 0"
+        assert len(msg_indices) >= 2, "Must have general and unknown MessageHandlers in group 0"
+        
+        first_conv_idx = conv_indices[0]
+        first_msg_idx = msg_indices[0]
+        assert first_conv_idx < first_msg_idx, (
+            f"ConversationHandler (index {first_conv_idx}) must precede catch-all MessageHandler (index {first_msg_idx})"
+        )
+
+    def test_register_conversation_handler_maintains_order(self):
+        """Calling register_conversation_handler replaces or maintains order in group 0."""
+        from src.bot.telegram_bot import TelegramBotManager
+        from src.bot.conversation import create_checkin_conversation_handler
+        from telegram.ext import ConversationHandler, MessageHandler
+        
+        bot = TelegramBotManager("dummy_token:123456789")
+        new_conv = create_checkin_conversation_handler()
+        bot.register_conversation_handler(new_conv)
+        
+        handlers_0 = bot.application.handlers[0]
+        conv_idx = handlers_0.index(new_conv)
+        first_msg_idx = [i for i, h in enumerate(handlers_0) if isinstance(h, MessageHandler)][0]
+        
+        assert conv_idx < first_msg_idx, "Custom ConversationHandler must precede catch-all MessageHandler"
+
+
 # ===== Feature Flag Tests =====
 
 class TestFeatureFlagWiring:

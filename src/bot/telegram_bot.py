@@ -408,20 +408,25 @@ class TelegramBotManager:
         self.application.add_handler(CallbackQueryHandler(self.partner_hub_callback, pattern="^duel_start_"))
         self.application.add_handler(CallbackQueryHandler(self.today_callback, pattern="^today_"))
         
+        # Check-in conversation handler (group 0 - MUST precede catch-all message handlers)
+        from src.bot.conversation import create_checkin_conversation_handler
+        self._conversation_handler = create_checkin_conversation_handler()
+        self.application.add_handler(self._conversation_handler, group=0)
+
         # Phase 3B: General message handler for emotional support and queries
-        # This catches all non-command text messages
-        # CRITICAL: Must be in group 1 (lower priority than ConversationHandler in group 0)
+        # This catches all non-command text messages ONLY when not in an active conversation
+        # CRITICAL: Registered in group 0 AFTER ConversationHandler so active check-ins take precedence
         self.application.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_general_message),
-            group=1  # Lower priority ensures ConversationHandler processes /checkin first
+            group=0
         )
         
-        # Fuzzy command matching: catch any unrecognized /command at group 2.
+        # Fuzzy command matching: catch any unrecognized /command at group 0.
         # All valid CommandHandlers (group 0) run first; this only fires when
         # no handler matched the slash-command.
         self.application.add_handler(
             MessageHandler(filters.COMMAND, self.handle_unknown_command),
-            group=2
+            group=0
         )
         
         # Callback for fuzzy-match "Did you mean /X?" inline buttons
@@ -433,19 +438,25 @@ class TelegramBotManager:
     
     def register_conversation_handler(self, conversation_handler) -> None:
         """
-        Register check-in conversation handler.
+        Register or replace check-in conversation handler.
         
         Called from main.py after conversation handler is created.
-        
-        Args:
-            conversation_handler: ConversationHandler for check-ins
-            
-        <b>CRITICAL: Handler Groups</b>
-        ConversationHandler is added to group 0 (default, highest priority).
-        This ensures /checkin and /quickcheckin commands are caught by the
-        ConversationHandler BEFORE the general message handler.
+        Maintains strict handler order in group 0 so that ConversationHandler
+        precedes general catch-all message handlers.
         """
-        self.application.add_handler(conversation_handler, group=0)
+        handlers_0 = self.application.handlers.get(0, [])
+        if getattr(self, '_conversation_handler', None) in handlers_0:
+            idx = handlers_0.index(self._conversation_handler)
+            handlers_0[idx] = conversation_handler
+            self._conversation_handler = conversation_handler
+        elif conversation_handler not in handlers_0:
+            insert_idx = len(handlers_0)
+            for i, h in enumerate(handlers_0):
+                if isinstance(h, MessageHandler):
+                    insert_idx = i
+                    break
+            handlers_0.insert(insert_idx, conversation_handler)
+            self._conversation_handler = conversation_handler
         logger.info("✅ Conversation handler registered (group 0 - highest priority)")
     
     def get_application(self) -> Application:
@@ -4736,6 +4747,10 @@ class TelegramBotManager:
                         logger.warning(f"Could not edit briefing message: {edit_err}")
             else:
                 await update.message.reply_text(f"❌ {msg}")
+            return
+
+        if context.user_data.get('in_checkin'):
+            logger.info(f"🛑 Suppressed general message routing for {user_id}: check-in in progress")
             return
 
         if context.user_data.pop('suppress_general_message_once', False):
