@@ -434,3 +434,180 @@ class TestMorningBriefingCron:
         assert kwargs["chat_id"] == test_user_obj.telegram_id
         assert kwargs["text"] == "Mocked Morning Brief"
 
+
+
+# ===== Admin Metrics Tests =====
+
+class TestAdminMetrics:
+
+    async def test_admin_metrics_authorized(self, app_client, mock_services):
+        mock_services['settings'].admin_telegram_ids = "111222333,999888"
+        response = await app_client.get("/admin/metrics?admin_id=111222333")
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, dict)
+
+    async def test_admin_metrics_unauthorized(self, app_client, mock_services):
+        mock_services['settings'].admin_telegram_ids = "111222333"
+        response = await app_client.get("/admin/metrics?admin_id=wrong_id")
+        assert response.status_code == 403
+
+
+# ===== Telegram Webhook Tests =====
+
+class TestTelegramWebhook:
+
+    async def test_telegram_webhook_success(self, app_client, mock_services):
+        mock_bot = mock_services['bot']
+        mock_bot.application = MagicMock()
+        mock_bot.application.process_update = AsyncMock()
+
+        with patch('src.main.Update.de_json', return_value=MagicMock()):
+            payload = {"update_id": 10001, "message": {"text": "/status"}}
+            response = await app_client.post("/webhook/telegram", json=payload)
+            assert response.status_code == 200
+            assert response.json() == {"ok": True}
+            mock_bot.application.process_update.assert_called_once()
+
+    async def test_telegram_webhook_error_handling(self, app_client, mock_services):
+        mock_bot = mock_services['bot']
+        mock_bot.application = MagicMock()
+        mock_bot.application.process_update = AsyncMock(side_effect=Exception("Processing error"))
+
+        with patch('src.main.Update.de_json', return_value=MagicMock()):
+            payload = {"update_id": 10002}
+            response = await app_client.post("/webhook/telegram", json=payload)
+            assert response.status_code == 200
+            assert response.json()["ok"] is False
+
+
+# ===== Timezone-Aware Reminder Cron Tests =====
+
+class TestTimezoneAwareReminderCron:
+
+    @patch('src.utils.timezone_utils.get_timezones_at_local_time')
+    async def test_reminder_tz_aware_success(self, mock_get_tzs, app_client, mock_services, test_user_obj):
+        mock_get_tzs.side_effect = lambda utc, h, m=0, tolerance_minutes=7: ["Asia/Kolkata"] if h == 21 else []
+        mock_fs = mock_services['firestore']
+        mock_fs.get_users_by_timezones.return_value = [test_user_obj]
+        mock_fs.get_reminder_status.return_value = None
+        mock_fs.checkin_exists.return_value = False
+
+        response = await app_client.post("/cron/reminder_tz_aware")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "tz_aware_reminders_complete"
+
+
+# ===== Additional Cron and Admin Endpoints =====
+
+class TestAdditionalCronAndAdminEndpoints:
+
+    @patch('src.utils.timezone_utils.get_timezones_at_local_time')
+    @patch('src.services.task_service.task_service.get_daily_tasks')
+    async def test_midday_nudge(self, mock_get_tasks, mock_get_tzs, app_client, mock_services, test_user_obj):
+        mock_get_tzs.return_value = ["Asia/Kolkata"]
+        mock_fs = mock_services['firestore']
+        mock_fs.get_users_by_timezones.return_value = [test_user_obj]
+        mock_fs.checkin_exists.return_value = False
+        
+        from src.models.schemas import DailyTaskList
+        mock_get_tasks.return_value = DailyTaskList(user_id=test_user_obj.user_id, date="2026-02-07", tasks=[])
+
+        response = await app_client.post("/cron/midday_nudge")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+
+    @patch('src.services.churn_intervention.send_churn_intervention', return_value=True)
+    @patch('src.services.churn_prediction.churn_predictor.is_intervention_cooled_down', return_value=True)
+    @patch('src.services.churn_prediction.churn_predictor.calculate_risk_score', return_value=(0.8, ["declining_compliance"], {}))
+    @patch('src.utils.timezone_utils.get_timezones_at_local_time')
+    async def test_churn_prevention(self, mock_get_tzs, mock_calc_risk, mock_cooldown, mock_send, app_client, mock_services, test_user_obj):
+        mock_services['settings'].enable_churn_prediction = True
+        mock_get_tzs.return_value = ["Asia/Kolkata"]
+        mock_fs = mock_services['firestore']
+        mock_fs.get_users_by_timezones.return_value = [test_user_obj]
+
+        response = await app_client.post("/cron/churn_prevention")
+        assert response.status_code == 200
+        assert response.json()["status"] == "success"
+
+    @patch('src.utils.timezone_utils.get_timezones_at_local_time')
+    @patch('src.services.predictive_intervention.predictive_intervention_engine.predict_tomorrow_risk')
+    async def test_predictive_intervention(self, mock_predict, mock_get_tzs, app_client, mock_services, test_user_obj):
+        mock_get_tzs.return_value = ["Asia/Kolkata"]
+        mock_fs = mock_services['firestore']
+        mock_fs.get_users_by_timezones.return_value = [test_user_obj]
+        mock_predict.return_value = {"risk_level": "high", "should_intervene": True, "risk_factors": ["late sleep"]}
+
+        response = await app_client.post("/cron/predictive_intervention")
+        assert response.status_code == 200
+        assert response.json()["status"] == "success"
+
+    @patch('src.services.feedback_service.feedback_service.get_last_feedback', return_value=None)
+    async def test_weekly_nps(self, mock_feedback, app_client, mock_services, test_user_obj):
+        mock_fs = mock_services['firestore']
+        mock_fs.get_all_users.return_value = [test_user_obj]
+
+        response = await app_client.post("/cron/weekly_nps")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["results"]["sent"] == 1
+
+    async def test_admin_broadcast_success_and_unauthorized(self, app_client, mock_services, test_user_obj):
+        mock_services['settings'].admin_telegram_ids = "111222333"
+        mock_fs = mock_services['firestore']
+        mock_fs.get_all_users.return_value = [test_user_obj]
+
+        # Success
+        response = await app_client.post(
+            "/admin/broadcast?admin_id=111222333",
+            json={"message": "System maintenance at 2 AM UTC"}
+        )
+        assert response.status_code == 200
+        assert response.json()["sent"] == 1
+
+        # Missing message
+        res_missing = await app_client.post(
+            "/admin/broadcast?admin_id=111222333",
+            json={"message": ""}
+        )
+        assert res_missing.status_code == 400
+
+        # Unauthorized
+        res_unauth = await app_client.post(
+            "/admin/broadcast?admin_id=unknown",
+            json={"message": "test"}
+        )
+        assert res_unauth.status_code == 403
+
+    @patch('src.agents.reporting_agent.send_weekly_reports_to_all')
+    async def test_periodic_report(self, mock_weekly, app_client, mock_services):
+        mock_weekly.return_value = {"reports_sent": 3, "reports_cooldown": 0, "reports_failed": 0}
+        response = await app_client.post("/trigger/periodic-report")
+        assert response.status_code == 200
+        assert response.json()["reports_sent"] == 3
+
+
+# ===== Cron Secret Authentication Tests =====
+
+class TestVerifyCronRequestAuth:
+
+    async def test_cron_auth_header_valid_and_invalid(self, app_client, mock_services):
+        mock_services['settings'].cron_secret = "super_secret_token"
+
+        # Valid secret
+        response_valid = await app_client.post(
+            "/cron/reset_quick_checkins",
+            headers={"X-Cron-Secret": "super_secret_token"}
+        )
+        assert response_valid.status_code == 200
+
+        # Missing / invalid secret
+        response_invalid = await app_client.post(
+            "/cron/reset_quick_checkins",
+            headers={"X-Cron-Secret": "wrong_token"}
+        )
+        assert response_invalid.status_code == 403

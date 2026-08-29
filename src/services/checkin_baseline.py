@@ -88,7 +88,9 @@ def compute_predictive_baseline(user_id: str, checkin_date: str) -> Dict[str, An
             for c in recent_checkins[:3]
             if c.tier1_non_negotiables and c.tier1_non_negotiables.training_intensity
         ]
-        if recent_training and "moderate" in recent_training:
+        if recent_training and "intense" in recent_training:
+            training_intensity = "intense"
+        elif recent_training and "moderate" in recent_training:
             training_intensity = "moderate"
         elif recent_training and "light" in recent_training:
             training_intensity = "light"

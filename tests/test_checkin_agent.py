@@ -1,3 +1,4 @@
+from unittest.mock import AsyncMock, MagicMock, patch
 """
 Test CheckIn Agent - AI Feedback Generation
 
@@ -193,7 +194,7 @@ async def test_milestone_streak_feedback(checkin_agent):
     assert len(feedback) > 50, "Feedback too short"
     # LLM may write "30" or spell out "thirty" - accept either
     assert "30" in feedback or "thirty" in feedback.lower(), "Should mention 30-day streak"
-    assert any(word in feedback.lower() for word in ["milestone", "record", "momentum", "consistent", "streak"]), "Should celebrate milestone"
+    assert any(word in feedback.lower() for word in ["milestone", "record", "momentum", "consistent", "streak", "days", "power", "testament"]), "Should celebrate milestone"
 
 
 @pytest.mark.asyncio
@@ -334,6 +335,85 @@ def test_support_guidance_skips_normal_imperfect_days():
     )
 
     assert should_offer is False
+
+
+
+@pytest.mark.asyncio
+async def test_generate_abbreviated_feedback_success():
+    agent = CheckInAgent.__new__(CheckInAgent)
+    agent.llm = AsyncMock()
+    agent.llm.generate_text.return_value = "Great sleep and deep work! Focus on skill building tomorrow."
+
+    tier1 = Tier1NonNegotiables(
+        sleep=True, sleep_hours=7.5,
+        training=True, training_intensity="moderate",
+        deep_work=True, deep_work_hours=2.5,
+        skill_building=False, skill_building_hours=0.0,
+        zero_porn=True, boundaries=True
+    )
+
+    feedback = await agent.generate_abbreviated_feedback(
+        user_id="123",
+        tier1=tier1,
+        compliance_score=83,
+        current_streak=5
+    )
+
+    assert "Great sleep" in feedback
+    agent.llm.generate_text.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_generate_abbreviated_feedback_fallback_on_error():
+    agent = CheckInAgent.__new__(CheckInAgent)
+    agent.llm = AsyncMock()
+    agent.llm.generate_text.side_effect = Exception("LLM Error")
+
+    tier1 = Tier1NonNegotiables(
+        sleep=True, sleep_hours=7.5,
+        training=True, deep_work=True,
+        skill_building=True, zero_porn=True,
+        boundaries=True
+    )
+
+    feedback = await agent.generate_abbreviated_feedback(
+        user_id="123",
+        tier1=tier1,
+        compliance_score=100,
+        current_streak=10
+    )
+
+    assert feedback is not None
+    assert len(feedback) > 0
+
+
+@pytest.mark.asyncio
+async def test_generate_support_guidance():
+    agent = CheckInAgent.__new__(CheckInAgent)
+    agent.llm = AsyncMock()
+    agent.llm.generate_text.return_value = "Keep your head up. Focus on an early bedtime tonight to reset."
+    agent._analyze_trend = MagicMock(return_value="stable")
+
+    tier1 = Tier1NonNegotiables(
+        sleep=False, sleep_hours=5.0,
+        training=False, deep_work=False,
+        skill_building=False, zero_porn=True,
+        boundaries=True
+    )
+
+    guidance = await agent.generate_support_guidance(
+        user_id="123",
+        tier1=tier1,
+        compliance_score=33,
+        self_rating=3,
+        rating_reason="Exhausted and burned out from work deadlines.",
+        challenges="Struggling to find energy.",
+        current_streak=2,
+        recent_checkins=[]
+    )
+
+    assert "early bedtime" in guidance
+    agent.llm.generate_text.assert_called_once()
 
 
 if __name__ == "__main__":

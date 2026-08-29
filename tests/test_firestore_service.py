@@ -592,3 +592,266 @@ class TestHealthCheck:
         """Should return False when connection fails."""
         mock_db.collections.side_effect = Exception("Connection refused")
         assert firestore_svc.test_connection() is False
+
+
+# ===== Atomic Check-in Transaction Tests =====
+
+class TestAtomicTransactionalCheckin:
+
+    def test_store_checkin_with_streak_update_success(self, firestore_svc, mock_db, test_user, test_checkin):
+        """Test transactional execution of checkin store + user streak update with transient keys stripped."""
+        mock_transaction = MagicMock()
+        mock_db.transaction.return_value = mock_transaction
+
+        with patch("src.services.firestore_service.firestore.transactional", lambda fn: fn):
+            streak_data = {
+                "current_streak": 11,
+                "longest_streak": 15,
+                "last_checkin_date": "2026-02-07",
+                "total_checkins": 51,
+                "milestone_hit": 10,
+                "is_reset": False,
+                "recovery_message": "Keep going!",
+                "recovery_fact": "Daily habit creates success",
+            }
+
+            mock_user_ref = MagicMock()
+            mock_checkin_ref = MagicMock()
+            
+            mock_db.collection.return_value.document.return_value = mock_user_ref
+            mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value = mock_checkin_ref
+
+            firestore_svc.store_checkin_with_streak_update("123456789", test_checkin, streak_data)
+            
+            mock_transaction.set.assert_called_once()
+            mock_transaction.update.assert_called_once()
+            updated_data = mock_transaction.update.call_args[0][1]
+            assert "milestone_hit" not in updated_data["streaks"]
+            assert updated_data["streaks"]["current_streak"] == 11
+
+    def test_store_checkin_with_streak_update_failure(self, firestore_svc, mock_db, test_checkin):
+        """Test transactional failure raises exception."""
+        mock_transaction = MagicMock()
+        mock_db.transaction.return_value = mock_transaction
+
+        with patch("src.services.firestore_service.firestore.transactional", lambda fn: fn):
+            mock_transaction.set.side_effect = Exception("Write conflict")
+            with pytest.raises(Exception, match="Write conflict"):
+                firestore_svc.store_checkin_with_streak_update("123456789", test_checkin, {"current_streak": 1})
+
+
+# ===== User Extended Operations Tests =====
+
+class TestUserExtendedOperations:
+
+    def test_user_exists(self, firestore_svc, mock_db):
+        mock_doc = MagicMock()
+        mock_doc.exists = True
+        mock_db.collection.return_value.document.return_value.get.return_value = mock_doc
+
+        assert firestore_svc.user_exists("123") is True
+
+        mock_doc.exists = False
+        assert firestore_svc.user_exists("456") is False
+
+        mock_db.collection.return_value.document.return_value.get.side_effect = Exception("Read error")
+        assert firestore_svc.user_exists("789") is False
+
+    def test_update_user_mode(self, firestore_svc, mock_db):
+        mock_ref = MagicMock()
+        mock_db.collection.return_value.document.return_value = mock_ref
+
+        firestore_svc.update_user_mode("123", "focus")
+        mock_ref.update.assert_called_once()
+        assert mock_ref.update.call_args[0][0]["constitution_mode"] == "focus"
+
+        mock_ref.update.side_effect = Exception("Update error")
+        with pytest.raises(Exception, match="Update error"):
+            firestore_svc.update_user_mode("123", "focus")
+
+    def test_update_user(self, firestore_svc, mock_db):
+        mock_ref = MagicMock()
+        mock_db.collection.return_value.document.return_value = mock_ref
+
+        assert firestore_svc.update_user("123", {"name": "New Name"}) is True
+        mock_ref.update.assert_called_once()
+        assert mock_ref.update.call_args[0][0]["name"] == "New Name"
+
+        mock_ref.update.side_effect = Exception("Update error")
+        assert firestore_svc.update_user("123", {"name": "New Name"}) is False
+
+    def test_get_active_users_and_all_users(self, firestore_svc, mock_db, test_user):
+        mock_doc = MagicMock()
+        mock_doc.to_dict.return_value = test_user.to_firestore()
+        mock_db.collection.return_value.stream.return_value = [mock_doc]
+
+        users = firestore_svc.get_active_users()
+        assert len(users) == 1
+        assert users[0].user_id == test_user.user_id
+
+        all_users = firestore_svc.get_all_users()
+        assert len(all_users) == 1
+
+    def test_get_users_by_timezones(self, firestore_svc, mock_db, test_user):
+        test_user.timezone = "Asia/Kolkata"
+        mock_doc = MagicMock()
+        mock_doc.to_dict.return_value = test_user.to_firestore()
+        mock_db.collection.return_value.stream.return_value = [mock_doc]
+
+        # Match IST
+        matched = firestore_svc.get_users_by_timezones(["Asia/Kolkata"])
+        assert len(matched) == 1
+
+        # No match America/New_York
+        unmatched = firestore_svc.get_users_by_timezones(["America/New_York"])
+        assert len(unmatched) == 0
+
+    def test_get_users_without_checkin_today(self, firestore_svc, mock_db, test_user):
+        mock_user_doc = MagicMock()
+        mock_user_doc.to_dict.return_value = test_user.to_firestore()
+        mock_db.collection.return_value.stream.return_value = [mock_user_doc]
+
+        # Mock checkin_exists returns False (hasn't checked in)
+        mock_checkin_doc = MagicMock()
+        mock_checkin_doc.exists = False
+        mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value.get.return_value = mock_checkin_doc
+
+        users = firestore_svc.get_users_without_checkin_today("2026-02-07")
+        assert len(users) == 1
+
+    def test_get_user_by_telegram_username(self, firestore_svc, mock_db, test_user):
+        mock_doc = MagicMock()
+        mock_doc.to_dict.return_value = test_user.to_firestore()
+        mock_query = MagicMock()
+        mock_query.stream.return_value = [mock_doc]
+        mock_db.collection.return_value.where.return_value.limit.return_value = mock_query
+
+        user = firestore_svc.get_user_by_telegram_username("@test_user")
+        assert user is not None
+        assert user.telegram_username == "test_user"
+
+        # Not found
+        mock_query.stream.return_value = []
+        user2 = firestore_svc.get_user_by_telegram_username("@unknown")
+        assert user2 is None
+
+
+# ===== Checkin Extended Operations Tests =====
+
+class TestCheckinExtendedOperations:
+
+    def test_get_checkin(self, firestore_svc, mock_db, test_checkin):
+        mock_doc = MagicMock()
+        mock_doc.exists = True
+        mock_doc.to_dict.return_value = test_checkin.to_firestore()
+        mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value.get.return_value = mock_doc
+
+        c = firestore_svc.get_checkin("123", "2026-02-07")
+        assert c is not None
+        assert c.date == "2026-02-07"
+
+        mock_doc.exists = False
+        assert firestore_svc.get_checkin("123", "2026-02-08") is None
+
+    def test_get_all_checkins_and_recent(self, firestore_svc, mock_db, test_checkin):
+        mock_doc = MagicMock()
+        mock_doc.to_dict.return_value = test_checkin.to_firestore()
+        
+        mock_coll = MagicMock()
+        # Chained .where().where().order_by().stream()
+        mock_coll.where.return_value.where.return_value.order_by.return_value.stream.return_value = [mock_doc]
+        mock_coll.order_by.return_value.stream.return_value = [mock_doc]
+        mock_db.collection.return_value.document.return_value.collection.return_value = mock_coll
+
+        recent = firestore_svc.get_recent_checkins("123", days=7)
+        assert len(recent) == 1
+
+        all_checkins = firestore_svc.get_all_checkins("123")
+        assert len(all_checkins) == 1
+
+    def test_update_checkin(self, firestore_svc, mock_db):
+        mock_ref = MagicMock()
+        mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value = mock_ref
+
+        assert firestore_svc.update_checkin("123", "2026-02-07", {"compliance_score": 90.0}) is True
+        mock_ref.update.assert_called_once()
+
+
+# ===== Interventions & Patterns Tests =====
+
+class TestInterventionsAndPatterns:
+
+    def test_log_intervention(self, firestore_svc, mock_db):
+        mock_sub = MagicMock()
+        mock_db.collection.return_value.document.return_value.collection.return_value = mock_sub
+
+        firestore_svc.log_intervention(
+            user_id="123",
+            pattern_type="ghosting",
+            severity="warning",
+            data={"avg_sleep": 5.0},
+            message="Hey where are you?"
+        )
+        mock_sub.add.assert_called_once()
+
+    def test_get_recent_interventions_and_has_recent(self, firestore_svc, mock_db):
+        mock_doc = MagicMock()
+        mock_doc.id = "int_1"
+        mock_doc.to_dict.return_value = {
+            "pattern_type": "ghosting",
+            "sent_at": datetime.utcnow(),
+            "resolved": False,
+        }
+        mock_sub = MagicMock()
+        mock_sub.where.return_value.order_by.return_value.stream.return_value = [mock_doc]
+        mock_sub.where.return_value.stream.return_value = [mock_doc]
+        mock_db.collection.return_value.document.return_value.collection.return_value = mock_sub
+
+        interventions = firestore_svc.get_recent_interventions("123", days=3)
+        assert len(interventions) == 1
+        assert interventions[0]["id"] == "int_1"
+
+        has_recent = firestore_svc.has_recent_intervention("123", "ghosting", cooldown_hours=48)
+        assert has_recent is True
+
+    def test_resolve_interventions(self, firestore_svc, mock_db):
+        mock_doc = MagicMock()
+        mock_doc.reference = MagicMock()
+        mock_sub = MagicMock()
+        mock_sub.where.return_value.where.return_value.stream.return_value = [mock_doc]
+        mock_db.collection.return_value.document.return_value.collection.return_value = mock_sub
+
+        resolved_count = firestore_svc.resolve_interventions("123", "ghosting")
+        assert resolved_count == 1
+        mock_doc.reference.update.assert_called_once()
+
+
+# ===== Quick Checkins and Shields Tests =====
+
+class TestQuickCheckinsAndShields:
+
+    def test_reset_streak_shields(self, firestore_svc, mock_db, test_user):
+        mock_doc = MagicMock()
+        mock_doc.exists = True
+        mock_doc.to_dict.return_value = test_user.to_firestore()
+        mock_ref = MagicMock()
+        mock_ref.get.return_value = mock_doc
+        mock_db.collection.return_value.document.return_value = mock_ref
+
+        with patch.object(firestore_svc, "get_user", return_value=test_user):
+            firestore_svc.reset_streak_shields("123")
+            mock_ref.update.assert_called_once()
+
+    def test_increment_and_reset_quick_checkins(self, firestore_svc, mock_db, test_user):
+        test_user.quick_checkin_count = 1
+        mock_ref = MagicMock()
+        mock_db.collection.return_value.document.return_value = mock_ref
+
+        with patch.object(firestore_svc, "get_user", return_value=test_user):
+            new_count = firestore_svc.increment_quick_checkin_count("123")
+            assert new_count == 2
+            mock_ref.update.assert_called_once()
+
+        with patch.object(firestore_svc, "get_active_users", return_value=[test_user]):
+            firestore_svc.reset_quick_checkin_counts()
+            mock_ref.update.assert_called()

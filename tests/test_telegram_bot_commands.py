@@ -642,3 +642,172 @@ class TestOnboardingCallbacks:
                           new_callable=AsyncMock) as mock_fin:
             await bot_manager.timezone_confirmation_callback(update, context)
             mock_fin.assert_called_once()
+
+
+# ===== Missing Commands & Callbacks Tests =====
+
+class TestShareCommand:
+    @pytest.mark.asyncio
+    async def test_share_command_success(self, bot_manager):
+        import io
+        user = _make_user()
+        bot_manager._mock_fs.get_user.return_value = user
+        bot_manager._mock_fs.get_recent_checkins.return_value = []
+        update = _make_update(text="/share")
+        context = _make_context()
+
+        # Mock reply_text returning a status msg mock with edit_text and delete
+        status_msg = AsyncMock()
+        status_msg.delete = AsyncMock()
+        status_msg.edit_text = AsyncMock()
+        update.message.reply_text = AsyncMock(return_value=status_msg)
+
+        fake_buffer = io.BytesIO(b"fake_png_data")
+        with patch('src.services.social_service.generate_shareable_stats_image', return_value=fake_buffer):
+            await bot_manager.share_command(update, context)
+            update.message.reply_photo.assert_called_once()
+            status_msg.delete.assert_called_once()
+
+
+class TestSupportCommandAndProcessing:
+    @pytest.mark.asyncio
+    async def test_support_command_prompt(self, bot_manager):
+        user = _make_user()
+        bot_manager._mock_fs.get_user.return_value = user
+        bot_manager._mock_fs.get_recent_interventions.return_value = []
+        update = _make_update(text="/support")
+        context = _make_context()
+
+        await bot_manager.support_command(update, context)
+        text = update.message.reply_text.call_args[0][0]
+        assert "I'm here" in text
+        assert context.user_data['support_mode'] is True
+
+    @pytest.mark.asyncio
+    async def test_support_command_with_message(self, bot_manager):
+        user = _make_user()
+        bot_manager._mock_fs.get_user.return_value = user
+        update = _make_update(text="/support Feeling stressed")
+        context = _make_context(args=["Feeling", "stressed"])
+
+        with patch('src.agents.emotional_agent.EmotionalSupportAgent') as MockEmo,              patch('src.agents.state.create_initial_state', return_value={"response": "Take a deep breath.", "next_action": ""}):
+            MockEmo.return_value.process = AsyncMock(return_value={"response": "Take a deep breath."})
+            await bot_manager.support_command(update, context)
+            text = update.message.reply_text.call_args[0][0]
+            assert "Take a deep breath" in text
+
+
+class TestDeleteMyDataCommandAndCallback:
+    @pytest.mark.asyncio
+    async def test_delete_my_data_prompt(self, bot_manager):
+        user = _make_user()
+        bot_manager._mock_fs.get_user.return_value = user
+        update = _make_update(text="/delete_my_data")
+        context = _make_context()
+
+        await bot_manager.delete_my_data_command(update, context)
+        text = update.message.reply_text.call_args[0][0]
+        assert "Delete All My Data" in text
+
+    @pytest.mark.asyncio
+    async def test_delete_data_callback_cancel(self, bot_manager):
+        update = _make_callback_update(data="delete_cancel")
+        context = _make_context()
+
+        await bot_manager.delete_data_callback(update, context)
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "cancelled" in text
+
+    @pytest.mark.asyncio
+    async def test_delete_data_callback_confirm_success(self, bot_manager):
+        update = _make_callback_update(data="delete_confirm")
+        context = _make_context()
+
+        with patch('src.services.data_deletion_service.data_deletion_service.delete_all_user_data',
+                   return_value={"success": True, "errors": []}):
+            await bot_manager.delete_data_callback(update, context)
+            assert update.callback_query.edit_message_text.call_count >= 2
+            final_text = update.callback_query.edit_message_text.call_args[0][0]
+            assert "deleted" in final_text
+
+
+class TestProfileInsightsFeedbackCommands:
+    @pytest.mark.asyncio
+    async def test_profile_command(self, bot_manager):
+        user = _make_user()
+        bot_manager._mock_fs.get_user.return_value = user
+        update = _make_update(text="/profile")
+        context = _make_context()
+
+        await bot_manager.profile_command(update, context)
+        text = update.message.reply_text.call_args[0][0]
+        assert "Profile" in text or "Streak" in text
+
+    @pytest.mark.asyncio
+    async def test_insights_command(self, bot_manager):
+        user = _make_user()
+        bot_manager._mock_fs.get_user.return_value = user
+        bot_manager._mock_fs.get_recent_checkins.return_value = [MagicMock() for _ in range(10)]
+        update = _make_update(text="/insights")
+        context = _make_context()
+
+        with patch('src.services.insights_engine.insights_engine.generate_insights',
+                   return_value=[{"title": "Sleep Performance", "suggestion": "Maintain 8 hours.", "confidence": 0.9}]):
+            await bot_manager.insights_command(update, context)
+            text = update.message.reply_text.call_args[0][0]
+            assert "Insights" in text
+            assert "Sleep Performance" in text
+
+    @pytest.mark.asyncio
+    async def test_feedback_command(self, bot_manager):
+        user = _make_user()
+        bot_manager._mock_fs.get_user.return_value = user
+        update = _make_update(text="/feedback")
+        context = _make_context()
+
+        await bot_manager.feedback_command(update, context)
+        text = update.message.reply_text.call_args[0][0]
+        assert "Feedback" in text
+
+
+class TestAdditionalBotCallbacks:
+    @pytest.mark.asyncio
+    async def test_nps_callback(self, bot_manager):
+        update = _make_callback_update(data="nps_10")
+        context = _make_context()
+
+        with patch('src.services.feedback_service.feedback_service.store_feedback') as mock_store:
+            await bot_manager.nps_callback(update, context)
+            mock_store.assert_called_once_with(user_id="111", feedback_type="nps", rating=10)
+            update.callback_query.edit_message_text.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_break_reason_callback(self, bot_manager):
+        update = _make_callback_update(data="break_sleep")
+        context = _make_context()
+
+        with patch('src.services.streak_recovery_service.handle_break_reason_callback', return_value="Noted: Poor Sleep") as mock_brk:
+            await bot_manager.break_reason_callback(update, context)
+            mock_brk.assert_called_once()
+            update.callback_query.edit_message_text.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_correct_toggle_callback(self, bot_manager):
+        user = _make_user()
+        bot_manager._mock_fs.get_user.return_value = user
+        update = _make_callback_update(data="correct_sleep")
+        context = _make_context(user_data={
+            "correction_items": {
+                "sleep": False,
+                "training": True,
+                "deepwork": True,
+                "skillbuilding": True,
+                "porn": True,
+                "boundaries": True
+            },
+            "correction_date": "2026-02-07"
+        })
+
+        await bot_manager.correct_toggle_callback(update, context)
+        assert context.user_data["correction_items"]["sleep"] is True
+        update.callback_query.edit_message_text.assert_called_once()

@@ -145,6 +145,18 @@ Output ONLY a valid JSON object matching the following schema. Do NOT include an
             parsed = json.loads(cleaned_response)
             
             # Construct updated AIProfileMemory object
+            raw_sdr = parsed.get("say_do_ratio", curr_mem.say_do_ratio)
+            sdr_val = curr_mem.say_do_ratio
+            if raw_sdr is not None:
+                try:
+                    match = re.search(r"[\d.]+", str(raw_sdr))
+                    if match:
+                        sdr_val = float(match.group(0))
+                    else:
+                        sdr_val = float(raw_sdr)
+                except (ValueError, TypeError):
+                    sdr_val = curr_mem.say_do_ratio
+
             updated_memory = AIProfileMemory(
                 summary=parsed.get("summary", curr_mem.summary),
                 strengths=parsed.get("strengths", curr_mem.strengths),
@@ -152,7 +164,7 @@ Output ONLY a valid JSON object matching the following schema. Do NOT include an
                 recurring_obstacles=parsed.get("recurring_obstacles", curr_mem.recurring_obstacles),
                 correlations=parsed.get("correlations", curr_mem.correlations),
                 coaching_notes=parsed.get("coaching_notes", curr_mem.coaching_notes),
-                say_do_ratio=float(parsed.get("say_do_ratio", curr_mem.say_do_ratio)),
+                say_do_ratio=sdr_val,
                 last_updated=datetime.utcnow()
             )
 

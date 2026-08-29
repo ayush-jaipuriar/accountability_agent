@@ -359,7 +359,8 @@ def generate_shareable_stats_image(user: User, checkins: List[DailyCheckIn]) -> 
     y_pos += 120
     
     # User name
-    draw.text((WIDTH // 2, y_pos), user.name.upper(), fill='white', font=title_font, anchor='mm')
+    display_name = (user.name or user.telegram_username or "CHAMPION").upper()
+    draw.text((WIDTH // 2, y_pos), display_name, fill='white', font=title_font, anchor='mm')
     y_pos += 150
     
     # Divider

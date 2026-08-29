@@ -239,9 +239,11 @@ class ChallengeService:
             if p.get("met")
         )
 
-        total_days = (datetime.strptime(challenge.end_date, "%Y-%m-%d") -
-                     datetime.strptime(challenge.start_date, "%Y-%m-%d")).days + 1
-        days_left = (datetime.strptime(challenge.end_date, "%Y-%m-%d") - datetime.utcnow()).days + 1
+        end_d = datetime.strptime(challenge.end_date, "%Y-%m-%d").date()
+        start_d = datetime.strptime(challenge.start_date, "%Y-%m-%d").date()
+        total_days = max(1, (end_d - start_d).days + 1)
+        today = datetime.utcnow().date()
+        days_left = (end_d - today).days
 
         lines = [
             f"🏆 <b>{challenge.title}</b>",

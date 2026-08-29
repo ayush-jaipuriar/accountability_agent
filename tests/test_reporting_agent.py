@@ -52,31 +52,31 @@ class TestFallbackInsights:
     
     def test_excellent_compliance(self, sample_week_checkins):
         """High compliance (>=90%) should generate positive message."""
-        result = _generate_fallback_insights(sample_week_checkins, 95.0, 7.5)
+        result = _generate_fallback_insights(sample_week_checkins, 95.0, 6)
         assert "95%" in result
         assert "outstanding" in result.lower() or "solid" in result.lower() or "95" in result
     
     def test_good_compliance(self, sample_week_checkins):
         """Medium compliance (75-89%) should acknowledge room for improvement."""
-        result = _generate_fallback_insights(sample_week_checkins, 82.0, 7.5)
+        result = _generate_fallback_insights(sample_week_checkins, 82.0, 6)
         assert "82%" in result
     
     def test_low_compliance(self, sample_week_checkins):
         """Low compliance (<75%) should mention need to refocus."""
-        result = _generate_fallback_insights(sample_week_checkins, 55.0, 7.5)
+        result = _generate_fallback_insights(sample_week_checkins, 55.0, 6)
         assert "55%" in result
         assert "refocus" in result.lower() or "challenging" in result.lower()
     
     def test_low_sleep_warning(self, sample_week_checkins):
-        """Sleep < 7h should generate a sleep warning."""
-        result = _generate_fallback_insights(sample_week_checkins, 80.0, 5.5)
-        assert "5.5" in result
+        """Sleep < 70% of days should generate a sleep warning."""
+        result = _generate_fallback_insights(sample_week_checkins, 80.0, 3)
+        assert "3/7" in result
         assert "sleep" in result.lower()
     
     def test_good_sleep_positive(self, sample_week_checkins):
-        """Sleep >= 7h should generate positive sleep feedback."""
-        result = _generate_fallback_insights(sample_week_checkins, 80.0, 7.8)
-        assert "7.8" in result
+        """Sleep >= 70% of days should generate positive sleep feedback."""
+        result = _generate_fallback_insights(sample_week_checkins, 80.0, 6)
+        assert "6/7" in result
         assert "track" in result.lower() or "sleep" in result.lower()
     
     def test_returns_non_empty(self, sample_week_checkins):

@@ -71,7 +71,7 @@ TIMEZONE_CATALOG = {
 }
 
 
-def _get_tz(tz: str = "Asia/Kolkata") -> pytz.BaseTzInfo:
+def _get_tz(tz: Optional[str] = "Asia/Kolkata") -> pytz.BaseTzInfo:
     """
     Convert an IANA timezone string to a pytz timezone object.
 
@@ -87,6 +87,8 @@ def _get_tz(tz: str = "Asia/Kolkata") -> pytz.BaseTzInfo:
     Raises:
         pytz.UnknownTimeZoneError: If timezone string is invalid
     """
+    if not tz:
+        return IST
     return pytz.timezone(tz)
 
 

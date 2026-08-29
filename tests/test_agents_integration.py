@@ -624,3 +624,100 @@ class TestGhostingDetection:
                 pattern = agent.detect_ghosting(f"ghost_{days}")
                 assert pattern is not None, f"Should detect ghosting at {days} days"
                 assert pattern.data["days_missing"] == days
+
+
+# ===== Query Agent Integration Tests =====
+
+class TestQueryAgentIntegration:
+
+    @pytest.mark.asyncio
+    async def test_query_agent_process_flow(self):
+        from src.agents.query_agent import QueryAgent
+        
+        agent = QueryAgent.__new__(QueryAgent)
+        agent.llm = AsyncMock()
+        agent._classify_query = AsyncMock(return_value="compliance_average")
+        agent._fetch_query_data = AsyncMock(return_value={"avg_compliance": 88.0})
+        agent._generate_response = AsyncMock(return_value="Your average compliance this month is 88%.")
+
+        state = {
+            "user_id": "123",
+            "message": "What is my average compliance this month?",
+            "response": "",
+            "next_action": ""
+        }
+
+        updated_state = await agent.process(state)
+        assert updated_state["response"] == "Your average compliance this month is 88%."
+        assert updated_state["next_action"] == "send_message"
+
+    @pytest.mark.asyncio
+    async def test_query_agent_process_fallback_on_error(self):
+        from src.agents.query_agent import QueryAgent
+        
+        agent = QueryAgent.__new__(QueryAgent)
+        agent._classify_query = AsyncMock(side_effect=Exception("LLM classification failure"))
+
+        state = {
+            "user_id": "123",
+            "message": "What is my sleep trend?",
+            "response": "",
+            "next_action": ""
+        }
+
+        updated_state = await agent.process(state)
+        assert "couldn't process your query" in updated_state["response"]
+
+    @pytest.mark.asyncio
+    async def test_query_agent_fetch_sleep_trends(self, test_user, sample_week_checkins):
+        from src.agents.query_agent import QueryAgent
+        
+        agent = QueryAgent.__new__(QueryAgent)
+        agent.llm = AsyncMock()
+
+        with patch('src.agents.query_agent.firestore_service') as mock_fs:
+            mock_fs.get_user.return_value = test_user
+            mock_fs.get_recent_checkins.return_value = sample_week_checkins
+
+            data = await agent._fetch_query_data("sleep_trends", "123")
+            assert "avg_sleep" in data
+            assert data["target"] == 7.0
+            assert "days_tracked" in data
+
+    @pytest.mark.asyncio
+    async def test_query_agent_fetch_pattern_frequency(self, test_user):
+        from src.agents.query_agent import QueryAgent
+        from src.agents.pattern_detection import Pattern
+        
+        agent = QueryAgent.__new__(QueryAgent)
+        agent.llm = AsyncMock()
+
+        mock_pattern = Pattern(
+            type="sleep_degradation",
+            severity="warning",
+            detected_at=datetime.utcnow(),
+            data={"avg_sleep": 5.5}
+        )
+        mock_pattern.pattern_name = "sleep_degradation"
+
+        with patch('src.agents.query_agent.firestore_service') as mock_fs:
+            mock_fs.get_user.return_value = test_user
+            mock_fs.get_patterns.return_value = [mock_pattern]
+
+            data = await agent._fetch_query_data("pattern_frequency", "123")
+            assert data["total_patterns"] == 1
+            assert "sleep_degradation" in data["pattern_counts"]
+
+    @pytest.mark.asyncio
+    async def test_query_agent_fetch_goal_progress(self, test_user, sample_week_checkins):
+        from src.agents.query_agent import QueryAgent
+        
+        agent = QueryAgent.__new__(QueryAgent)
+        agent.llm = AsyncMock()
+
+        with patch('src.agents.query_agent.firestore_service') as mock_fs:
+            mock_fs.get_user.return_value = test_user
+            mock_fs.get_recent_checkins.return_value = sample_week_checkins
+
+            data = await agent._fetch_query_data("goal_progress", "123")
+            assert "consistency_pct" in data or "skill_building_days" in data

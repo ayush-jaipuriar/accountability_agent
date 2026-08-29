@@ -149,7 +149,7 @@ class TestProgressTracking:
         sample_goal.target_days = 10
         sample_goal.progress = [
             {"date": f"2026-02-{i:02d}", "met": True}
-            for i in range(1, 6)  # 5 consecutive days
+            for i in range(1, 5)  # 4 consecutive days, so 5th day hits 50% milestone
         ]
         
         milestone = goal_service._evaluate_goal_for_date(

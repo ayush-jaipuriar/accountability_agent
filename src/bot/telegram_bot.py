@@ -3000,7 +3000,7 @@ class TelegramBotManager:
         user_id = str(update.effective_user.id)
         
         # Rate limit check (ai_powered tier — uses Gemini API)
-        if not await self._check_rate_limit(user_id, "support", update):
+        if not await self._check_rate_limit(update, "support"):
             return
         
         # Check if user provided text after /support (e.g., "/support I'm feeling down")

@@ -227,18 +227,23 @@ class GoalService:
         goal.progress = [p for p in goal.progress if p.get("date") != date]
         goal.progress.append(progress_entry)
 
+        # Sort progress chronologically
+        goal.progress.sort(key=lambda p: p.get("date", ""))
+
         # Check for streak completion
         consecutive_met = self._count_consecutive_met(goal.progress)
 
-        # Check milestones
+        # Check milestones - only trigger on milestone boundary crossing
+        target_50 = int(goal.target_days * 0.5)
+        target_75 = int(goal.target_days * 0.75)
         milestone = None
-        if consecutive_met >= goal.target_days:
+        if consecutive_met >= goal.target_days and goal.status != "completed":
             milestone = "100%"
             goal.status = "completed"
             goal.completed_at = datetime.utcnow()
-        elif consecutive_met >= int(goal.target_days * 0.75):
+        elif consecutive_met >= target_75 and prev_consecutive < target_75:
             milestone = "75%"
-        elif consecutive_met >= int(goal.target_days * 0.5):
+        elif consecutive_met >= target_50 and prev_consecutive < target_50:
             milestone = "50%"
 
         # Save updated goal
@@ -271,7 +276,8 @@ class GoalService:
             HTML-formatted string
         """
         consecutive = self._count_consecutive_met(goal.progress)
-        pct = min(100, int((consecutive / goal.target_days) * 100))
+        target_days = max(goal.target_days, 1)
+        pct = min(100, int((consecutive / target_days) * 100))
 
         # Progress bar
         filled = int(pct / 10)

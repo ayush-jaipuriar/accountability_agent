@@ -337,3 +337,101 @@ class TestWeeklyBreakdown:
         
         assert weeks[0]["avg_compliance"] == 100.0
         assert weeks[1]["avg_compliance"] == 50.0
+
+
+# ===== Mood & Energy Analytics Tests =====
+
+from src.services.analytics_service import (
+    calculate_mood_energy_stats,
+    calculate_mood_correlations,
+    format_mood_energy_summary,
+    calculate_partner_weekly_performance,
+)
+
+
+def _make_mood_checkin(date_str, energy=8, mood=8, sleep_hours=7.5, dw_hours=2.5, training=True):
+    return DailyCheckIn(
+        date=date_str,
+        user_id="analytics_user",
+        mode="maintenance",
+        tier1_non_negotiables=Tier1NonNegotiables(
+            sleep=True, sleep_hours=sleep_hours,
+            training=training, deep_work=True,
+            deep_work_hours=dw_hours,
+            skill_building=True, skill_building_hours=2.0,
+            zero_porn=True, boundaries=True,
+        ),
+        responses=CheckInResponses(
+            challenges="Test challenges with enough length",
+            rating=8,
+            rating_reason="Test rating reason with enough length",
+            tomorrow_priority="Test priority with enough length",
+            tomorrow_obstacle="Test obstacle with enough length",
+            energy_rating=energy,
+            mood_rating=mood,
+        ),
+        compliance_score=100,
+    )
+
+
+class TestMoodAndEnergyAnalytics:
+
+    def test_calculate_mood_energy_stats_no_data(self):
+        result = calculate_mood_energy_stats([])
+        assert result["has_data"] is False
+
+    def test_calculate_mood_energy_stats_with_data(self):
+        checkins = [_make_mood_checkin(f"2026-02-{i+1:02d}", energy=7+i, mood=6+i) for i in range(3)]
+        result = calculate_mood_energy_stats(checkins)
+        assert result["has_data"] is True
+        assert result["energy"]["avg"] == 8.0
+        assert result["mood"]["avg"] == 7.0
+        assert result["energy"]["count"] == 3
+
+    def test_calculate_mood_correlations_insufficient_data(self):
+        checkins = [_make_mood_checkin(f"2026-02-{i+1:02d}") for i in range(3)]
+        result = calculate_mood_correlations(checkins)
+        assert result["has_data"] is False
+        assert "Need at least 5" in result["reason"]
+
+    def test_calculate_mood_correlations_with_valid_data(self):
+        # 6 days with varying sleep, dw, training and mood/energy
+        checkins = [
+            _make_mood_checkin("2026-02-01", energy=6, mood=6, sleep_hours=6.0, dw_hours=1.0, training=False),
+            _make_mood_checkin("2026-02-02", energy=7, mood=7, sleep_hours=7.0, dw_hours=2.0, training=True),
+            _make_mood_checkin("2026-02-03", energy=8, mood=8, sleep_hours=8.0, dw_hours=3.0, training=True),
+            _make_mood_checkin("2026-02-04", energy=9, mood=9, sleep_hours=8.5, dw_hours=3.5, training=True),
+            _make_mood_checkin("2026-02-05", energy=8, mood=8, sleep_hours=8.0, dw_hours=3.0, training=True),
+            _make_mood_checkin("2026-02-06", energy=9, mood=9, sleep_hours=9.0, dw_hours=4.0, training=True),
+        ]
+        result = calculate_mood_correlations(checkins)
+        assert result["has_data"] is True
+        assert result["n"] == 6
+        assert "sleep_mood_correlation" in result
+        assert "best_combination" in result
+        assert "top_mood_avg" in result
+
+    def test_format_mood_energy_summary(self):
+        # Empty
+        assert format_mood_energy_summary([]) == ""
+
+        # With checkins
+        checkins = [_make_mood_checkin(f"2026-02-{i+1:02d}", energy=8, mood=9) for i in range(3)]
+        summary = format_mood_energy_summary(checkins)
+        assert "Mood & Energy" in summary
+        assert "8.0/10" in summary
+        assert "9.0/10" in summary
+
+    def test_calculate_partner_weekly_performance(self):
+        # Empty
+        res_empty = calculate_partner_weekly_performance([])
+        assert res_empty["has_data"] is False
+
+        # With 7 days
+        checkins = [_make_mood_checkin(f"2026-02-{i+1:02d}") for i in range(7)]
+        res = calculate_partner_weekly_performance(checkins)
+        assert res["has_data"] is True
+        assert res["checkin_count"] == 7
+        assert "habits" in res
+        assert "strongest" in res
+        assert "weakest" in res
