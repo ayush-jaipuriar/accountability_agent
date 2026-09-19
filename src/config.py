@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     # ===== Telegram Configuration =====
     telegram_bot_token: str  # Required - no default (will raise error if missing)
     telegram_chat_id: str    # Required - your Telegram user ID
+    telegram_webhook_secret: Optional[str] = None  # Optional override for X-Telegram-Bot-Api-Secret-Token
     
     # ===== Cloud Run Configuration =====
     webhook_url: str = ""  # Set when deployed to Cloud Run
@@ -116,6 +117,19 @@ class Settings(BaseSettings):
     json_logging: bool = False
     
     # ===== Pydantic Configuration =====
+    def get_webhook_secret(self) -> Optional[str]:
+        """
+        Return the configured secret token or derive a deterministic token from the bot token.
+        Used for Telegram webhook header authentication ('X-Telegram-Bot-Api-Secret-Token').
+        """
+        if self.telegram_webhook_secret:
+            return self.telegram_webhook_secret
+        if getattr(self, "telegram_bot_token", None):
+            import hashlib
+            seed = f"{self.gcp_project_id}:{self.telegram_bot_token}:webhook-secret"
+            return hashlib.sha256(seed.encode()).hexdigest()
+        return None
+
     model_config = SettingsConfigDict(
         env_file=".env",           # Load from .env file
         env_file_encoding="utf-8",

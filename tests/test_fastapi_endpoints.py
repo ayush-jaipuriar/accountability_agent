@@ -59,6 +59,8 @@ def mock_services():
         mock_settings.log_level = "INFO"
         mock_settings.cron_secret = ""  # Disable cron auth for tests
         mock_settings.admin_telegram_ids = "111222333"
+        mock_settings.get_webhook_secret.return_value = None
+        mock_settings.webhook_url = ""
         
         # Configure bot manager
         mock_bot.bot = MagicMock()

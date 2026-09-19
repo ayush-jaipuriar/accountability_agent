@@ -10,14 +10,17 @@ Usage:
     python3 scripts/broadcast_notification_standalone.py
 """
 
+import os
 import subprocess
 import json
 import time
 import asyncio
 import httpx
 
-PROJECT_ID = "accountability-agent"
-BOT_TOKEN = "8197561499:AAEhBUhrnAbnbSSMCBq08-xWWyIDlwZoRdk"
+PROJECT_ID = os.getenv("GCP_PROJECT_ID", "accountability-agent")
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required")
 FIRESTORE_BASE = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/(default)/documents"
 TELEGRAM_BASE = f"https://api.telegram.org/bot{BOT_TOKEN}"
 

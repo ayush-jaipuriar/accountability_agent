@@ -188,7 +188,7 @@ git status
 git diff --cached | head -100
 
 # 3. Scan for any remaining secrets (should be 0)
-git diff --cached | grep -E "8197561499|AAEhBUhrnAbnbSSMCBq08" | wc -l
+git diff --cached | grep -E "[0-9]{8,10}:[A-Za-z0-9_-]{35}" | wc -l
 
 # 4. Verify no .env files
 git diff --cached --name-only | grep -E "\.env"

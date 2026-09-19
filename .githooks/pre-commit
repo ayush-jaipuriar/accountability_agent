@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# Git Pre-Commit Hook: Secret Scanning & Leak Prevention
+# ==============================================================================
+# Executes scripts/secret_scanner.py --staged before every commit.
+# Aborts commit if any secrets or sensitive files are staged.
+# ==============================================================================
+
+set -e
+
+# Run python-based secret scanner on staged changes
+if command -v python3 >/dev/null 2>&1; then
+    python3 scripts/secret_scanner.py --staged
+elif command -v python >/dev/null 2>&1; then
+    python scripts/secret_scanner.py --staged
+else
+    echo "⚠️ Warning: python3 not found. Skipping staged secret scan."
+fi

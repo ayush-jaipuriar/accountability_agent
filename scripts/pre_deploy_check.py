@@ -308,6 +308,12 @@ def main() -> int:
 
     checks = []
 
+    # 0. Secret scanning check
+    checks.append(run_command(
+        [sys.executable, "scripts/secret_scanner.py", "--all"],
+        "Secret scanning & leak prevention",
+    ))
+
     # 1. Source compilation
     checks.append(run_command(
         [sys.executable, "-m", "compileall", "src/"],

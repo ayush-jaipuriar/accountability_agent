@@ -468,25 +468,72 @@ class TelegramBotManager:
         """
         return self.application
     
-    async def set_webhook(self, webhook_url: str) -> bool:
+    async def set_webhook(self, webhook_url: str, secret_token: Optional[str] = None) -> bool:
         """
-        Set Telegram webhook URL.
+        Set Telegram webhook URL with optional secret token for request verification.
         
         Tells Telegram where to send updates (messages, button presses).
         
         Args:
             webhook_url: Full URL to webhook endpoint (e.g., https://your-app.run.app/webhook/telegram)
+            secret_token: Optional secret token sent in X-Telegram-Bot-Api-Secret-Token header
             
         Returns:
             bool: True if webhook set successfully
         """
         try:
-            await self.bot.set_webhook(url=webhook_url)
+            kwargs = {"url": webhook_url}
+            if secret_token:
+                kwargs["secret_token"] = secret_token
+            await self.bot.set_webhook(**kwargs)
             logger.info(f"✅ Webhook set to: {webhook_url}")
             return True
         except Exception as e:
             logger.error(f"❌ Failed to set webhook: {e}")
             return False
+    
+    async def get_webhook_info(self):
+        """Get current webhook info from Telegram."""
+        return await self.bot.get_webhook_info()
+
+    async def verify_and_heal_webhook(self, expected_url: str, secret_token: Optional[str] = None) -> dict:
+        """
+        Verify that Telegram's registered webhook matches the expected URL.
+        If it does not or is experiencing errors, automatically reclaims it.
+        """
+        try:
+            info = await self.get_webhook_info()
+            current_url = info.url or ""
+            is_match = (current_url == expected_url)
+            reclaimed = False
+
+            if not is_match:
+                logger.warning(
+                    f"⚠️ Webhook drift detected! Current='{current_url}', Expected='{expected_url}'. "
+                    f"Auto-reclaiming..."
+                )
+                reclaimed = await self.set_webhook(expected_url, secret_token=secret_token)
+                if reclaimed:
+                    logger.info("✅ Successfully auto-reclaimed webhook")
+                else:
+                    logger.error("❌ Failed to auto-reclaim webhook")
+
+            return {
+                "ok": is_match or reclaimed,
+                "current_url": current_url,
+                "expected_url": expected_url,
+                "drift_detected": not is_match,
+                "reclaimed": reclaimed,
+                "pending_update_count": getattr(info, "pending_update_count", 0),
+                "last_error_message": getattr(info, "last_error_message", None),
+                "last_error_date": info.last_error_date.isoformat() if getattr(info, "last_error_date", None) else None,
+            }
+        except Exception as e:
+            logger.error(f"❌ Error verifying webhook status: {e}")
+            return {
+                "ok": False,
+                "error": str(e)
+            }
     
     async def delete_webhook(self) -> bool:
         """

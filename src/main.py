@@ -17,7 +17,8 @@ Key Concepts:
 - Startup Event: Initialize bot, set webhook URL
 """
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, status
+from fastapi.responses import JSONResponse
 from telegram import Update
 import logging
 import json
@@ -187,11 +188,12 @@ async def startup_event():
     # Set webhook URL (production only)
     if settings.environment == "production" and settings.webhook_url:
         webhook_url = f"{settings.webhook_url}/webhook/telegram"
+        secret_token = settings.get_webhook_secret()
         
         try:
-            success = await bot_manager.set_webhook(webhook_url)
+            success = await bot_manager.set_webhook(webhook_url, secret_token=secret_token)
             if success:
-                logger.info(f"✅ Webhook set to: {webhook_url}")
+                logger.info(f"✅ Webhook set to: {webhook_url} (secret verification: {'enabled' if secret_token else 'disabled'})")
             else:
                 logger.error(f"❌ Failed to set webhook")
         except Exception as e:
@@ -243,28 +245,54 @@ async def health_check():
     except Exception as e:
         logger.error(f"Health check: Firestore error: {e}")
     
+    # Check & auto-heal Telegram webhook in production
+    webhook_status = None
+    if settings.environment == "production" and settings.webhook_url:
+        expected_url = f"{settings.webhook_url}/webhook/telegram"
+        secret_token = settings.get_webhook_secret()
+        try:
+            webhook_status = await bot_manager.verify_and_heal_webhook(expected_url, secret_token=secret_token)
+        except Exception as e:
+            logger.error(f"Health check: Webhook verification error: {e}")
+            webhook_status = {"ok": False, "error": str(e)}
+
     # Overall health
     healthy = firestore_ok
     
     # Gather lightweight metrics for health response
     uptime = metrics.get_uptime()
     
+    checks_dict = {
+        "firestore": "ok"
+    }
+    if webhook_status is not None:
+        checks_dict["webhook"] = "ok" if webhook_status.get("ok") else "error"
+        if webhook_status.get("reclaimed"):
+            checks_dict["webhook"] = "drift_healed"
+
     if healthy:
-        return {
+        response_data = {
             "status": "healthy",
             "service": "constitution-agent",
             "version": "3.0.0",
             "environment": settings.environment,
             "uptime": uptime["uptime_human"],
-            "checks": {
-                "firestore": "ok"
-            },
+            "checks": checks_dict,
             "metrics_summary": {
                 "checkins_total": metrics.get_counter("checkins_total"),
                 "commands_total": metrics.get_counter("commands_total"),
                 "errors_total": metrics.get_error_count(),
             }
         }
+        if webhook_status is not None:
+            response_data["webhook_status"] = {
+                "url": webhook_status.get("current_url"),
+                "drift_detected": webhook_status.get("drift_detected", False),
+                "reclaimed": webhook_status.get("reclaimed", False),
+                "pending_update_count": webhook_status.get("pending_update_count", 0),
+                "last_error_message": webhook_status.get("last_error_message"),
+            }
+        return response_data
     else:
         raise HTTPException(
             status_code=503,
@@ -327,6 +355,17 @@ async def telegram_webhook(request: Request):
     """
     start_time = time.monotonic()
     
+    # Verify Telegram Webhook Secret Token (defense against spoofed requests)
+    expected_secret = settings.get_webhook_secret()
+    if expected_secret:
+        received_secret = request.headers.get("x-telegram-bot-api-secret-token")
+        if received_secret != expected_secret:
+            logger.warning("⛔ Unauthorized webhook request: invalid or missing secret token")
+            return JSONResponse(
+                status_code=status.HTTP_403_FORBIDDEN,
+                content={"ok": False, "error": "Forbidden: invalid secret token"}
+            )
+
     try:
         # Get update data from request body
         update_data = await request.json()
@@ -911,6 +950,17 @@ async def reminder_tz_aware(request: Request):
     """
     verify_cron_request(request)
     
+    # Periodic webhook health check & auto-heal (defense against external tampering)
+    if settings.environment == "production" and settings.webhook_url:
+        expected_url = f"{settings.webhook_url}/webhook/telegram"
+        secret_token = settings.get_webhook_secret()
+        try:
+            heal_result = await bot_manager.verify_and_heal_webhook(expected_url, secret_token=secret_token)
+            if heal_result.get("drift_detected"):
+                logger.warning(f"⚠️ Webhook drift detected and healed in reminder_tz_aware: {heal_result}")
+        except Exception as e:
+            logger.error(f"Error checking webhook in reminder_tz_aware: {e}")
+
     from src.utils.timezone_utils import (
         get_timezones_at_local_time,
         get_current_date,

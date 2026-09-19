@@ -1698,7 +1698,7 @@ Cloud Scheduler sends a custom header (`X-Cron-Secret`) with each request. The e
 **Never in code:**
 ```python
 # ❌ NEVER
-bot_token = "8197561499:AAEhBUhr..."
+bot_token = "1234567890:ABCdefGHI..."
 
 # ✅ ALWAYS
 bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -2453,7 +2453,7 @@ git commit -m "descriptive message"
 
 ```markdown
 ❌ NEVER:
-curl https://api.telegram.org/bot8197561499:AAE.../getMe
+curl https://api.telegram.org/bot1234567890:ABC.../getMe
 
 ✅ ALWAYS:
 curl https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe
